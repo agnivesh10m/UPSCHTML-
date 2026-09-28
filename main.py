@@ -16,17 +16,61 @@ from telegram.ext import (
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 CHANNEL_LINK = "https://t.me/UPSCHTML"
+CHANNEL_NAME = "@UPSCHTML"
+AUTHOR_NAME = "सचिन शर्मा"
 
-# यूज़र का डेटा जमा करने के लिए मेमोरी
 USER_BUFFERS = {}
 
 
-def format_to_colorful_html(
-    topic: str,
-    raw_text: str,
-    image_list: list = None,
-    existing_img_tags: list = None,
+def sanitize_and_rebrand_html(soup: BeautifulSoup) -> None:
+  """दूसरे चैनलों (CSE RUNNERS आदि) के नाम, लिंक और वॉटरमार्क हटाकर अपनी ब्रांडिंग लगाना"""
+
+  # 1. सभी लिंक्स को अपने चैनल लिंक से बदलना
+  for a in soup.find_all("a"):
+    href = a.get("href", "")
+    if "t.me" in href or "cserunners" in href.lower():
+      a["href"] = CHANNEL_LINK
+
+    if a.string and re.search(r"cse\s*runners", a.string, re.IGNORECASE):
+      a.string = f"{AUTHOR_NAME} ({CHANNEL_NAME})"
+
+  # 2. फ्लोटिंग टेलीग्राम बटन को अपडेट करना
+  tg_btn = soup.find("button", id="telegramBtn")
+  if tg_btn:
+    tg_btn["onclick"] = f"window.open('{CHANNEL_LINK}','_blank')"
+    span = tg_btn.find("span")
+    if span:
+      span.string = f"TELEGRAM — {CHANNEL_NAME}"
+    else:
+      tg_btn.string = f"📲 TELEGRAM — {CHANNEL_NAME}"
+
+  # 3. फ़ूटर को अपडेट करना
+  footer = soup.find("footer")
+  if footer:
+    footer_links = footer.find_all("a")
+    for fl in footer_links:
+      fl["href"] = CHANNEL_LINK
+      if "cserunners" in fl.text.lower() or "telegram" in fl.text.lower():
+        fl.string = f"{AUTHOR_NAME} | {CHANNEL_NAME}"
+
+  # 4. पूरे टेक्स्ट में से 'CSE RUNNERS' को 'सचिन शर्मा' से बदलना
+  for text_node in soup.find_all(text=True):
+    if text_node.parent.name in ["script", "style"]:
+      continue
+    if re.search(r"cse\s*runners", text_node, re.IGNORECASE):
+      new_text = re.sub(
+          r"cse\s*runners",
+          f"{AUTHOR_NAME} ({CHANNEL_NAME})",
+          text_node,
+          flags=re.IGNORECASE,
+      )
+      text_node.replace_with(new_text)
+
+
+def build_interactive_dashboard_html(
+    topic: str, raw_text: str, image_list: list = None
 ) -> str:
+  """अगर रॉ टेक्स्ट आया हो, तो उसे पोर्टल/डैशबोर्ड जैसी जिंदा और इंटरैक्टिव HTML में बदलना"""
   lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
   content_html = ""
   in_table = False
@@ -64,17 +108,17 @@ def format_to_colorful_html(
         line.startswith(x)
         for x in ["📌", "🎯", "⚡", "📖", "💡", "🗳️", "⚖️", "🔍"]
     ):
-      content_html += f"<h3 class='topic-heading'>{line}</h3>"
+      content_html += (
+          f"<div class='news-card'><h3 class='section-title'>{line}</h3>"
+      )
       continue
 
     if line.startswith(("•", "-", "▪", "▫", "*")):
-      content_html += f"<li class='list-p'>{line[1:].strip()}</li>"
+      content_html += f"<li class='list-item'>{line[1:].strip()}</li>"
       continue
 
-    formatted_line = re.sub(
-        r"\*\*(.*?)\*\*", r"<strong style='color:#0369a1;'>\1</strong>", line
-    )
-    content_html += f"<p class='para-text'>{formatted_line}</p>"
+    formatted = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", line)
+    content_html += f"<p class='para'>{formatted}</p>"
 
   if in_table:
     content_html += (
@@ -84,169 +128,133 @@ def format_to_colorful_html(
   img_markup = ""
   if image_list:
     for b64 in image_list:
-      img_markup += f"<div class='img-wrap'><img src='data:image/jpeg;base64,{b64}' class='note-img'/></div>"
-
-  if existing_img_tags:
-    for src in existing_img_tags:
-      img_markup += (
-          f"<div class='img-wrap'><img src='{src}' class='note-img'/></div>"
-      )
+      img_markup += f"<div class='img-container'><img src='data:image/jpeg;base64,{b64}' class='post-img'/></div>"
 
   return f"""<!DOCTYPE html>
 <html lang="hi">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{topic} - सचिन शर्मा</title>
+<title>{topic} | संकलन: {AUTHOR_NAME}</title>
+<link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-    body {{
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background-color: #0f172a;
-        color: #1e293b;
-        margin: 0;
-        padding: 24px 12px;
-        display: flex;
-        justify-content: center;
-    }}
-    .sheet {{
-        background: #ffffff;
-        max-width: 820px;
-        width: 100%;
-        border-radius: 14px;
-        padding: 28px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-    }}
-    .top-header {{
-        border-bottom: 3px solid #0284c7;
-        padding-bottom: 12px;
-        margin-bottom: 20px;
-    }}
-    .top-header h2 {{
-        color: #0369a1;
-        margin: 0 0 6px 0;
-        font-size: 1.45rem;
-    }}
-    .author-bar {{
-        display: flex;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        font-size: 13.5px;
-        color: #64748b;
-    }}
-    .author-bar a {{
-        color: #0284c7;
-        font-weight: bold;
-        text-decoration: none;
-    }}
-    .img-wrap {{
-        text-align: center;
-        margin: 18px 0;
-    }}
-    .note-img {{
-        max-width: 100%;
-        height: auto;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-    }}
-    .topic-heading {{
-        color: #075985;
-        border-left: 4px solid #f59e0b;
-        background: #f8fafc;
-        padding: 8px 12px;
-        border-radius: 0 6px 6px 0;
-        margin: 22px 0 10px 0;
-        font-size: 1.15rem;
-    }}
-    .para-text {{
-        line-height: 1.7;
-        margin: 8px 0;
-        font-size: 15.5px;
-    }}
-    .list-p {{
-        margin: 6px 0 6px 20px;
-        line-height: 1.6;
-        color: #334155;
-    }}
-    blockquote {{
-        border-left: 4px solid #0284c7;
-        background: #f0f9ff;
-        padding: 12px 14px;
-        margin: 16px 0;
-        border-radius: 0 8px 8px 0;
-        color: #0369a1;
-        font-weight: 500;
-    }}
-    .table-box {{
-        overflow-x: auto;
-        margin: 16px 0;
-    }}
-    table {{
-        width: 100%;
-        border-collapse: collapse;
-    }}
-    .th-cell {{
-        background: #0284c7;
-        color: #ffffff;
-        padding: 10px 12px;
-        text-align: left;
-    }}
-    .td-cell {{
-        padding: 9px 12px;
-        border: 1px solid #cbd5e1;
-    }}
-    tr:nth-child(even) {{
-        background: #f8fafc;
-    }}
-    .bottom-bar {{
-        margin-top: 30px;
-        padding: 14px;
-        border-top: 1px dashed #cbd5e1;
-        background: #f8fafc;
-        border-radius: 8px;
-        text-align: center;
-        font-size: 13px;
-        color: #475569;
-    }}
-    .bottom-bar a {{
-        color: #0284c7;
-        font-weight: bold;
-        text-decoration: none;
-    }}
+:root {{
+  --bg:#f4f6f9; --card:#ffffff; --text:#1c2430; --muted:#5b6675; --border:#e3e7ee;
+  --accent:#0b5fa5; --accent2:#0a8f5b; --saffron:#ff9933; --green:#138808; --navy:#000080;
+  --tag-bg:#eef3fb; --tag-text:#0b5fa5; --shadow:0 4px 15px rgba(20,30,50,.08);
+}}
+[data-theme="dark"] {{
+  --bg:#0f1620; --card:#161f2b; --text:#e7edf5; --muted:#9aa7b8; --border:#26313f;
+  --accent:#5fa8e0; --accent2:#4fce9a; --tag-bg:#1c2b3d; --tag-text:#8bc4ef;
+  --shadow:0 4px 18px rgba(0,0,0,.4);
+}}
+* {{ box-sizing:border-box; margin:0; padding:0; }}
+body {{
+  background:var(--bg); color:var(--text); font-family:'Hind','Noto Sans Devanagari',sans-serif;
+  line-height:1.7; transition:background .3s,color .3s; padding-bottom:60px;
+}}
+.top-header {{
+  background:linear-gradient(135deg,#0b1f3a,#0b5fa5 60%,#083a63);
+  color:#fff; padding:30px 16px 24px; text-align:center;
+  border-bottom:4px solid var(--saffron);
+}}
+.top-header h1 {{ font-size:1.8rem; margin-bottom:8px; font-weight:700; letter-spacing:0.5px; }}
+.author-pill {{
+  display:inline-block; margin-top:8px; background:rgba(255,255,255,.15);
+  border:1px solid rgba(255,255,255,.35); padding:6px 20px; border-radius:30px; font-weight:600; font-size:0.95rem;
+}}
+.controls {{
+  display:flex; justify-content:center; gap:12px; margin-top:16px; flex-wrap:wrap;
+}}
+.controls input {{
+  width:min(400px,85vw); padding:10px 16px; border-radius:25px; border:none; outline:none; font-size:0.95rem;
+}}
+.controls button {{
+  padding:10px 18px; border-radius:25px; border:1px solid rgba(255,255,255,.4);
+  background:rgba(255,255,255,.2); color:#fff; font-weight:600; cursor:pointer;
+}}
+.controls button:hover {{ background:rgba(255,255,255,.35); }}
+.wrap {{ max-width:960px; margin:24px auto; padding:0 16px; }}
+.news-card {{
+  background:var(--card); border:1px solid var(--border); border-radius:14px;
+  padding:24px; margin-bottom:20px; box-shadow:var(--shadow);
+}}
+.section-title {{
+  color:var(--accent); font-size:1.25rem; margin-bottom:12px;
+  border-left:5px solid var(--saffron); padding-left:10px;
+}}
+.para {{ margin:8px 0; font-size:1rem; }}
+.list-item {{ margin:6px 0 6px 24px; color:var(--text); }}
+blockquote {{
+  border-left:4px solid var(--accent); background:var(--tag-bg);
+  padding:12px 16px; border-radius:0 8px 8px 0; margin:16px 0; font-weight:500;
+}}
+.table-box {{ overflow-x:auto; margin:18px 0; }}
+table {{ width:100%; border-collapse:collapse; border-radius:8px; overflow:hidden; }}
+th {{ background:var(--accent); color:#fff; padding:10px 12px; text-align:left; }}
+td {{ padding:9px 12px; border:1px solid var(--border); }}
+tr:nth-child(even) {{ background:rgba(128,128,128,0.05); }}
+.img-container {{ text-align:center; margin:18px 0; }}
+.post-img {{ max-width:100%; border-radius:10px; box-shadow:0 4px 14px rgba(0,0,0,0.12); }}
+#telegramBtn {{
+  position:fixed; bottom:20px; right:20px; z-index:90;
+  background:#229ED9; color:#fff; border:none; border-radius:30px;
+  padding:12px 20px; font-weight:700; cursor:pointer; box-shadow:0 4px 15px rgba(0,0,0,0.25);
+}}
+footer {{
+  background:#0b1f3a; color:#dbe6f2; text-align:center; padding:28px 16px; margin-top:40px; font-size:0.9rem;
+}}
+footer a {{ color:#8bc4ef; font-weight:700; text-decoration:none; }}
 </style>
 </head>
-<body>
-<div class="sheet">
-    <div class="top-header">
-        <h2>{topic}</h2>
-        <div class="author-bar">
-            <span>✍️ <strong>निर्माता:</strong> सचिन शर्मा</span>
-            <span>📢 <strong>टेलीग्राम:</strong> <a href="{CHANNEL_LINK}">@UPSCHTML</a></span>
-        </div>
-    </div>
-    {img_markup}
-    <div class="main-body">
-        {content_html}
-    </div>
-    <div class="bottom-bar">
-        🌟 <strong>सचिन शर्मा</strong> द्वारा तैयार संकलन | <a href="{CHANNEL_LINK}">यहाँ क्लिक करके ग्रुप से जुड़ें</a>
-    </div>
-</div>
+<body data-theme="light">
+<header class="top-header">
+  <h1>🇮🇳 {topic}</h1>
+  <div class="author-pill">✍️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
+  <div class="controls">
+    <input type="text" id="searchBox" placeholder="🔍 खोजें: विषय, अनुच्छेद, कीवर्ड...">
+    <button onclick="toggleTheme()">🌗 Dark / Light Mode</button>
+  </div>
+</header>
+<main class="wrap" id="mainContent">
+  {img_markup}
+  {content_html}
+</main>
+<button id="telegramBtn" onclick="window.open('{CHANNEL_LINK}','_blank')">📲 TELEGRAM — {CHANNEL_NAME}</button>
+<footer>
+  <div><b>UPSC CSE NOTES | SPECIAL SYNTHESIS</b></div>
+  <div style="margin-top:10px;">निर्माता: <b>{AUTHOR_NAME}</b> | ग्रुप लिंक: <a href="{CHANNEL_LINK}" target="_blank">{CHANNEL_NAME}</a></div>
+</footer>
+<script>
+function toggleTheme() {{
+  const b = document.body;
+  b.setAttribute('data-theme', b.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+}}
+document.getElementById('searchBox').addEventListener('input', function() {{
+  const q = this.value.trim().toLowerCase();
+  document.querySelectorAll('.news-card').forEach(card => {{
+    card.style.display = card.innerText.toLowerCase().includes(q) ? 'block' : 'none';
+  }});
+}});
+</script>
 </body>
 </html>"""
 
 
-# /start कमांड
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "👋 **नमस्ते सचिन भाई!**\n\n"
-      "👉 बड़े नोट्स बनाने के लिए:\n"
-      "1. पहले **/html** भेजें।\n"
-      "2. फिर जितने चाहे मैसेज, टुकड़े या फ़ाइलें भेजते रहें।\n"
-      "3. अंत में **/sachin** भेजें, आपकी एक ही संपूर्ण HTML फ़ाइल बन जाएगी!"
+      f"👋 **नमस्ते {AUTHOR_NAME}!**\n\n"
+      "⚡ **नया सुपर-HTML बॉट सक्रिय है!**\n\n"
+      "👉 **कैसे उपयोग करें:**\n"
+      "1. पहले **/html** भेजें (सत्र शुरू होगा)।\n"
+      "2. इसके बाद कोई भी पुरानी HTML फ़ाइल (जैसे CSE Runners वाली) या लंबे"
+      " टेक्स्ट फॉरवर्ड करें।\n"
+      "3. अंत में **/sachin** भेजें — बॉट दूसरे चैनल का नाम पूरी तरह हटाकर,"
+      " लाइव सर्च, डार्क मोड व आपकी ब्रांडिंग वाली नई जिंदा HTML फ़ाइल बनाकर"
+      " भेज देगा!"
   )
 
 
-# 1. /html कमांड - संग्रह शुरू करना
 async def start_html_session(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -255,135 +263,121 @@ async def start_html_session(
       "active": True,
       "texts": [],
       "images": [],
-      "existing_imgs": [],
+      "html_soups": [],
   }
   await update.message.reply_text(
       "🟢 **सत्र शुरू हो गया है!**\n\n"
-      "अब आप अपने नोट्स के सभी टुकड़े, फॉरवर्डेड मैसेज या फ़ाइलें भेजें।\n"
-      "जब सारा कंटेंट भेज लें, तब **/sachin** लिखकर सेंड करें।"
+      "अब आप अपनी HTML फ़ाइल या टेक्स्ट फॉरवर्ड करें।\n"
+      "जब सारा मटेरियल भेज दें, तब **/sachin** भेजें।"
   )
 
 
-# 2. बीच के सभी मैसेज और टुकड़ों को जोड़ना
 async def collect_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
   user_id = update.effective_user.id
   session = USER_BUFFERS.get(user_id)
-
-  # यदि /html शुरू नहीं है तो कुछ न करें
   if not session or not session.get("active"):
     await update.message.reply_text(
-        "💡 नए नोट्स बनाने के लिए पहले **/html** कमांड भेजें।"
+        "💡 पहले **/html** भेजें, फिर सामग्री फॉरवर्ड करें।"
     )
     return
 
   msg = update.message
   raw_text = msg.text or msg.caption or ""
 
-  # इमेज संभालना
   if msg.photo:
     photo = msg.photo[-1]
-    file_obj = await photo.get_file()
-    temp_img = f"img_{photo.file_unique_id}.jpg"
-    await file_obj.download_to_drive(temp_img)
-    with open(temp_img, "rb") as f:
+    f_obj = await photo.get_file()
+    t_img = f"img_{photo.file_unique_id}.jpg"
+    await f_obj.download_to_drive(t_img)
+    with open(t_img, "rb") as f:
       session["images"].append(base64.b64encode(f.read()).decode("utf-8"))
-    if os.path.exists(temp_img):
-      os.remove(temp_img)
+    if os.path.exists(t_img):
+      os.remove(t_img)
 
-  # HTML फ़ाइल संभालना
   elif msg.document and (
       msg.document.file_name.endswith(".html")
       or msg.document.file_name.endswith(".htm")
   ):
-    doc_file = await msg.document.get_file()
-    temp_doc = f"doc_{msg.document.file_name}"
-    await doc_file.download_to_drive(temp_doc)
-    with open(temp_doc, "r", encoding="utf-8", errors="ignore") as f:
+    doc_f = await msg.document.get_file()
+    t_doc = f"doc_{msg.document.file_name}"
+    await doc_f.download_to_drive(t_doc)
+    with open(t_doc, "r", encoding="utf-8", errors="ignore") as f:
       soup = BeautifulSoup(f.read(), "html.parser")
-      for img in soup.find_all("img"):
-        src = img.get("src")
-        if src:
-          session["existing_imgs"].append(src)
-      for tr in soup.find_all("tr"):
-        row_text = (
-            " | ".join([td.get_text().strip() for td in tr.find_all(["td", "th"])])
-        )
-        if row_text:
-          tr.replace_with(f"| {row_text} |\n")
-      for t in soup(["script", "style", "nav", "footer", "header"]):
-        t.decompose()
-      raw_text = soup.get_text(separator="\n").strip()
-    if os.path.exists(temp_doc):
-      os.remove(temp_doc)
+      session["html_soups"].append(soup)
+    if os.path.exists(t_doc):
+      os.remove(t_doc)
 
   if raw_text:
     session["texts"].append(raw_text)
 
 
-# 3. /sachin कमांड - सबको मिलाकर एक HTML फ़ाइल बनाना
 async def finalize_and_generate(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
   user_id = update.effective_user.id
   session = USER_BUFFERS.get(user_id)
 
-  if not session or not session.get("texts"):
+  if not session or (
+      not session.get("texts") and not session.get("html_soups")
+  ):
     await update.message.reply_text(
-        "❌ कोई नोट्स नहीं मिले। पहले **/html** भेजकर कुछ टेक्स्ट या फ़ाइलें भेजें।"
+        "❌ कोई सामग्री नहीं मिली। कृपया पहले **/html** भेजकर डेटा भेजें।"
     )
     return
 
   wait_msg = await update.message.reply_text(
-      "⏳ सभी टुकड़ों को जोड़कर एक संपूर्ण HTML फ़ाइल बनाई जा रही है..."
+      "⏳ CSE Runners का डेटा हटाकर नई ब्रांडेड HTML तैयार की जा रही है..."
   )
 
-  # सभी टुकड़ों को क्रम से एक साथ जोड़ना
-  combined_text = "\n\n".join(session["texts"])
+  clean_filename = "UPSC_Daily_Notes_SachinSharma.html"
+  final_output_html = ""
 
-  # मुख्य शीर्षक निकालना
-  lines = [l.strip() for l in combined_text.split("\n") if l.strip()]
-  topic = "UPSC Study Notes"
-  if lines:
-    topic_clean = re.sub(
-        r"[📌💡⚡✨🔥📖🎯📝🌪️🗳️⚖️🔍|━─—_-]", "", lines[0]
-    ).strip()
-    if "—" in topic_clean:
-      topic_clean = topic_clean.split("—")[0].strip()
-    topic = topic_clean[:35] if topic_clean else "Study Notes"
-
-  # HTML फ़ाइल बनाना
-  html_doc = format_to_colorful_html(
-      topic, combined_text, session["images"], session["existing_imgs"]
-  )
-  clean_filename = (
-      re.sub(r"[^a-zA-Z0-9\u0900-\u097F]", "_", topic)[:25] + ".html"
-  )
+  # अगर यूज़र ने कोई पहले से तैयार खूबसूरत HTML भेजी है (जैसे CSE Runners वाली)
+  if session["html_soups"]:
+    main_soup = session["html_soups"][0]
+    sanitize_and_rebrand_html(main_soup)
+    final_output_html = str(main_soup)
+  else:
+    # अगर रॉ टेक्स्ट भेजा गया है
+    combined_text = "\n\n".join(session["texts"])
+    lines = [l.strip() for l in combined_text.split("\n") if l.strip()]
+    topic = "UPSC Current Affairs Notes"
+    if lines:
+      cleaned = re.sub(
+          r"[📌💡⚡✨🔥📖🎯📝🌪️🗳️⚖️🔍|━─—_-]", "", lines[0]
+      ).strip()
+      if "—" in cleaned:
+        cleaned = cleaned.split("—")[0].strip()
+      topic = cleaned[:40] if cleaned else "UPSC Notes"
+    clean_filename = f"{re.sub(r'[^a-zA-Z0-9]', '_', topic)[:25]}_Notes.html"
+    final_output_html = build_interactive_dashboard_html(
+        topic, combined_text, session["images"]
+    )
 
   with open(clean_filename, "w", encoding="utf-8") as f:
-    f.write(html_doc)
+    f.write(final_output_html)
 
   with open(clean_filename, "rb") as send_doc:
     await update.message.reply_document(
         document=send_doc,
         filename=clean_filename,
         caption=(
-            f"📄 <b>संपूर्ण HTML नोट्स तैयार:</b> <code>{topic}</code>\n"
-            f"👤 <b>निर्माता:</b> सचिन शर्मा\n"
-            f"📢 <b>ग्रुप:</b> @UPSCHTML"
+            f"📄 <b>सफलतापूर्वक तैयार!</b>\n"
+            f"✨ <i>CSE RUNNERS हटाकर {AUTHOR_NAME} की ब्रांडिंग जोड़ दी गई"
+            " है।</i>\n"
+            f"👤 <b>निर्माता:</b> {AUTHOR_NAME}\n"
+            f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
         ),
         parse_mode=ParseMode.HTML,
     )
 
   await wait_msg.delete()
-
   if os.path.exists(clean_filename):
     os.remove(clean_filename)
 
-  # मेमोरी साफ़ करना
   USER_BUFFERS.pop(user_id, None)
 
 
-# 24x7 Web Server
 async def run_server():
   app = web.Application()
   app.router.add_get("/", lambda r: web.Response(text="Bot Alive 24/7"))
@@ -396,7 +390,6 @@ async def run_server():
 
 async def main():
   await run_server()
-
   bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
   bot_app.add_handler(CommandHandler("start", start_handler))
   bot_app.add_handler(CommandHandler("html", start_html_session))
