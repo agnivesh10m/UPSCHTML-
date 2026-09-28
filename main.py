@@ -14,18 +14,15 @@ from telegram.ext import (
     filters,
 )
 
-# Render Environment Variable से टोकन लेगा या यहाँ सीधा टोकन डालें
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 CHANNEL_LINK = "https://t.me/UPSCHTML"
 
 WAITING_FOR_TOPIC = 1
 
 
-# 1. HTML लेआउट तैयार करना
 def build_final_html(topic: str, extracted_text: str) -> str:
   lines = [l.strip() for l in extracted_text.split("\n") if l.strip()]
   content_markup = ""
-
   for line in lines:
     if line.startswith(("|", "•", "-", "*")):
       content_markup += f"<p style='margin: 4px 0;'>{line}</p>\n"
@@ -43,98 +40,75 @@ def build_final_html(topic: str, extracted_text: str) -> str:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{topic}</title>
     <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #f1f5f9;
-            color: #0f172a;
-            padding: 24px 14px;
-            display: flex;
-            justify-content: center;
-        }}
-        .card {{
-            background: #ffffff;
-            max-width: 800px;
-            width: 100%;
-            padding: 26px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.06);
-        }}
-        .header {{
-            border-bottom: 2px solid #0284c7;
-            padding-bottom: 12px;
-            margin-bottom: 16px;
-        }}
-        .header h2 {{
-            color: #0369a1;
-            margin: 0 0 6px 0;
-            font-size: 1.4rem;
-        }}
-        .meta {{
-            font-size: 13px;
-            color: #64748b;
-        }}
-        .footer {{
-            margin-top: 26px;
-            padding: 12px;
-            border-top: 1px dashed #cbd5e1;
-            font-size: 13px;
-            text-align: center;
-            background: #f8fafc;
-            border-radius: 8px;
-            color: #475569;
-        }}
-        .footer a, .meta a {{
-            color: #0284c7;
-            font-weight: 600;
-            text-decoration: none;
-        }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f1f5f9; color: #0f172a; padding: 24px 14px; display: flex; justify-content: center; }}
+        .card {{ background: #ffffff; max-width: 800px; width: 100%; padding: 26px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); }}
+        .header {{ border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 16px; }}
+        .header h2 {{ color: #0369a1; margin: 0 0 6px 0; font-size: 1.4rem; }}
+        .meta {{ font-size: 13px; color: #64748b; }}
+        .footer {{ margin-top: 26px; padding: 12px; border-top: 1px dashed #cbd5e1; font-size: 13px; text-align: center; background: #f8fafc; border-radius: 8px; color: #475569; }}
+        .footer a, .meta a {{ color: #0284c7; font-weight: 600; text-decoration: none; }}
     </style>
 </head>
 <body>
 <div class="card">
     <div class="header">
         <h2>{topic}</h2>
-        <div class="meta">
-            ✍️ <strong>सचिन शर्मा</strong> | 🔗 <a href="{CHANNEL_LINK}">@UPSCHTML</a>
-        </div>
+        <div class="meta">✍️ <strong>सचिन शर्मा</strong> | 🔗 <a href="{CHANNEL_LINK}">@UPSCHTML</a></div>
     </div>
-    <div class="content">
-        {content_markup}
-    </div>
-    <div class="footer">
-        🌟 <strong>सचिन शर्मा</strong> | <a href="{CHANNEL_LINK}">टेलीग्राम ग्रुप से जुड़ें</a>
-    </div>
+    <div class="content">{content_markup}</div>
+    <div class="footer">🌟 <strong>सचिन शर्मा</strong> | <a href="{CHANNEL_LINK}">टेलीग्राम ग्रुप से जुड़ें</a></div>
 </div>
 </body>
 </html>"""
 
 
-# 2. फ़ाइल रिसीव और टेक्स्ट साफ़ करना
-async def receive_file(
+# /start कमांड हैंडलर
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  welcome_text = """👋 **नमस्ते!**
+
+मैं आपका **HTML Notes Converter Bot** हूँ।
+👉 मुझे कोई भी `.html` फ़ाइल भेजें, या कोई भी टेक्स्ट/नोट्स यहाँ फॉरवर्ड करें।
+मैं उसमें से टेक्स्ट निकालकर आपके नाम की नई HTML फ़ाइल और पोस्ट तैयार कर दूँगा!"""
+  await update.message.reply_text(welcome_text, parse_mode=ParseMode.MARKDOWN)
+
+
+# फ़ाइल या लंबा टेक्स्ट रिसीव करना
+async def receive_content(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-  doc = update.message.document
-  if not (doc.file_name.endswith(".html") or doc.file_name.endswith(".htm")):
-    await update.message.reply_text("कृपया केवल .html या .htm फ़ाइल ही भेजें।")
+  msg = update.message
+  extracted_text = ""
+
+  if msg.document:
+    doc = msg.document
+    if not (doc.file_name.endswith(".html") or doc.file_name.endswith(".htm")):
+      await msg.reply_text("कृपया केवल `.html` या `.htm` फ़ाइल ही भेजें।")
+      return ConversationHandler.END
+
+    msg_wait = await msg.reply_text("⏳ फ़ाइल प्रोसेस हो रही है...")
+    tg_file = await doc.get_file()
+    temp_in = f"temp_{doc.file_name}"
+    await tg_file.download_to_drive(temp_in)
+
+    with open(temp_in, "r", encoding="utf-8", errors="ignore") as f:
+      soup = BeautifulSoup(f.read(), "html.parser")
+
+    for tag in soup(["script", "style", "header", "footer", "nav"]):
+      tag.decompose()
+
+    extracted_text = soup.get_text(separator="\n").strip()
+    if os.path.exists(temp_in):
+      os.remove(temp_in)
+    await msg_wait.delete()
+
+  elif msg.text:
+    extracted_text = msg.text.strip()
+
+  if not extracted_text:
+    await msg.reply_text("कोई मान्य टेक्स्ट नहीं मिला।")
     return ConversationHandler.END
 
-  msg_wait = await update.message.reply_text("⏳ फ़ाइल प्रोसेस हो रही है...")
-
-  tg_file = await doc.get_file()
-  temp_in = f"temp_{doc.file_name}"
-  await tg_file.download_to_drive(temp_in)
-
-  with open(temp_in, "r", encoding="utf-8", errors="ignore") as f:
-    soup = BeautifulSoup(f.read(), "html.parser")
-
-  for tag in soup(["script", "style", "header", "footer", "nav"]):
-    tag.decompose()
-
-  extracted_text = soup.get_text(separator="\n").strip()
-
-  if os.path.exists(temp_in):
-    os.remove(temp_in)
-
+  # ऑटो टॉपिक पहचानना
   lines = [l.strip() for l in extracted_text.split("\n") if l.strip()]
   suggested_topic = "UPSC Study Notes"
   if lines:
@@ -146,19 +120,17 @@ async def receive_file(
   context.user_data["raw_text"] = extracted_text
   context.user_data["suggested_topic"] = suggested_topic
 
-  await msg_wait.delete()
-  reply_msg = f"""✅ टेक्स्ट निकाल लिया गया है!
+  reply_msg = f"""✅ टेक्स्ट प्राप्त हो गया!
 
 📌 **सुझाया गया विषय:** `{suggested_topic}`
 
-• अगर यही नाम रखना है, तो सिर्फ **1** भेजें।
+• अगर यही नाम रखना है, तो **1** भेजें।
 • या फिर अपना **नया नाम** लिखकर भेजें।"""
 
-  await update.message.reply_text(reply_msg, parse_mode=ParseMode.MARKDOWN)
+  await msg.reply_text(reply_msg, parse_mode=ParseMode.MARKDOWN)
   return WAITING_FOR_TOPIC
 
 
-# 3. फ़ाइल बनाना और भेजना
 async def set_topic_and_generate(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -215,7 +187,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
   return ConversationHandler.END
 
 
-# 4. Render के लिए वेब सर्वर (ताकि 24x7 पिंग काम करे)
 async def web_home(request):
   return web.Response(text="Bot is running alive 24/7!")
 
@@ -231,13 +202,21 @@ async def run_web_server():
 
 
 async def main():
-  # वेब सर्वर स्टार्ट
   await run_web_server()
 
-  # टेलीग्राम बॉट स्टार्ट
   bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+  # /start कमांड हैंडलर जोड़ा गया
+  bot_app.add_handler(CommandHandler("start", start_command))
+
+  # कन्वर्सेशन हैंडलर में टेक्स्ट और डॉक्यूमेंट दोनों जोड़े गए
   conv_handler = ConversationHandler(
-      entry_points=[MessageHandler(filters.Document.ALL, receive_file)],
+      entry_points=[
+          MessageHandler(
+              (filters.Document.ALL | filters.TEXT) & (~filters.COMMAND),
+              receive_content,
+          )
+      ],
       states={
           WAITING_FOR_TOPIC: [
               MessageHandler(
@@ -253,7 +232,6 @@ async def main():
   await bot_app.start()
   await bot_app.updater.start_polling()
 
-  # लूप को चालू रखना
   while True:
     await asyncio.sleep(3600)
 
