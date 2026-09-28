@@ -23,7 +23,7 @@ USER_BUFFERS = {}
 
 
 def sanitize_and_rebrand_html(soup: BeautifulSoup) -> None:
-  """दूसरे चैनलों (CSE RUNNERS आदि) के नाम, लिंक और वॉटरमार्क हटाकर अपनी ब्रांडिंग लगाना"""
+  """पुराने चैनल के नाम और लिंक्स को पूरी तरह साफ़ करके अपनी ब्रांडिंग लगाना"""
 
   # 1. सभी लिंक्स को अपने चैनल लिंक से बदलना
   for a in soup.find_all("a"):
@@ -34,7 +34,7 @@ def sanitize_and_rebrand_html(soup: BeautifulSoup) -> None:
     if a.string and re.search(r"cse\s*runners", a.string, re.IGNORECASE):
       a.string = f"{AUTHOR_NAME} ({CHANNEL_NAME})"
 
-  # 2. फ्लोटिंग टेलीग्राम बटन को अपडेट करना
+  # 2. फ्लोटिंग टेलीग्राम बटन को ठीक करना
   tg_btn = soup.find("button", id="telegramBtn")
   if tg_btn:
     tg_btn["onclick"] = f"window.open('{CHANNEL_LINK}','_blank')"
@@ -53,7 +53,7 @@ def sanitize_and_rebrand_html(soup: BeautifulSoup) -> None:
       if "cserunners" in fl.text.lower() or "telegram" in fl.text.lower():
         fl.string = f"{AUTHOR_NAME} | {CHANNEL_NAME}"
 
-  # 4. पूरे टेक्स्ट में से 'CSE RUNNERS' को 'सचिन शर्मा' से बदलना
+  # 4. पूरे टेक्स्ट में से पुराने नाम को बदलना
   for text_node in soup.find_all(text=True):
     if text_node.parent.name in ["script", "style"]:
       continue
@@ -70,7 +70,7 @@ def sanitize_and_rebrand_html(soup: BeautifulSoup) -> None:
 def build_interactive_dashboard_html(
     topic: str, raw_text: str, image_list: list = None
 ) -> str:
-  """अगर रॉ टेक्स्ट आया हो, तो उसे पोर्टल/डैशबोर्ड जैसी जिंदा और इंटरैक्टिव HTML में बदलना"""
+  """रॉ टेक्स्ट को डैशबोर्ड जैसी जीवंत HTML में बदलना"""
   lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
   content_html = ""
   in_table = False
@@ -244,14 +244,12 @@ document.getElementById('searchBox').addEventListener('input', function() {{
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       f"👋 **नमस्ते {AUTHOR_NAME}!**\n\n"
-      "⚡ **नया सुपर-HTML बॉट सक्रिय है!**\n\n"
-      "👉 **कैसे उपयोग करें:**\n"
-      "1. पहले **/html** भेजें (सत्र शुरू होगा)।\n"
-      "2. इसके बाद कोई भी पुरानी HTML फ़ाइल (जैसे CSE Runners वाली) या लंबे"
-      " टेक्स्ट फॉरवर्ड करें।\n"
-      "3. अंत में **/sachin** भेजें — बॉट दूसरे चैनल का नाम पूरी तरह हटाकर,"
-      " लाइव सर्च, डार्क मोड व आपकी ब्रांडिंग वाली नई जिंदा HTML फ़ाइल बनाकर"
-      " भेज देगा!"
+      "⚡ **HTML नोट्स बॉट सक्रिय है!**\n\n"
+      "👉 **उपयोग का तरीका:**\n"
+      "1. पहले **/html** भेजें।\n"
+      "2. अपनी HTML फ़ाइल या नोट्स फॉरवर्ड करें।\n"
+      "3. अंत में **/sachin** भेजें — आपकी साफ़-सुथरी ब्रांडेड HTML फ़ाइल तैयार"
+      " हो जाएगी!"
   )
 
 
@@ -267,8 +265,7 @@ async def start_html_session(
   }
   await update.message.reply_text(
       "🟢 **सत्र शुरू हो गया है!**\n\n"
-      "अब आप अपनी HTML फ़ाइल या टेक्स्ट फॉरवर्ड करें।\n"
-      "जब सारा मटेरियल भेज दें, तब **/sachin** भेजें।"
+      "अब सामग्री फॉरवर्ड करें और अंत में **/sachin** भेजें।"
   )
 
 
@@ -326,19 +323,17 @@ async def finalize_and_generate(
     return
 
   wait_msg = await update.message.reply_text(
-      "⏳ CSE Runners का डेटा हटाकर नई ब्रांडेड HTML तैयार की जा रही है..."
+      "⏳ आपके नोट्स प्रोसेस हो रहे हैं, थोड़ा इंतज़ार करें..."
   )
 
   clean_filename = "UPSC_Daily_Notes_SachinSharma.html"
   final_output_html = ""
 
-  # अगर यूज़र ने कोई पहले से तैयार खूबसूरत HTML भेजी है (जैसे CSE Runners वाली)
   if session["html_soups"]:
     main_soup = session["html_soups"][0]
     sanitize_and_rebrand_html(main_soup)
     final_output_html = str(main_soup)
   else:
-    # अगर रॉ टेक्स्ट भेजा गया है
     combined_text = "\n\n".join(session["texts"])
     lines = [l.strip() for l in combined_text.split("\n") if l.strip()]
     topic = "UPSC Current Affairs Notes"
@@ -362,9 +357,7 @@ async def finalize_and_generate(
         document=send_doc,
         filename=clean_filename,
         caption=(
-            f"📄 <b>सफलतापूर्वक तैयार!</b>\n"
-            f"✨ <i>CSE RUNNERS हटाकर {AUTHOR_NAME} की ब्रांडिंग जोड़ दी गई"
-            " है।</i>\n"
+            f"📄 <b>नोट्स फ़ाइल तैयार!</b>\n"
             f"👤 <b>निर्माता:</b> {AUTHOR_NAME}\n"
             f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
         ),
