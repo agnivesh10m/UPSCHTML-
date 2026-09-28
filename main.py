@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import os
 import re
 from aiohttp import web
@@ -9,7 +10,6 @@ from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
-    ConversationHandler,
     MessageHandler,
     filters,
 )
@@ -17,183 +17,312 @@ from telegram.ext import (
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 CHANNEL_LINK = "https://t.me/UPSCHTML"
 
-WAITING_FOR_TOPIC = 1
 
+def format_to_colorful_html(
+    topic: str, raw_text: str, image_b64: str = None
+) -> str:
+  lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+  content_html = ""
+  in_table = False
+  table_rows = []
 
-def build_final_html(topic: str, extracted_text: str) -> str:
-  lines = [l.strip() for l in extracted_text.split("\n") if l.strip()]
-  content_markup = ""
   for line in lines:
-    if line.startswith(("|", "•", "-", "*")):
-      content_markup += f"<p style='margin: 4px 0;'>{line}</p>\n"
-    elif re.match(r"^[0-9]+\.", line):
-      content_markup += f"<h3 style='color: #0369a1; margin-top: 16px; margin-bottom: 6px;'>{line}</h3>\n"
-    else:
-      content_markup += (
-          f"<p style='margin: 6px 0; line-height: 1.6;'>{line}</p>\n"
+    # टेबल पार्सिंग
+    if line.startswith("|") and line.endswith("|"):
+      cells = [c.strip() for c in line.split("|")[1:-1]]
+      if not in_table:
+        in_table = True
+        table_rows.append(
+            "<tr>"
+            + "".join([f"<th class='th-cell'>{c}</th>" for c in cells])
+            + "</tr>"
+        )
+      elif "---" not in line:
+        table_rows.append(
+            "<tr>"
+            + "".join([f"<td class='td-cell'>{c}</td>" for c in cells])
+            + "</tr>"
+        )
+      continue
+    elif in_table:
+      content_html += (
+          f"<div class='table-box'><table>{''.join(table_rows)}</table></div>"
       )
+      in_table = False
+      table_rows = []
+
+    # कोट्स / महत्वपूर्ण लाइन
+    if line.startswith(">"):
+      content_html += f"<blockquote>{line[1:].strip()}</blockquote>"
+      continue
+
+    # हेडिंग्स और सब-हेडिंग्स (रंग और बॉर्डर के साथ)
+    if re.match(r"^[0-9]+\.", line) or any(
+        line.startswith(x)
+        for x in ["📌", "🎯", "⚡", "📖", "💡", "🗳️", "⚖️", "🔍"]
+    ):
+      content_html += f"<h3 class='topic-heading'>{line}</h3>"
+      continue
+
+    # बुलेट पॉइंट्स
+    if line.startswith(("•", "-", "▪", "▫", "*")):
+      content_html += f"<li class='list-p'>{line[1:].strip()}</li>"
+      continue
+
+    # सामान्य पैराग्राफ और बोल्ड टेक्स्ट
+    formatted_line = re.sub(
+        r"\*\*(.*?)\*\*", r"<strong style='color:#0369a1;'>\1</strong>", line
+    )
+    content_html += f"<p class='para-text'>{formatted_line}</p>"
+
+  if in_table:
+    content_html += (
+        f"<div class='table-box'><table>{''.join(table_rows)}</table></div>"
+    )
+
+  img_tag = (
+      f"<div class='img-wrap'><img src='data:image/jpeg;base64,{image_b64}' class='note-img'/></div>"
+      if image_b64
+      else ""
+  )
 
   return f"""<!DOCTYPE html>
 <html lang="hi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{topic}</title>
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f1f5f9; color: #0f172a; padding: 24px 14px; display: flex; justify-content: center; }}
-        .card {{ background: #ffffff; max-width: 800px; width: 100%; padding: 26px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); }}
-        .header {{ border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 16px; }}
-        .header h2 {{ color: #0369a1; margin: 0 0 6px 0; font-size: 1.4rem; }}
-        .meta {{ font-size: 13px; color: #64748b; }}
-        .footer {{ margin-top: 26px; padding: 12px; border-top: 1px dashed #cbd5e1; font-size: 13px; text-align: center; background: #f8fafc; border-radius: 8px; color: #475569; }}
-        .footer a, .meta a {{ color: #0284c7; font-weight: 600; text-decoration: none; }}
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{topic} - सचिन शर्मा</title>
+<style>
+    body {{
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background-color: #0f172a;
+        color: #1e293b;
+        margin: 0;
+        padding: 24px 12px;
+        display: flex;
+        justify-content: center;
+    }}
+    .sheet {{
+        background: #ffffff;
+        max-width: 820px;
+        width: 100%;
+        border-radius: 14px;
+        padding: 28px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }}
+    .top-header {{
+        border-bottom: 3px solid #0284c7;
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+    }}
+    .top-header h2 {{
+        color: #0369a1;
+        margin: 0 0 6px 0;
+        font-size: 1.45rem;
+    }}
+    .author-bar {{
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        font-size: 13.5px;
+        color: #64748b;
+    }}
+    .author-bar a {{
+        color: #0284c7;
+        font-weight: bold;
+        text-decoration: none;
+    }}
+    .img-wrap {{
+        text-align: center;
+        margin: 20px 0;
+    }}
+    .note-img {{
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }}
+    .topic-heading {{
+        color: #075985;
+        border-left: 4px solid #f59e0b;
+        background: #f8fafc;
+        padding: 8px 12px;
+        border-radius: 0 6px 6px 0;
+        margin: 22px 0 10px 0;
+        font-size: 1.15rem;
+    }}
+    .para-text {{
+        line-height: 1.7;
+        margin: 8px 0;
+        font-size: 15.5px;
+    }}
+    .list-p {{
+        margin: 6px 0 6px 20px;
+        line-height: 1.6;
+        color: #334155;
+    }}
+    blockquote {{
+        border-left: 4px solid #0284c7;
+        background: #f0f9ff;
+        padding: 12px 14px;
+        margin: 16px 0;
+        border-radius: 0 8px 8px 0;
+        color: #0369a1;
+        font-weight: 500;
+    }}
+    .table-box {{
+        overflow-x: auto;
+        margin: 16px 0;
+    }}
+    table {{
+        width: 100%;
+        border-collapse: collapse;
+    }}
+    .th-cell {{
+        background: #0284c7;
+        color: #ffffff;
+        padding: 10px 12px;
+        text-align: left;
+    }}
+    .td-cell {{
+        padding: 9px 12px;
+        border: 1px solid #cbd5e1;
+    }}
+    tr:nth-child(even) {{
+        background: #f8fafc;
+    }}
+    .bottom-bar {{
+        margin-top: 30px;
+        padding: 14px;
+        border-top: 1px dashed #cbd5e1;
+        background: #f8fafc;
+        border-radius: 8px;
+        text-align: center;
+        font-size: 13px;
+        color: #475569;
+    }}
+    .bottom-bar a {{
+        color: #0284c7;
+        font-weight: bold;
+        text-decoration: none;
+    }}
+</style>
 </head>
 <body>
-<div class="card">
-    <div class="header">
+<div class="sheet">
+    <div class="top-header">
         <h2>{topic}</h2>
-        <div class="meta">✍️ <strong>सचिन शर्मा</strong> | 🔗 <a href="{CHANNEL_LINK}">@UPSCHTML</a></div>
+        <div class="author-bar">
+            <span>✍️ <strong>निर्माता:</strong> सचिन शर्मा</span>
+            <span>📢 <strong>टेलीग्राम:</strong> <a href="{CHANNEL_LINK}">@UPSCHTML</a></span>
+        </div>
     </div>
-    <div class="content">{content_markup}</div>
-    <div class="footer">🌟 <strong>सचिन शर्मा</strong> | <a href="{CHANNEL_LINK}">टेलीग्राम ग्रुप से जुड़ें</a></div>
+    {img_tag}
+    <div class="main-body">
+        {content_html}
+    </div>
+    <div class="bottom-bar">
+        🌟 <strong>सचिन शर्मा</strong> द्वारा तैयार संकलन | <a href="{CHANNEL_LINK}">यहाँ क्लिक करके ग्रुप से जुड़ें</a>
+    </div>
 </div>
 </body>
 </html>"""
 
 
-# /start कमांड हैंडलर
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  welcome_text = """👋 **नमस्ते!**
-
-मैं आपका **HTML Notes Converter Bot** हूँ।
-👉 मुझे कोई भी `.html` फ़ाइल भेजें, या कोई भी टेक्स्ट/नोट्स यहाँ फॉरवर्ड करें।
-मैं उसमें से टेक्स्ट निकालकर आपके नाम की नई HTML फ़ाइल और पोस्ट तैयार कर दूँगा!"""
-  await update.message.reply_text(welcome_text, parse_mode=ParseMode.MARKDOWN)
-
-
-# फ़ाइल या लंबा टेक्स्ट रिसीव करना
-async def receive_content(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-  msg = update.message
-  extracted_text = ""
-
-  if msg.document:
-    doc = msg.document
-    if not (doc.file_name.endswith(".html") or doc.file_name.endswith(".htm")):
-      await msg.reply_text("कृपया केवल `.html` या `.htm` फ़ाइल ही भेजें।")
-      return ConversationHandler.END
-
-    msg_wait = await msg.reply_text("⏳ फ़ाइल प्रोसेस हो रही है...")
-    tg_file = await doc.get_file()
-    temp_in = f"temp_{doc.file_name}"
-    await tg_file.download_to_drive(temp_in)
-
-    with open(temp_in, "r", encoding="utf-8", errors="ignore") as f:
-      soup = BeautifulSoup(f.read(), "html.parser")
-
-    for tag in soup(["script", "style", "header", "footer", "nav"]):
-      tag.decompose()
-
-    extracted_text = soup.get_text(separator="\n").strip()
-    if os.path.exists(temp_in):
-      os.remove(temp_in)
-    await msg_wait.delete()
-
-  elif msg.text:
-    extracted_text = msg.text.strip()
-
-  if not extracted_text:
-    await msg.reply_text("कोई मान्य टेक्स्ट नहीं मिला।")
-    return ConversationHandler.END
-
-  # ऑटो टॉपिक पहचानना
-  lines = [l.strip() for l in extracted_text.split("\n") if l.strip()]
-  suggested_topic = "UPSC Study Notes"
-  if lines:
-    cleaned = re.sub(r"[📌💡⚡✨🔥📖🎯📝🌪️|━─—_-]", "", lines[0]).strip()
-    if "—" in cleaned:
-      cleaned = cleaned.split("—")[0].strip()
-    suggested_topic = cleaned[:40] if cleaned else "Study Notes"
-
-  context.user_data["raw_text"] = extracted_text
-  context.user_data["suggested_topic"] = suggested_topic
-
-  reply_msg = f"""✅ टेक्स्ट प्राप्त हो गया!
-
-📌 **सुझाया गया विषय:** `{suggested_topic}`
-
-• अगर यही नाम रखना है, तो **1** भेजें।
-• या फिर अपना **नया नाम** लिखकर भेजें।"""
-
-  await msg.reply_text(reply_msg, parse_mode=ParseMode.MARKDOWN)
-  return WAITING_FOR_TOPIC
-
-
-async def set_topic_and_generate(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> int:
-  user_choice = update.message.text.strip()
-  suggested = context.user_data.get("suggested_topic", "Study_Notes")
-  extracted_text = context.user_data.get("raw_text", "")
-
-  final_topic = suggested if user_choice == "1" else user_choice
-  clean_filename = (
-      re.sub(r"[^a-zA-Z0-9\u0900-\u097F]", "_", final_topic)[:30] + ".html"
-  )
-
-  final_html = build_final_html(final_topic, extracted_text)
-  with open(clean_filename, "w", encoding="utf-8") as f:
-    f.write(final_html)
-
-  preview_snippet = "\n".join(
-      [l for l in extracted_text.split("\n") if l.strip()][:10]
-  )
-  branded_caption = f"""📌 **{final_topic}**
-
-{preview_snippet}
-...
-
-━━━━━━━━━━━━━━━━━━━━━
-👤 **सचिन शर्मा**
-📢 **ग्रुप लिंक:** [यहाँ क्लिक करें]({CHANNEL_LINK})
-"""
-
+async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      branded_caption,
-      parse_mode=ParseMode.MARKDOWN,
-      disable_web_page_preview=True,
+      "👋 नमस्ते सचिन भाई!\n\n"
+      "आप कितना भी बड़ा मैसेज, फ़ोटो या HTML फ़ाइल फॉरवर्ड करें। मैं तुरंत एक सुंदर रंगीन HTML फ़ाइल बनाकर भेज दूँगा।"
   )
 
-  with open(clean_filename, "rb") as f:
-    await update.message.reply_document(
-        document=f,
+
+async def handle_any_message(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+  msg = update.message
+  if not msg:
+    return
+
+  raw_text = msg.text or msg.caption or ""
+  image_b64 = None
+
+  # प्रोसेस का मैसेज
+  wait_msg = await msg.reply_text("⏳ नोट्स तैयार हो रहे हैं...")
+
+  # 1. फोटो हैंडलिंग
+  if msg.photo:
+    photo = msg.photo[-1]
+    file_obj = await photo.get_file()
+    temp_img = f"img_{photo.file_unique_id}.jpg"
+    await file_obj.download_to_drive(temp_img)
+    with open(temp_img, "rb") as f:
+      image_b64 = base64.b64encode(f.read()).decode("utf-8")
+    if os.path.exists(temp_img):
+      os.remove(temp_img)
+
+  # 2. HTML डॉक्यूमेंट हैंडलिंग
+  elif msg.document and (
+      msg.document.file_name.endswith(".html")
+      or msg.document.file_name.endswith(".htm")
+  ):
+    doc_file = await msg.document.get_file()
+    temp_doc = f"doc_{msg.document.file_name}"
+    await doc_file.download_to_drive(temp_doc)
+    with open(temp_doc, "r", encoding="utf-8", errors="ignore") as f:
+      soup = BeautifulSoup(f.read(), "html.parser")
+      for t in soup(["script", "style", "nav", "footer", "header"]):
+        t.decompose()
+      raw_text = soup.get_text(separator="\n").strip()
+    if os.path.exists(temp_doc):
+      os.remove(temp_doc)
+
+  if not raw_text.strip():
+    await wait_msg.edit_text("कृपया कोई मान्य टेक्स्ट या फ़ाइल भेजें।")
+    return
+
+  # 3. विषय पहचानना
+  lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+  topic = "UPSC Study Notes"
+  if lines:
+    topic_clean = re.sub(
+        r"[📌💡⚡✨🔥📖🎯📝🌪️🗳️⚖️🔍|━─—_-]", "", lines[0]
+    ).strip()
+    if "—" in topic_clean:
+      topic_clean = topic_clean.split("—")[0].strip()
+    topic = topic_clean[:35] if topic_clean else "Study Notes"
+
+  # 4. रंगीन HTML फ़ाइल तैयार करना
+  html_doc = format_to_colorful_html(topic, raw_text, image_b64)
+  clean_filename = (
+      re.sub(r"[^a-zA-Z0-9\u0900-\u097F]", "_", topic)[:25] + ".html"
+  )
+
+  with open(clean_filename, "w", encoding="utf-8") as f:
+    f.write(html_doc)
+
+  # 5. सीधा HTML फ़ाइल डॉक्यूमेंट भेजना
+  with open(clean_filename, "rb") as send_doc:
+    await msg.reply_document(
+        document=send_doc,
         filename=clean_filename,
-        caption=f"📄 **HTML:** `{final_topic}`\n👤 **सचिन शर्मा**",
-        parse_mode=ParseMode.MARKDOWN,
+        caption=(
+            f"📄 <b>नोट्स तैयार:</b> <code>{topic}</code>\n"
+            f"👤 <b>निर्माता:</b> सचिन शर्मा\n"
+            f"📢 <b>ग्रुप:</b> @UPSCHTML"
+        ),
+        parse_mode=ParseMode.HTML,
     )
+
+  await wait_msg.delete()
 
   if os.path.exists(clean_filename):
     os.remove(clean_filename)
 
-  context.user_data.clear()
-  return ConversationHandler.END
 
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-  context.user_data.clear()
-  await update.message.reply_text("प्रक्रिया रद्द कर दी गई।")
-  return ConversationHandler.END
-
-
-async def web_home(request):
-  return web.Response(text="Bot is running alive 24/7!")
-
-
-async def run_web_server():
+# Render Web Server (24x7 Alive)
+async def run_server():
   app = web.Application()
-  app.router.add_get("/", web_home)
+  app.router.add_get("/", lambda r: web.Response(text="Bot Alive 24/7"))
   runner = web.AppRunner(app)
   await runner.setup()
   port = int(os.environ.get("PORT", 8080))
@@ -202,32 +331,14 @@ async def run_web_server():
 
 
 async def main():
-  await run_web_server()
+  await run_server()
 
   bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-  # /start कमांड हैंडलर जोड़ा गया
-  bot_app.add_handler(CommandHandler("start", start_command))
-
-  # कन्वर्सेशन हैंडलर में टेक्स्ट और डॉक्यूमेंट दोनों जोड़े गए
-  conv_handler = ConversationHandler(
-      entry_points=[
-          MessageHandler(
-              (filters.Document.ALL | filters.TEXT) & (~filters.COMMAND),
-              receive_content,
-          )
-      ],
-      states={
-          WAITING_FOR_TOPIC: [
-              MessageHandler(
-                  filters.TEXT & (~filters.COMMAND), set_topic_and_generate
-              )
-          ]
-      },
-      fallbacks=[CommandHandler("cancel", cancel)],
+  bot_app.add_handler(CommandHandler("start", start_handler))
+  bot_app.add_handler(
+      MessageHandler(filters.ALL & (~filters.COMMAND), handle_any_message)
   )
 
-  bot_app.add_handler(conv_handler)
   await bot_app.initialize()
   await bot_app.start()
   await bot_app.updater.start_polling()
