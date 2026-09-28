@@ -17,9 +17,15 @@ from telegram.ext import (
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 CHANNEL_LINK = "https://t.me/UPSCHTML"
 
+# यूज़र का डेटा जमा करने के लिए मेमोरी
+USER_BUFFERS = {}
+
 
 def format_to_colorful_html(
-    topic: str, raw_text: str, image_b64: str = None
+    topic: str,
+    raw_text: str,
+    image_list: list = None,
+    existing_img_tags: list = None,
 ) -> str:
   lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
   content_html = ""
@@ -27,7 +33,6 @@ def format_to_colorful_html(
   table_rows = []
 
   for line in lines:
-    # टेबल पार्सिंग
     if line.startswith("|") and line.endswith("|"):
       cells = [c.strip() for c in line.split("|")[1:-1]]
       if not in_table:
@@ -51,12 +56,10 @@ def format_to_colorful_html(
       in_table = False
       table_rows = []
 
-    # कोट्स / महत्वपूर्ण लाइन
     if line.startswith(">"):
       content_html += f"<blockquote>{line[1:].strip()}</blockquote>"
       continue
 
-    # हेडिंग्स और सब-हेडिंग्स (रंग और बॉर्डर के साथ)
     if re.match(r"^[0-9]+\.", line) or any(
         line.startswith(x)
         for x in ["📌", "🎯", "⚡", "📖", "💡", "🗳️", "⚖️", "🔍"]
@@ -64,12 +67,10 @@ def format_to_colorful_html(
       content_html += f"<h3 class='topic-heading'>{line}</h3>"
       continue
 
-    # बुलेट पॉइंट्स
     if line.startswith(("•", "-", "▪", "▫", "*")):
       content_html += f"<li class='list-p'>{line[1:].strip()}</li>"
       continue
 
-    # सामान्य पैराग्राफ और बोल्ड टेक्स्ट
     formatted_line = re.sub(
         r"\*\*(.*?)\*\*", r"<strong style='color:#0369a1;'>\1</strong>", line
     )
@@ -80,11 +81,16 @@ def format_to_colorful_html(
         f"<div class='table-box'><table>{''.join(table_rows)}</table></div>"
     )
 
-  img_tag = (
-      f"<div class='img-wrap'><img src='data:image/jpeg;base64,{image_b64}' class='note-img'/></div>"
-      if image_b64
-      else ""
-  )
+  img_markup = ""
+  if image_list:
+    for b64 in image_list:
+      img_markup += f"<div class='img-wrap'><img src='data:image/jpeg;base64,{b64}' class='note-img'/></div>"
+
+  if existing_img_tags:
+    for src in existing_img_tags:
+      img_markup += (
+          f"<div class='img-wrap'><img src='{src}' class='note-img'/></div>"
+      )
 
   return f"""<!DOCTYPE html>
 <html lang="hi">
@@ -134,13 +140,13 @@ def format_to_colorful_html(
     }}
     .img-wrap {{
         text-align: center;
-        margin: 20px 0;
+        margin: 18px 0;
     }}
     .note-img {{
         max-width: 100%;
         height: auto;
         border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
     }}
     .topic-heading {{
         color: #075985;
@@ -217,7 +223,7 @@ def format_to_colorful_html(
             <span>📢 <strong>टेलीग्राम:</strong> <a href="{CHANNEL_LINK}">@UPSCHTML</a></span>
         </div>
     </div>
-    {img_tag}
+    {img_markup}
     <div class="main-body">
         {content_html}
     </div>
@@ -229,38 +235,62 @@ def format_to_colorful_html(
 </html>"""
 
 
+# /start कमांड
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "👋 नमस्ते सचिन भाई!\n\n"
-      "आप कितना भी बड़ा मैसेज, फ़ोटो या HTML फ़ाइल फॉरवर्ड करें। मैं तुरंत एक सुंदर रंगीन HTML फ़ाइल बनाकर भेज दूँगा।"
+      "👋 **नमस्ते सचिन भाई!**\n\n"
+      "👉 बड़े नोट्स बनाने के लिए:\n"
+      "1. पहले **/html** भेजें।\n"
+      "2. फिर जितने चाहे मैसेज, टुकड़े या फ़ाइलें भेजते रहें।\n"
+      "3. अंत में **/sachin** भेजें, आपकी एक ही संपूर्ण HTML फ़ाइल बन जाएगी!"
   )
 
 
-async def handle_any_message(
+# 1. /html कमांड - संग्रह शुरू करना
+async def start_html_session(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
-  msg = update.message
-  if not msg:
+  user_id = update.effective_user.id
+  USER_BUFFERS[user_id] = {
+      "active": True,
+      "texts": [],
+      "images": [],
+      "existing_imgs": [],
+  }
+  await update.message.reply_text(
+      "🟢 **सत्र शुरू हो गया है!**\n\n"
+      "अब आप अपने नोट्स के सभी टुकड़े, फॉरवर्डेड मैसेज या फ़ाइलें भेजें।\n"
+      "जब सारा कंटेंट भेज लें, तब **/sachin** लिखकर सेंड करें।"
+  )
+
+
+# 2. बीच के सभी मैसेज और टुकड़ों को जोड़ना
+async def collect_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  user_id = update.effective_user.id
+  session = USER_BUFFERS.get(user_id)
+
+  # यदि /html शुरू नहीं है तो कुछ न करें
+  if not session or not session.get("active"):
+    await update.message.reply_text(
+        "💡 नए नोट्स बनाने के लिए पहले **/html** कमांड भेजें।"
+    )
     return
 
+  msg = update.message
   raw_text = msg.text or msg.caption or ""
-  image_b64 = None
 
-  # प्रोसेस का मैसेज
-  wait_msg = await msg.reply_text("⏳ नोट्स तैयार हो रहे हैं...")
-
-  # 1. फोटो हैंडलिंग
+  # इमेज संभालना
   if msg.photo:
     photo = msg.photo[-1]
     file_obj = await photo.get_file()
     temp_img = f"img_{photo.file_unique_id}.jpg"
     await file_obj.download_to_drive(temp_img)
     with open(temp_img, "rb") as f:
-      image_b64 = base64.b64encode(f.read()).decode("utf-8")
+      session["images"].append(base64.b64encode(f.read()).decode("utf-8"))
     if os.path.exists(temp_img):
       os.remove(temp_img)
 
-  # 2. HTML डॉक्यूमेंट हैंडलिंग
+  # HTML फ़ाइल संभालना
   elif msg.document and (
       msg.document.file_name.endswith(".html")
       or msg.document.file_name.endswith(".htm")
@@ -270,18 +300,48 @@ async def handle_any_message(
     await doc_file.download_to_drive(temp_doc)
     with open(temp_doc, "r", encoding="utf-8", errors="ignore") as f:
       soup = BeautifulSoup(f.read(), "html.parser")
+      for img in soup.find_all("img"):
+        src = img.get("src")
+        if src:
+          session["existing_imgs"].append(src)
+      for tr in soup.find_all("tr"):
+        row_text = (
+            " | ".join([td.get_text().strip() for td in tr.find_all(["td", "th"])])
+        )
+        if row_text:
+          tr.replace_with(f"| {row_text} |\n")
       for t in soup(["script", "style", "nav", "footer", "header"]):
         t.decompose()
       raw_text = soup.get_text(separator="\n").strip()
     if os.path.exists(temp_doc):
       os.remove(temp_doc)
 
-  if not raw_text.strip():
-    await wait_msg.edit_text("कृपया कोई मान्य टेक्स्ट या फ़ाइल भेजें।")
+  if raw_text:
+    session["texts"].append(raw_text)
+
+
+# 3. /sachin कमांड - सबको मिलाकर एक HTML फ़ाइल बनाना
+async def finalize_and_generate(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+  user_id = update.effective_user.id
+  session = USER_BUFFERS.get(user_id)
+
+  if not session or not session.get("texts"):
+    await update.message.reply_text(
+        "❌ कोई नोट्स नहीं मिले। पहले **/html** भेजकर कुछ टेक्स्ट या फ़ाइलें भेजें।"
+    )
     return
 
-  # 3. विषय पहचानना
-  lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+  wait_msg = await update.message.reply_text(
+      "⏳ सभी टुकड़ों को जोड़कर एक संपूर्ण HTML फ़ाइल बनाई जा रही है..."
+  )
+
+  # सभी टुकड़ों को क्रम से एक साथ जोड़ना
+  combined_text = "\n\n".join(session["texts"])
+
+  # मुख्य शीर्षक निकालना
+  lines = [l.strip() for l in combined_text.split("\n") if l.strip()]
   topic = "UPSC Study Notes"
   if lines:
     topic_clean = re.sub(
@@ -291,8 +351,10 @@ async def handle_any_message(
       topic_clean = topic_clean.split("—")[0].strip()
     topic = topic_clean[:35] if topic_clean else "Study Notes"
 
-  # 4. रंगीन HTML फ़ाइल तैयार करना
-  html_doc = format_to_colorful_html(topic, raw_text, image_b64)
+  # HTML फ़ाइल बनाना
+  html_doc = format_to_colorful_html(
+      topic, combined_text, session["images"], session["existing_imgs"]
+  )
   clean_filename = (
       re.sub(r"[^a-zA-Z0-9\u0900-\u097F]", "_", topic)[:25] + ".html"
   )
@@ -300,13 +362,12 @@ async def handle_any_message(
   with open(clean_filename, "w", encoding="utf-8") as f:
     f.write(html_doc)
 
-  # 5. सीधा HTML फ़ाइल डॉक्यूमेंट भेजना
   with open(clean_filename, "rb") as send_doc:
-    await msg.reply_document(
+    await update.message.reply_document(
         document=send_doc,
         filename=clean_filename,
         caption=(
-            f"📄 <b>नोट्स तैयार:</b> <code>{topic}</code>\n"
+            f"📄 <b>संपूर्ण HTML नोट्स तैयार:</b> <code>{topic}</code>\n"
             f"👤 <b>निर्माता:</b> सचिन शर्मा\n"
             f"📢 <b>ग्रुप:</b> @UPSCHTML"
         ),
@@ -318,8 +379,11 @@ async def handle_any_message(
   if os.path.exists(clean_filename):
     os.remove(clean_filename)
 
+  # मेमोरी साफ़ करना
+  USER_BUFFERS.pop(user_id, None)
 
-# Render Web Server (24x7 Alive)
+
+# 24x7 Web Server
 async def run_server():
   app = web.Application()
   app.router.add_get("/", lambda r: web.Response(text="Bot Alive 24/7"))
@@ -335,8 +399,10 @@ async def main():
 
   bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
   bot_app.add_handler(CommandHandler("start", start_handler))
+  bot_app.add_handler(CommandHandler("html", start_html_session))
+  bot_app.add_handler(CommandHandler("sachin", finalize_and_generate))
   bot_app.add_handler(
-      MessageHandler(filters.ALL & (~filters.COMMAND), handle_any_message)
+      MessageHandler(filters.ALL & (~filters.COMMAND), collect_messages)
   )
 
   await bot_app.initialize()
