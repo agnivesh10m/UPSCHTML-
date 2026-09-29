@@ -4,7 +4,6 @@ import time
 import asyncio
 import base64
 import sqlite3
-import io
 from datetime import datetime, timedelta
 from aiohttp import web
 from bs4 import BeautifulSoup
@@ -24,13 +23,13 @@ from telegram.ext import (
 
 # ================= CONFIGURATION =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 ADMIN_IDS = [1745425595, 7850454902]
 CHANNEL_LINK = "https://t.me/UPSCHTML"
 CHANNEL_NAME = "@UPSCHTML"
 AUTHOR_NAME = "सचिन शर्मा"
 
-if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_HERE":
+if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 WAITING_FOR_NAME = 1
@@ -162,7 +161,7 @@ def get_all_users():
     conn.close()
     return [r[0] for r in rows]
 
-# ================= HTML BUILDER & SANITIZER =================
+# ================= HTML BUILDER =================
 def sanitize_and_rebrand_html(soup: BeautifulSoup, custom_title: str = None) -> None:
     for a in soup.find_all('a'):
         href = a.get('href', '')
@@ -205,7 +204,7 @@ def sanitize_and_rebrand_html(soup: BeautifulSoup, custom_title: str = None) -> 
 def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list = None) -> str:
     lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
     sections = []
-    current_sec_title = "भूमिका एवं सामान्य अवलोकन"
+    current_sec_title = "भूमिका एवं अवलोकन"
     current_sec_lines = []
 
     for line in lines:
@@ -262,7 +261,7 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
                 in_pipe_table = False
                 pipe_table_rows = []
 
-            # 2-कॉलम टेबल ऑटो-पार्सर
+            # 2-कॉलम टेबल पार्सर
             is_table_header = (
                 (line in ["चरण", "विषय", "क्षेत्र", "तकनीक", "प्रावधान", "Article", "घटक", "आयाम", "क्रम"]) 
                 and (i + 1 < n)
@@ -497,10 +496,23 @@ document.getElementById('searchBox').addEventListener('input', function() {{
 </body>
 </html>"""
 
-# ================= AI GENERATION (ROBUST NO-ERROR) =================
+# ================= AI GENERATION (FIXED & ADAPTIVE) =================
 def call_gemini_safely(prompt: str) -> str:
-    # Model fallback list to avoid 404
-    candidate_models = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-pro"]
+    api_k = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_k:
+        raise Exception("GEMINI_API_KEY Render Environment में सेट नहीं है।")
+
+    genai.configure(api_key=api_k)
+    
+    # 404 त्रुटि से बचने के लिए मॉडल्स की सूची
+    candidate_models = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-pro",
+        "gemini-pro"
+    ]
+    
+    last_err = None
     for m_name in candidate_models:
         try:
             model = genai.GenerativeModel(m_name)
@@ -508,20 +520,21 @@ def call_gemini_safely(prompt: str) -> str:
             if resp and resp.text:
                 return resp.text
         except Exception as e:
-            print(f"Model {m_name} failed: {e}")
+            last_err = e
             continue
-    raise Exception("सभी AI मॉडल्स अनुपलब्ध हैं। कृपया API Key की जाँच करें।")
+            
+    raise Exception(f"AI कनेक्ट नहीं हो सका: {last_err}")
 
 async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_authorized(user_id):
-        await update.message.reply_text("⛔ यह AI जनरेशन फीचर केवल सचिन शर्मा एवं अधिकृत मेंबर्स के लिए है।")
+        await update.message.reply_text("⛔ यह फीचर केवल अधिकृत सदस्यों के लिए है।")
         return
 
     if not context.args:
         await update.message.reply_text(
             "💡 <b>उपयोग का तरीका:</b>\n"
-            "<code>/generate 29 September 2026</code> (बिना ब्रैकेट के)\n"
+            "<code>/generate 29 September 2026</code>\n"
             "<code>/generate all 29 September 2026</code>\n"
             "<code>/generate AI in Disaster Management</code>",
             parse_mode=ParseMode.HTML
@@ -532,7 +545,7 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_msg = await update.message.reply_text(
         f"🤖 <b>AI रिसर्च जारी है...</b>\n\n"
         f"विषय: <code>{query}</code>\n"
-        "GS-1, 2, 3, 4 के सभी महत्वपूर्ण आयाम व 2-कॉलम सारणी तैयार की जा रही है...",
+        "GS-1, 2, 3, 4 के सभी आयाम व 2-कॉलम सारणी तैयार की जा रही है...",
         parse_mode=ParseMode.HTML
     )
 
@@ -615,7 +628,6 @@ async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_query = " ".join(context.args).strip()
     wait_msg = await update.message.reply_text("🤔 UPSC परिप्रेक्ष्य में विश्लेषण और 4 अभ्यास प्रश्न तैयार हो रहे हैं...")
 
-    # अप्रासंगिक/फ़ालतू सवाल फ़िल्टर
     non_upsc_triggers = ["मौसम कैसा है", "गाना सुनाओ", "तुम कौन हो", "मजाक", "शायरी", "लव", "गर्लफ्रेंड"]
     if any(t in user_query.lower() for t in non_upsc_triggers):
         await wait_msg.edit_text(
@@ -636,7 +648,6 @@ async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
         
-        # टेलीग्राम 4096 सीमा सुरक्षा
         if len(reply_text) > 4000:
             parts = [reply_text[i:i+3900] for i in range(0, len(reply_text), 3900)]
             await wait_msg.delete()
@@ -1007,7 +1018,7 @@ async def execute_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await status_msg.edit_text(report, parse_mode=ParseMode.HTML)
     return ConversationHandler.END
 
-# ================= PDF & TEXT INGESTION =================
+# ================= SMART FORWARD / PDF / TEXT INGESTION =================
 async def start_html_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_authorized(user_id):
@@ -1021,7 +1032,7 @@ async def start_html_session(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "html_soups": [],
         "suggested_topic": "UPSC_Notes",
     }
-    await update.message.reply_text("🟢 <b>सत्र चालू!</b> जितनी चाहें PDF, HTML या टेक्स्ट भेजें, फिर <code>/sachin</code> भेजें।", parse_mode=ParseMode.HTML)
+    await update.message.reply_text("🟢 <b>सत्र चालू!</b> जितनी चाहें PDF, HTML या लंबे फॉरवर्डेड मैसेज भेजें, फिर <code>/sachin</code> भेजें।", parse_mode=ParseMode.HTML)
 
 async def collect_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -1049,7 +1060,6 @@ async def collect_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         doc_f = await msg.document.get_file()
         fname = msg.document.file_name.lower()
         
-        # PDF फाइल से डेटा निकालना
         if fname.endswith(".pdf"):
             t_pdf = f"doc_{msg.document.file_name}"
             await doc_f.download_to_drive(t_pdf)
@@ -1069,7 +1079,6 @@ async def collect_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if os.path.exists(t_pdf):
                 os.remove(t_pdf)
 
-        # HTML फाइल से डेटा निकालना
         elif fname.endswith(".html") or fname.endswith(".htm"):
             t_doc = f"doc_{msg.document.file_name}"
             await doc_f.download_to_drive(t_doc)
@@ -1109,14 +1118,15 @@ async def ask_for_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await update.message.reply_text("❌ कोई सामग्री नहीं मिली। पहले <code>/html</code> भेजें।", parse_mode=ParseMode.HTML)
         return ConversationHandler.END
 
-    # AI द्वारा ऑटो-टाइटल जनरेट करना अगर बहुत बड़ा डेटा हो
     suggested = session.get("suggested_topic", "UPSC_Notes")
+    
+    # अगर लंबा टेक्स्ट है तो AI से ऑटो-टाइटल सुझाव निकालना
     if session.get("texts") and suggested == "UPSC_Notes":
         try:
-            head_sample = session["texts"][0][:500]
+            head_sample = session["texts"][0][:400]
             auto_title = await asyncio.to_thread(
                 call_gemini_safely,
-                f"इस टेक्स्ट के लिए UPSC नोट्स हेतु केवल 4 से 6 शब्दों का उपयुक्त और साफ़ हिंदी शीर्षक दें: '{head_sample}'"
+                f"इस यूपीएससी अध्ययन सामग्री के लिए केवल 4 से 6 शब्दों का उपयुक्त और साफ़ हिंदी शीर्षक दें: '{head_sample}'"
             )
             suggested = re.sub(r'[^\w\s-]', '', auto_title).strip()[:35]
         except Exception:
@@ -1146,7 +1156,7 @@ async def generate_final_file(update: Update, context: ContextTypes.DEFAULT_TYPE
     safe_topic = re.sub(r'[^a-zA-Z0-9\u0900-\u097F]', '_', final_topic)[:30]
     clean_filename = f"{safe_topic}.html"
 
-    wait_msg = await update.message.reply_text("⏳ आपकी रंगीन व इंटरैक्टिव HTML फ़ाइल तैयार हो रही है...")
+    wait_msg = await update.message.reply_text("⏳ AI सामग्री का गहन विश्लेषण कर रहा है व सारणी तैयार कर रहा है...")
 
     final_output_html = ""
     if session["html_soups"]:
@@ -1155,7 +1165,23 @@ async def generate_final_file(update: Update, context: ContextTypes.DEFAULT_TYPE
         final_output_html = str(main_soup)
     else:
         combined_text = "\n\n".join(session["texts"])
-        final_output_html = build_interactive_dashboard_html(final_topic, combined_text, session["images"])
+        
+        # अगर टेक्स्ट बड़ा है तो AI से इसे व्यवस्थित व 2-कॉलम सारणी में ढलवाना
+        try:
+            ai_struct_prompt = f"""
+आप UPSC कंटेंट एक्सपर्ट हैं। नीचे दिए गए टेक्स्ट को व्यवस्थित, परीक्षा-उपयोगी और आकर्षक रूप दें:
+"{combined_text[:3500]}"
+
+नियम:
+1. मुख्य हेडिंग्स बनाएं (1. संदर्भ, 2. मुख्य बिंदु, 3. चुनौतियाँ, 4. आगे की राह, 5. Prelims Facts)।
+2. जहाँ भी तुलना, चरण या वर्गीकरण हो, 2-कॉलम टेबल प्रारूप में लिखें (पहली पंक्ति हेडर जैसे 'चरण' और 'विवरण')।
+3. भाषा हिंदी रखें।
+"""
+            enhanced_text = await asyncio.to_thread(call_gemini_safely, ai_struct_prompt)
+        except Exception:
+            enhanced_text = combined_text
+
+        final_output_html = build_interactive_dashboard_html(final_topic, enhanced_text, session["images"])
 
     save_to_archive("daily", final_topic, clean_filename, final_output_html)
 
@@ -1205,16 +1231,13 @@ async def main():
     await run_server()
     bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # AI जनरेशन व डाउट सॉल्विंग
     bot_app.add_handler(CommandHandler("generate", ai_generate_cmd))
     bot_app.add_handler(CommandHandler("ask", ask_doubt_cmd))
 
-    # मेंबरशिप मैनेजमेंट (एडमिन)
     bot_app.add_handler(CommandHandler("adduser", add_user_cmd))
     bot_app.add_handler(CommandHandler("removeuser", remove_user_cmd))
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd))
 
-    # पब्लिक आर्काइव
     bot_app.add_handler(CommandHandler("start", start_handler))
     bot_app.add_handler(CommandHandler("help", help_handler))
     bot_app.add_handler(CommandHandler("daily", daily_cmd))
