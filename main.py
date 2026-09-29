@@ -33,7 +33,6 @@ WAITING_BROADCAST_MSG = 3
 USER_BUFFERS = {}
 CONTACT_SESSIONS = {}
 
-# ================= DATABASE SETUP =================
 DB_PATH = "upsc_bot.db"
 
 
@@ -60,11 +59,189 @@ def init_db():
             html_content TEXT
         )
     """)
+
+  # डेटाबेस चेक: अगर खाली है तो पूरा वास्तविक UPSC कंटेंट इंजेक्ट करना
+  c.execute("SELECT COUNT(*) FROM archive")
+  if c.fetchone()[0] == 0:
+    # 1. 29 सितंबर 2026 (Kashmir Eurasian Gateway)
+    doc_29 = build_interactive_dashboard_html(
+        "Kashmir as India’s Gateway to Eurasian Opportunity",
+        """संदर्भ: हालिया विश्लेषण में जम्मू-कश्मीर और लद्दाख को केवल सुरक्षा-केंद्रित क्षेत्र के बजाय भारत और मध्य एशिया/यूरेशिया के बीच आर्थिक एवं कनेक्टिविटी सेतु के रूप में विकसित करने की संभावना पर चर्चा की गई है।
+1. ऐतिहासिक पृष्ठभूमि — Kashmir as a Crossroads
+• कश्मीर और लद्दाख ऐतिहासिक रूप से Silk Route के महत्वपूर्ण हिस्से रहे हैं।
+• इन मार्गों ने दक्षिण एशिया को तिब्बत और मध्य एशिया से जोड़ा।
+• व्यापार के साथ-साथ विचारों, संस्कृति, साहित्य और शिल्प का भी आदान-प्रदान हुआ।
+• 1947 के बाद विभाजन और LoC/LAC से जुड़ी परिस्थितियों ने पारंपरिक trans-Himalayan routes को बाधित किया।
+2. क्यों महत्वपूर्ण है Eurasian Connectivity?
+• भारत के लिए Central Asia महत्वपूर्ण है: ऊर्जा + Critical Minerals + व्यापार + रणनीतिक सुरक्षा।
+• Connectivity → Trucking → Warehousing → Cold Chains → Trade Finance → Local Employment
+• कश्मीर के स्थानीय उत्पादों (Horticulture, Saffron, Handicrafts) को यूरेशियाई बाजारों तक सीधी पहुंच मिल सकती है।
+3. प्रमुख सामरिक चुनौतियाँ
+• पाकिस्तान और चीन से जुड़ी कूटनीतिक और क्षेत्रीय सीमा संवेदनशीलताएं (Territorial Sensitivities)।
+• हिमालयी क्षेत्र का कठिन भूगोल, भारी बर्फबारी, भूस्खलन और भूकंपीय संवेदनशीलता।
+• सीमा-पार सुरक्षा जोखिम: नशीले पदार्थों की तस्करी और सीमा पार घुसपैठ की आशंकाएं।
+4. आगे की राह (Way Forward)
+• Phased Pilot Corridors: पहले सीमित और नियंत्रित व्यापारिक गलियारे शुरू किए जाएं।
+• Smart Border Management: RFID ट्रैकिंग और नॉन-इंट्रूसीव कार्गो स्कैनर का उपयोग।
+• SCO (शंघाई सहयोग संगठन) जैसे बहुपक्षीय मंचों पर क्षेत्रीय कनेक्टिविटी संवाद।
+• चाबहार बंदरगाह और INSTC (International North-South Transport Corridor) के साथ समेकन।
+📌 Prelims Facts
+• Historic Silk Route संपर्क: कश्मीर व लद्दाख
+• वैकल्पिक भारतीय पहलें: Chabahar Port + INSTC
+• संबंधित बहुपक्षीय संगठन: SCO (Shanghai Cooperation Organisation)
+📝 Mains Question — GS-II
+"भारत के लिए जम्मू-कश्मीर और लद्दाख को यूरेशियाई कनेक्टिविटी गेटवे के रूप में विकसित करने की संभावनाओं और सामरिक चुनौतियों का परीक्षण कीजिए।" (250 शब्द)""",
+    )
+
+    # 2. 28 सितंबर 2026 (Right to Vote & EC)
+    doc_28 = build_interactive_dashboard_html(
+        "भारत में मतदान का अधिकार ও ECI सुधार",
+        """संदर्भ: सितंबर 2026 में electoral-roll management और ECI की कार्यप्रणाली को लेकर उठी चिंताओं के बीच यह बहस तेज हुई है कि क्या मतदान के अधिकार को मौलिक अधिकार बनाया जाना चाहिए।
+1. भारत में Right to Vote की वर्तमान संवैधानिक स्थिति
+• संविधान के अनुच्छेद 326 (Article 326) के तहत वयस्क मताधिकार (Universal Adult Suffrage) का प्रावधान है।
+• Right to Vote संविधान के Part III में प्रत्यक्ष मौलिक अधिकार नहीं है, बल्कि यह एक संवैधानिक एवं विधिक (Statutory) अधिकार है।
+• 61वें संविधान संशोधन अधिनियम, 1988 द्वारा मतदान की आयु 21 वर्ष से घटाकर 18 वर्ष की गई थी।
+2. Supreme Court का दृष्टिकोण (Kuldeep Nayar Case 2006)
+• 5-जज संविधान पीठ ने स्पष्ट किया कि मतदान का अधिकार संसद द्वारा बनाए गए कानूनों (जैसे लोक प्रतिनिधित्व अधिनियम, 1951) द्वारा विनियमित होता है।
+• मत देने का अधिकार केवल अभिव्यक्ति का साधन मात्र नहीं बल्कि स्वतंत्र वैधानिक विकल्प है।
+3. Fundamental Right बनाने के पक्ष व विपक्ष
+• पक्ष: मजबूत Constitutional Protection और मनमाने तरीके से नाम कटने से सुरक्षा।
+• विपक्ष: Electoral roll management में अत्यधिक न्यायिक हस्तक्षेप (Judicial Litigation) की संभावना।
+• अनुच्छेद 329(b) चुनावी मामलों में अदालतों के हस्तक्षेप पर सीमा तय करता है।
+📌 महत्वपूर्ण Constitutional Articles
+• Article 19(1)(a) → अभिव्यक्ति की स्वतंत्रता
+• Article 324 → निर्वाचन आयोग का अधीक्षण, निदेशन और नियंत्रण
+• Article 326 → वयस्क मताधिकार के आधार पर चुनाव
+• Article 329(b) → निर्वाचन संबंधी मामलों में न्यायालयों के हस्तक्षेप का वर्जन
+🎯 संभावित Prelims MCQ
+प्रश्न: भारत में मतदान के अधिकार के संबंध में निम्नलिखित कथनों पर विचार कीजिए:
+1. यह संविधान के भाग III के अंतर्गत एक मौलिक अधिकार है।
+2. कुलदीप नायर बनाम भारत संघ (2006) में इसे वैधानिक अधिकार माना गया था।
+उत्तर: केवल 2 सही है।""",
+    )
+
+    # 3. 27 सितंबर 2026 (Western Ghats ESA & UNGA)
+    doc_27 = build_interactive_dashboard_html(
+        "UPSC Daily Current Affairs — Western Ghats ESA & UNGA",
+        """1. कर्नाटक द्वारा पश्चिमी घाट ESA मसौदे की अस्वीकृति
+• कर्नाटक विधानमंडल ने पश्चिमी घाट के 20,668 वर्ग किमी क्षेत्र को Ecologically Sensitive Area (ESA) घोषित करने वाली केंद्र की 7वीं मसौदा अधिसूचना को खारिज किया।
+• राज्य ने सेटेलाइट डेटा के बजाय ज़मीनी भौतिक सर्वेक्षण (Ground-truthing) हेतु एक वर्ष का समय माँगा।
+• कस्तूरीरंगन समिति (2013) ने 37% क्षेत्र को ESA प्रस्तावित किया था, जबकि माधव गाडगिल समिति (2011) ने 64% क्षेत्र को संरक्षण में लाने की सिफारिश की थी।
+• पश्चिमी घाट विश्व का प्रमुख जैव-विविधता हॉटस्पॉट (Biodiversity Hotspot) और यूनेस्को विश्व धरोहर स्थल है।
+2. विदेश मंत्री का संयुक्त राष्ट्र महासभा (UNGA 81st Session) में संबोधन
+• EAM एस. जयशंकर ने सीमा-पार आतंकवाद और संयुक्त राष्ट्र सुरक्षा परिषद (UNSC) सुधारों पर भारत का रुख स्पष्ट किया।
+• UNGA के 81वें सत्र की अध्यक्षता बांग्लादेश द्वारा की गई।
+3. अमेरिकी-चीनी शिखर वार्ता एवं AI Dialogue
+• अमेरिका और चीन के मध्य $30 बिलियन के टैरिफ में कटौती तथा AI राष्ट्रीय सुरक्षा जोखिमों पर द्विपक्षीय संवाद पर सहमति।
+4. न्यायिक निर्णय: POCSO Act बनाम Personal Law
+• उच्च न्यायालय ने स्पष्ट किया कि POCSO Act, 2012 के बाल संरक्षण प्रावधान किसी भी पर्सनल लॉ से ऊपर हैं और इस कानून से कोई धार्मिक छूट नहीं दी जा सकती।
+📌 5-Minute Rapid Prelims Facts
+• पश्चिमी घाट से जुड़े 6 राज्य: गुजरात, महाराष्ट्र, गोवा, कर्नाटक, केरल, तमिलनाडु
+• भारत का आर्कटिक अनुसंधान केंद्र: हिमाद्री (स्वालबार्ड, नॉर्वे)
+• स्टेट डिजास्टर रिस्पांस फंड (SDRF): सामान्य राज्यों हेतु केंद्र-राज्य अनुपात 75:25 होता है।""",
+    )
+
+    # 4. मासिक एवं वार्षिक कंपाइलेशन
+    doc_monthly = build_interactive_dashboard_html(
+        "UPSC Monthly Current Affairs Digest — September 2026",
+        """📚 UPSC मासिक संकलन — सितंबर 2026 (सम्पूर्ण माह का सार)
+1. राजव्यवस्था एवं संविधान (Polity & Governance — GS-II)
+• निर्वाचन आयोग में निर्णय प्रक्रिया एवं स्वायत्तता: अनुच्छेद 324 और CEC Act 2023 की समीक्षा।
+• मतदान का अधिकार: विधिक बनाम मौलिक अधिकार की बहस (अनुच्छेद 326)।
+• मध्यस्थता अधिनियम (Mediation Act, 2023) एवं अनुच्छेद 142 के तहत मुकदमों का समाधान।
+2. अंतर्राष्ट्रीय संबंध एवं कूटनीति (International Relations — GS-II)
+• UNGA का 81वां सत्र: भारत की बहुपक्षीय प्राथमिकताओं और सीमा-पार आतंकवाद पर प्रहार।
+• यूरेशियाई कनेक्टिविटी गलियारा: सिल्क रूट, SCO और INSTC के परिप्रेक्ष्य में कश्मीर-लद्दाख की भूमिका।
+• आर्कटिक भू-राजनीति: पिघलती बर्फ, नए नौवहन मार्ग और भारत की आर्कटिक नीति 2022।
+3. पर्यावरण एवं पारिस्थितिकी (Environment & Ecology — GS-III)
+• पश्चिमी घाट पारिस्थितिकी संवेदी क्षेत्र (ESA): कस्तूरीरंगन बनाम गाडगिल रिपोर्ट विवाद।
+• महाराष्ट्र में सूखा घोषणा: SDRF/NDRF आवंटन एवं जलवायु-अनुकूल कृषि की आवश्यकता।
+4. विज्ञान एवं प्रौद्योगिकी (Sci & Tech — GS-III)
+• ड्रग डिस्कवरी में रासायनिक नवाचार: Skeletal Editing और C-to-N Atom Swap तकनीक।
+• Small Modular Reactors (SMRs): परमाणु ऊर्जा और नागरिक रिएक्टर सहयोग।""",
+    )
+
+    doc_yearly = build_interactive_dashboard_html(
+        "UPSC Annual Prelims & Mains Compendium 2026",
+        """🏛️ UPSC Civil Services Annual Compendium 2026 (PT-365 Style)
+1. मास्टर रिवीजन: संविधान एवं शासन (GS-II)
+• सभी प्रमुख संवैधानिक पीठ के ऐतिहासिक निर्णय और अनुच्छेदों का समेकन।
+• स्वायत्त संस्थाओं (ECI, UPSC, CAG) से संबंधित न्यायिक व्याख्याएं।
+2. मास्टर रिवीजन: पर्यावरण एवं आपदा प्रबंधन (GS-III)
+• भारत के सभी जैव-विविधता हॉटस्पॉट, राष्ट्रीय उद्यान एवं रामसर आर्द्रभूमियां।
+• COP सम्मेलन एवं वैश्विक जलवायु परिवर्तन संधियाँ।
+3. मास्टर रिवीजन: अंतर्राष्ट्रीय संबंध एवं चोकपॉइंट्स
+• महत्वपूर्ण वैश्विक समुद्री चोकपॉइंट्स: Strait of Hormuz, Malacca, Bab-el-Mandeb।
+• भारत के द्विपक्षीय व बहुपक्षीय रणनीतिक समझौते।""",
+    )
+
+    samples = [
+        (
+            "daily",
+            "2026-09-29",
+            "September 2026",
+            "2026",
+            "Kashmir as India’s Gateway to Eurasian Opportunity",
+            "Kashmir_Eurasian_Gateway_29Sep.html",
+            doc_29,
+        ),
+        (
+            "daily",
+            "2026-09-28",
+            "September 2026",
+            "2026",
+            "भारत में मतदान का अधिकार ও ECI सुधार",
+            "Right_To_Vote_ECI_28Sep.html",
+            doc_28,
+        ),
+        (
+            "daily",
+            "2026-09-27",
+            "September 2026",
+            "2026",
+            "Western Ghats ESA & UNGA 81st Session",
+            "Western_Ghats_UNGA_27Sep.html",
+            doc_27,
+        ),
+        (
+            "weekly",
+            "2026-09-28",
+            "September 2026",
+            "2026",
+            "Weekly Current Affairs (21–28 September 2026)",
+            "Weekly_Sep_Week4_2026.html",
+            doc_28,
+        ),
+        (
+            "monthly",
+            "2026-09-29",
+            "September 2026",
+            "2026",
+            "UPSC Monthly Digest — September 2026",
+            "UPSC_Monthly_September_2026.html",
+            doc_monthly,
+        ),
+        (
+            "yearly",
+            "2026-09-01",
+            "September 2026",
+            "2026",
+            "UPSC Annual Compendium 2026",
+            "UPSC_Yearly_Compendium_2026.html",
+            doc_yearly,
+        ),
+    ]
+
+    c.executemany(
+        """
+            INSERT INTO archive (period, date_str, month_str, year_str, topic, filename, html_content)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        samples,
+    )
+
   conn.commit()
   conn.close()
-
-
-init_db()
 
 
 def register_user(user_id, username, first_name):
@@ -551,14 +728,13 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/weekly</code> — सप्ताह चुनकर नोट्स देखें\n"
         "• <code>/monthly</code> — महीना चुनकर पत्रिका देखें\n"
         "• <code>/yearly</code> — साल चुनकर नोट्स देखें\n"
-        "• <code>/owner</code> — छात्रों के सीधे संदेश प्राप्त करें"
+        "• <code>/owner</code> — सीधे छात्रों के संदेश प्राप्त करें"
     )
   else:
     msg = (
         f"👋 <b>नमस्ते {user.first_name}!</b>\n\n"
         "📚 <b>UPSC HTML Notes Portal में आपका स्वागत है!</b>\n\n"
-        "आप किसी भी दिन, महीने या साल के नोट्स बटन पर क्लिक करके तुरंत प्राप्त"
-        " कर सकते हैं:\n\n"
+        "दैनिक, साप्ताहिक और मासिक नोट्स के लिए नीचे दिए कमांड चलाएं:\n\n"
         "📅 <b>दैनिक नोट्स:</b> <code>/daily</code>\n"
         "🗓️ <b>साप्ताहिक नोट्स:</b> <code>/weekly</code>\n"
         "📁 <b>मासिक पत्रिका:</b> <code>/monthly</code>\n"
@@ -595,10 +771,7 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
   rows = get_archive_list("daily", limit=6)
 
   if not rows:
-    await update.message.reply_text(
-        "ℹ️ अभी कोई दैनिक नोट्स उपलब्ध नहीं हैं। जैसे ही अपलोड होंगे, यहाँ सूची"
-        " आ जाएगी।"
-    )
+    await update.message.reply_text("ℹ️ अभी कोई दैनिक नोट्स उपलब्ध नहीं हैं।")
     return
 
   keyboard = []
@@ -622,10 +795,7 @@ async def monthly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
   rows = get_archive_list("monthly", limit=6)
 
   if not rows:
-    await update.message.reply_text(
-        "ℹ️ अभी कोई मासिक नोट्स उपलब्ध नहीं हैं। जैसे ही अपलोड होंगे, यहाँ सूची"
-        " आ जाएगी।"
-    )
+    await update.message.reply_text("ℹ️ अभी कोई मासिक नोट्स उपलब्ध नहीं हैं।")
     return
 
   keyboard = []
@@ -728,7 +898,7 @@ async def archive_button_click(
     os.remove(filename)
 
 
-# ================= CONTACT / OWNER FEEDBACK (2 MIN TIMER) =================
+# ================= CONTACT / OWNER FEEDBACK =================
 async def contact_cmd(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -739,7 +909,7 @@ async def contact_cmd(
   CONTACT_SESSIONS[user_id] = time.time()
   await update.message.reply_text(
       "⏱ <b>2 मिनट का समय सक्रिय है!</b>\n\n"
-      "अपनी समस्या या सवाल टाइप करके भेजें।\n"
+      "अपनी समस्या या सवाल लिखकर भेजें।\n"
       f"यह सीधे <b>{AUTHOR_NAME}</b> के पास पहुँचा दिया जाएगा।\n\n"
       "<i>(रद्द करने हेतु <code>/cancel</code> भेजें)</i>",
       parse_mode=ParseMode.HTML,
@@ -773,7 +943,7 @@ async def forward_contact_msg(
       f"🆔 <b>यूज़र ID:</b> <code>{user.id}</code>\n"
       f"🔗 <b>यूज़रनेम:</b> {username_str}\n\n"
       f"💬 <b>संदेश:</b>\n{content_text}\n\n"
-      "👉 <i>(छात्र को उत्तर देने हेतु इस मैसेज पर <b>Reply</b> करें)</i>"
+      "👉 <i>(छात्र को उत्तर देने हेतु इस मैसेज पर सीधे <b>Reply</b> करें)</i>"
   )
 
   for admin_id in ADMIN_IDS:
@@ -827,7 +997,7 @@ async def handle_admin_reply_to_user(
       await msg.reply_text(f"❌ छात्र तक मैसेज नहीं पहुँचा: {e}")
 
 
-# ================= BROADCAST SYSTEM (FIXED FILTERS) =================
+# ================= BROADCAST SYSTEM =================
 async def broadcast_cmd(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
@@ -1039,6 +1209,7 @@ async def generate_final_file(
         final_topic, combined_text, session["images"]
     )
 
+  # डेटाबेस में नई फ़ाइल जोड़ना
   save_to_archive("daily", final_topic, clean_filename, final_output_html)
 
   with open(clean_filename, "w", encoding="utf-8") as f:
@@ -1077,7 +1248,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def run_server():
   app = web.Application()
   app.router.add_get(
-      "/", lambda r: web.Response(text="Bot Active 24/7 with Archive Buttons")
+      "/",
+      lambda r: web.Response(
+          text="Bot Active 24/7 with Pre-loaded Archive Buttons"
+      ),
   )
   runner = web.AppRunner(app)
   await runner.setup()
@@ -1088,6 +1262,7 @@ async def run_server():
 
 # ================= MAIN APPLICATION =================
 async def main():
+  init_db()
   await run_server()
   bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -1099,12 +1274,10 @@ async def main():
   bot_app.add_handler(CommandHandler("monthly", monthly_cmd))
   bot_app.add_handler(CommandHandler("yearly", yearly_cmd))
 
-  # इनलाइन बटन क्लिक हैंडलर
   bot_app.add_handler(
       CallbackQueryHandler(archive_button_click, pattern=r"^arch_\d+$")
   )
 
-  # ओनर संपर्क (/owner, /contact)
   contact_conv = ConversationHandler(
       entry_points=[
           CommandHandler("owner", contact_cmd),
@@ -1121,7 +1294,6 @@ async def main():
   )
   bot_app.add_handler(contact_conv)
 
-  # ब्रॉडकास्ट (filters.Document.ALL ठीक किया गया)
   broadcast_conv = ConversationHandler(
       entry_points=[CommandHandler("broadcast", broadcast_cmd)],
       states={
@@ -1137,7 +1309,6 @@ async def main():
   )
   bot_app.add_handler(broadcast_conv)
 
-  # एडमिन HTML नोट्स (/html, /sachin)
   bot_app.add_handler(CommandHandler("html", start_html_session))
   html_conv = ConversationHandler(
       entry_points=[CommandHandler("sachin", ask_for_name)],
