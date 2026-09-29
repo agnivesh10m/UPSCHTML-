@@ -1,7 +1,10 @@
 import asyncio
 import base64
+from datetime import datetime
 import os
 import re
+import sqlite3
+import time
 from aiohttp import web
 from bs4 import BeautifulSoup
 from telegram import Update
@@ -15,19 +18,124 @@ from telegram.ext import (
     filters,
 )
 
+# ================= CONFIGURATION =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+ADMIN_IDS = [1745425595, 7850454902]
 CHANNEL_LINK = "https://t.me/UPSCHTML"
 CHANNEL_NAME = "@UPSCHTML"
 AUTHOR_NAME = "सचिन शर्मा"
 
-USER_BUFFERS = {}
 WAITING_FOR_NAME = 1
+WAITING_CONTACT_MSG = 2
+WAITING_BROADCAST_MSG = 3
+
+USER_BUFFERS = {}
+CONTACT_SESSIONS = {}
+
+# ================= DATABASE SETUP =================
+DB_PATH = "upsc_bot.db"
 
 
+def init_db():
+  conn = sqlite3.connect(DB_PATH)
+  c = conn.cursor()
+  c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            joined_at TEXT
+        )
+    """)
+  c.execute("""
+        CREATE TABLE IF NOT EXISTS archive (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            period TEXT,
+            date_str TEXT,
+            topic TEXT,
+            filename TEXT,
+            html_content TEXT
+        )
+    """)
+  conn.commit()
+  conn.close()
+
+
+init_db()
+
+
+def register_user(user_id, username, first_name):
+  try:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        """
+            INSERT OR IGNORE INTO users (user_id, username, first_name, joined_at)
+            VALUES (?, ?, ?, ?)
+        """,
+        (
+            user_id,
+            username or "",
+            first_name or "",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        ),
+    )
+    conn.commit()
+    conn.close()
+  except Exception as e:
+    print(f"Error registering user: {e}")
+
+
+def save_to_archive(period, topic, filename, html_content):
+  try:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    today = datetime.now().strftime("%Y-%m-%d")
+    c.execute(
+        """
+            INSERT INTO archive (period, date_str, topic, filename, html_content)
+            VALUES (?, ?, ?, ?, ?)
+        """,
+        (period, today, topic, filename, html_content),
+    )
+    conn.commit()
+    conn.close()
+  except Exception as e:
+    print(f"Error archiving: {e}")
+
+
+def get_latest_archive(period):
+  try:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        """
+            SELECT topic, filename, html_content FROM archive 
+            WHERE period = ? ORDER BY id DESC LIMIT 1
+        """,
+        (period,),
+    )
+    row = c.fetchone()
+    conn.close()
+    return row
+  except Exception as e:
+    print(f"Error reading archive: {e}")
+    return None
+
+
+def get_all_users():
+  conn = sqlite3.connect(DB_PATH)
+  c = conn.cursor()
+  c.execute("SELECT user_id FROM users")
+  rows = c.fetchall()
+  conn.close()
+  return [r[0] for r in rows]
+
+
+# ================= HTML BUILDER & SANITIZER =================
 def sanitize_and_rebrand_html(
     soup: BeautifulSoup, custom_title: str = None
 ) -> None:
-  """पुराने चैनलों के लिंक, नाम हटाना और अपनी ब्रांडिंग लगाना"""
   for a in soup.find_all("a"):
     href = a.get("href", "")
     if "t.me" in href or "cserunners" in href.lower():
@@ -75,14 +183,11 @@ def sanitize_and_rebrand_html(
 def build_interactive_dashboard_html(
     topic: str, raw_text: str, image_list: list = None
 ) -> str:
-  """डायनामिक नेविगेशन बार (Clickable Index Bar) के साथ HTML बनाना"""
   lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
-
   sections = []
-  current_sec_title = "भूमिका / सामान्य परिचय"
+  current_sec_title = "भूमिका / सामान्य सारांश"
   current_sec_lines = []
 
-  # 1. टेक्स्ट को अलग-अलग टॉपिक्स / सेक्शन्स में पहचानना
   for line in lines:
     is_heading = (
         re.match(r"^[0-9]+\.", line)
@@ -106,9 +211,10 @@ def build_interactive_dashboard_html(
                 "🌱",
                 "🔬",
                 "💰",
+                "🔸",
             ]
         )
-        or (line.endswith(":") and len(line) < 60)
+        or (line.endswith(":") and len(line) < 55)
     )
     if is_heading:
       if current_sec_lines:
@@ -121,26 +227,22 @@ def build_interactive_dashboard_html(
   if current_sec_lines or current_sec_title:
     sections.append((current_sec_title, current_sec_lines))
 
-  # 2. ऊपर की स्टिकी नेविगेशन बार (Clickable Buttons) तैयार करना
   nav_links_html = ""
   content_html = ""
 
   for idx, (sec_title, sec_lines) in enumerate(sections, 1):
-    sec_id = f"topic-{idx}"
-
-    # बटन के लिए छोटा और साफ़ नाम
+    sec_id = f"sec-{idx}"
     short_name = re.sub(r"^[0-9]+\.\s*", "", sec_title)
     short_name = re.sub(
-        r"[📌💡⚡✨🔥📖🎯📝🌪️🗳️⚖️🔍|━─—_:-]", "", short_name
+        r"[📌💡⚡✨🔥📖🎯📝🌪️🗳️⚖️🔍|━─—_:-🔸]", "", short_name
     ).strip()
-    if len(short_name) > 22:
-      short_name = short_name[:20] + ".."
+    if len(short_name) > 20:
+      short_name = short_name[:18] + ".."
     if not short_name:
       short_name = f"भाग {idx}"
 
     nav_links_html += f'<a href="#{sec_id}">{short_name}</a>\n'
 
-    # सेक्शन का अंदरूनी कंटेंट पार्स करना
     sec_body_html = ""
     in_table = False
     table_rows = []
@@ -175,7 +277,6 @@ def build_interactive_dashboard_html(
         sec_body_html += f"<blockquote>{line[1:].strip()}</blockquote>"
         continue
 
-      # तीर (Flow Layout)
       if "→" in line:
         steps = [s.strip() for s in line.split("→") if s.strip()]
         if len(steps) > 1:
@@ -185,28 +286,26 @@ def build_interactive_dashboard_html(
           sec_body_html += f"<div class='flow-container'>{step_tags}</div>"
           continue
 
-      # बुलेट पॉइंट्स
-      if line.startswith(("•", "-", "▪", "▫", "*", "🔸")):
-        clean_bullet = re.sub(r"^[•\-▪▫\*🔸]\s*", "", line)
+      if line.startswith(("•", "-", "▪", "▫", "*")):
+        clean_bullet = re.sub(r"^[•\-▪▫\*]\s*", "", line)
         sec_body_html += f"<li class='list-item'>{clean_bullet}</li>"
         continue
 
-      # रंगीन हाइलाइट्स
       formatted = re.sub(
-          r"\*\*(.*?)\*\*", r"<strong class='hl-blue'>\1</strong>", line
+          r"\*\*(.*?)\*\*", r'<strong class="hl-bold">\1</strong>', line
       )
       formatted = re.sub(
-          r"(GS-[I|II|III|IV]+)", r"<span class='badge-gs'>\1</span>", formatted
+          r"(GS-[I|II|III|IV]+)", r'<span class="badge-gs">\1</span>', formatted
       )
       formatted = re.sub(
           r"(Article\s+\d+[A-Za-z]?|अनुच्छेद\s+\d+[A-Za-z]?)",
-          r"<span class='badge-art'>\1</span>",
+          r'<span class="badge-art">\1</span>',
           formatted,
           flags=re.IGNORECASE,
       )
       formatted = re.sub(
           r"(https?://[^\s]+)",
-          r"<a href='\1' target='_blank' class='text-link'>\1</a>",
+          r'<a href="\1" target="_blank" class="text-link">\1</a>',
           formatted,
       )
       sec_body_html += f"<p class='para'>{formatted}</p>"
@@ -216,7 +315,6 @@ def build_interactive_dashboard_html(
           f"<div class='table-box'><table>{''.join(table_rows)}</table></div>"
       )
 
-    # सेक्शन कार्ड
     content_html += f"""
         <section id="{sec_id}" class="news-card">
             <h3 class="section-title">{sec_title}</h3>
@@ -273,8 +371,6 @@ body {{
   padding:9px 18px; border-radius:20px; border:1px solid rgba(255,255,255,.4);
   background:rgba(255,255,255,.2); color:#fff; font-weight:600; cursor:pointer;
 }}
-
-/* स्टिकी नेविगेशन बार (Clickable Topics) */
 nav.dashboard {{
   position:sticky; top:0; z-index:50; background:var(--card); border-bottom:1px solid var(--border);
   box-shadow:var(--shadow); overflow-x:auto; white-space:nowrap; padding:9px 14px;
@@ -286,12 +382,11 @@ nav.dashboard a {{
   transition:all 0.2s ease;
 }}
 nav.dashboard a:hover {{ background:var(--accent); color:#fff; }}
-
 .wrap {{ max-width:920px; margin:22px auto; padding:0 14px; width:100%; }}
 .news-card {{
   background:var(--card); border:1px solid var(--border); border-radius:14px;
   padding:24px; margin-bottom:22px; box-shadow:var(--shadow); width:100%;
-  scroll-margin-top: 65px; /* हेडर के नीचे न छुपे */
+  scroll-margin-top: 65px;
 }}
 .section-title {{
   color:var(--accent); font-size:1.24rem; margin-bottom:14px;
@@ -299,7 +394,7 @@ nav.dashboard a:hover {{ background:var(--accent); color:#fff; }}
 }}
 .para {{ margin:8px 0; font-size:1rem; word-break:break-word; }}
 .list-item {{ margin:6px 0 6px 24px; color:var(--text); font-size:0.98rem; }}
-.hl-blue {{ color:#0284c7; font-weight:700; }}
+.hl-bold {{ color:#0284c7; font-weight:700; }}
 .badge-gs {{
   background:#0284c7; color:#fff; padding:2px 8px; border-radius:6px; font-size:0.82rem; font-weight:bold; margin:0 4px;
 }}
@@ -350,14 +445,11 @@ footer a {{ color:#8bc4ef; font-weight:700; text-decoration:none; }}
     <button onclick="toggleTheme()">🌗 Dark / Light</button>
   </div>
 </header>
-
-<!-- ऑटोमैटिक डायनामिक नेविगेशन बार -->
 <nav class="dashboard">
   <div class="nav-wrap">
     {nav_links_html}
   </div>
 </nav>
-
 <main class="wrap" id="mainContent">
   {img_markup}
   {content_html}
@@ -383,24 +475,304 @@ document.getElementById('searchBox').addEventListener('input', function() {{
 </html>"""
 
 
-# /start कमांड
+# ================= PUBLIC COMMAND HANDLERS =================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  user = update.effective_user
+  register_user(user.id, user.username, user.first_name)
+  is_admin = user.id in ADMIN_IDS
+
+  if is_admin:
+    msg = (
+        f"👋 <b>नमस्ते एडमिन {AUTHOR_NAME}!</b>\n\n"
+        "👑 <b>आपके पास पूर्ण एडमिन एक्सेस है:</b>\n"
+        "• <code>/html</code> — नए नोट्स या HTML फ़ाइलें इकट्ठा करना शुरू करें\n"
+        "• <code>/sachin</code> — सभी सामग्री जोड़कर रंगीन HTML फ़ाइल बनाएं\n"
+        "• <code>/broadcast</code> — सभी ग्रुप मेंबर्स को एक साथ मैसेज भेजें\n\n"
+        "📚 <b>छात्रों के लिए सार्वजनिक कमांड:</b>\n"
+        "• <code>/today</code> — आज का दैनिक करंट अफेयर्स\n"
+        "• <code>/weekly</code> — इस सप्ताह का कंपाइलेशन\n"
+        "• <code>/monthly</code> — इस महीने का डाइजेस्ट\n"
+        "• <code>/owner</code> या <code>/contact</code> — सीधे आपसे संपर्क करें\n"
+        "• <code>/help</code> — सहायता व जानकारी"
+    )
+  else:
+    msg = (
+        f"👋 <b>नमस्ते {user.first_name}!</b>\n\n"
+        "स्वागत है <b>UPSC HTML Notes Portal</b> में! 📚\n\n"
+        "यहाँ आपको दैनिक, साप्ताहिक व मासिक करंट अफेयर्स स्मार्ट व"
+        " इंटरैक्टिव HTML फॉर्मेट में मिलते हैं।\n\n"
+        "📌 <b>उपलब्ध कमांड्स:</b>\n"
+        "• <code>/today</code> — आज के नोट्स डाउनलोड करें\n"
+        "• <code>/weekly</code> — साप्ताहिक नोट्स देखें\n"
+        "• <code>/monthly</code> — मासिक पत्रिका प्राप्त करें\n"
+        "• <code>/owner</code> — एडमिन से बात करें / संदेश भेजें\n"
+        "• <code>/help</code> — बॉट की संपूर्ण जानकारी देखें"
+    )
+  await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+
+
+async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  user = update.effective_user
+  register_user(user.id, user.username, user.first_name)
+  help_text = (
+      "📖 <b>UPSC HTML BOT — छात्र सहायता केंद्र</b>\n\n"
+      "इस बॉट के माध्यम से आप UPSC परीक्षा हेतु सर्वोत्तम करंट अफेयर्स व नोट्स"
+      " प्राप्त कर सकते हैं:\n\n"
+      "1️⃣ <b>नोट्स कैसे पढ़ें?</b>\n"
+      "बॉट द्वारा भेजी गई <code>.html</code> फ़ाइल पर क्लिक करें और इसे Chrome या"
+      " किसी भी ब्राउज़र में खोलें। यह ऑफ़लाइन भी चलती है।\n\n"
+      "2️⃣ <b>मुख्य फीचर्स:</b>\n"
+      "• <b>लाइव सर्च:</b> किसी भी टॉपिक, आर्टिकल या कीवर्ड को सर्च करें\n"
+      "• <b>डार्क/लाइट मोड:</b> पढ़ने की सुविधा अनुसार थीम बदलें\n"
+      "• <b>क्लिकेबल लिंक्स:</b> ऊपर दिए गए बटन से सीधे टॉपिक पर जंप करें\n\n"
+      "3️⃣ <b>प्रमुख कमांड्स:</b>\n"
+      "• <code>/today</code> — आज का करेंट अफेयर्स\n"
+      "• <code>/weekly</code> — साप्ताहिक रिवीजन\n"
+      "• <code>/monthly</code> — पूरे माह का कंपाइलेशन\n"
+      "• <code>/owner</code> — ओनर (सचिन शर्मा) को कोई समस्या या सुझाव भेजें\n\n"
+      f"📢 <b>ऑफिशियल टेलीग्राम चैनल:</b> <a"
+      f" href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
+  )
   await update.message.reply_text(
-      f"👋 **नमस्ते {AUTHOR_NAME}!**\n\n"
-      "👉 **कैसे उपयोग करें:**\n"
-      "1. पहले **/html** भेजें (सत्र शुरू होगा)।\n"
-      "2. इसके बाद अपनी सामग्री (HTML फ़ाइल या नोट्स) फॉरवर्ड करें।\n"
-      "3. फिर **/sachin** भेजें — बॉट आपसे नाम की पुष्टि पूछेगा और कॉपी करने"
-      " लायक नाम भी सजेस्ट करेगा!\n"
-      "4. अगर वही नाम रखना है तो सिर्फ `1` भेजें, वरना नया नाम भेजें।"
+      help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True
   )
 
 
-# 1. /html कमांड - नया सत्र शुरू
+async def archive_fetcher(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, period: str
+):
+  user = update.effective_user
+  register_user(user.id, user.username, user.first_name)
+  data = get_latest_archive(period)
+
+  period_names = {
+      "daily": "दैनिक (Daily)",
+      "weekly": "साप्ताहिक (Weekly)",
+      "monthly": "मासिक (Monthly)",
+      "yearly": "वार्षिक (Yearly)",
+  }
+  p_label = period_names.get(period, period)
+
+  if not data:
+    await update.message.reply_text(
+        f"ℹ️ अभी कोई <b>{p_label}</b> नोट्स उपलब्ध नहीं हैं।\nजैसे ही एडमिन"
+        " अपलोड करेंगे, आपको यहाँ मिल जाएँगे!",
+        parse_mode=ParseMode.HTML,
+    )
+    return
+
+  topic, filename, html_content = data
+  with open(filename, "w", encoding="utf-8") as f:
+    f.write(html_content)
+
+  with open(filename, "rb") as send_doc:
+    await update.message.reply_document(
+        document=send_doc,
+        filename=filename,
+        caption=(
+            f"📄 <b>{p_label} UPSC नोट्स</b>\n"
+            f"📌 <b>विषय:</b> <code>{topic}</code>\n"
+            f"👤 <b>संकलन:</b> {AUTHOR_NAME}\n"
+            f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+  if os.path.exists(filename):
+    os.remove(filename)
+
+
+async def today_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  await archive_fetcher(update, context, "daily")
+
+
+async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  await archive_fetcher(update, context, "weekly")
+
+
+async def monthly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  await archive_fetcher(update, context, "monthly")
+
+
+async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  await archive_fetcher(update, context, "yearly")
+
+
+# ================= CONTACT / OWNER FEEDBACK (2 MIN TIMER) =================
+async def contact_cmd(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+  user = update.effective_user
+  register_user(user.id, user.username, user.first_name)
+  user_id = user.id
+
+  CONTACT_SESSIONS[user_id] = time.time()
+  await update.message.reply_text(
+      "⏱ <b>2 मिनट का समय सक्रिय है!</b>\n\n"
+      "आप अपना संदेश, समस्या या सुझाव टाइप करके भेजें।\n"
+      f"यह संदेश सीधे ओनर (<b>{AUTHOR_NAME}</b>) के पास पहुँचा दिया"
+      " जाएगा।\n\n"
+      "<i>(यदि रद्द करना चाहें तो <code>/cancel</code> भेजें)</i>",
+      parse_mode=ParseMode.HTML,
+  )
+  return WAITING_CONTACT_MSG
+
+
+async def forward_contact_msg(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+  user = update.effective_user
+  user_id = user.id
+  start_time = CONTACT_SESSIONS.get(user_id, 0)
+
+  if time.time() - start_time > 120:
+    CONTACT_SESSIONS.pop(user_id, None)
+    await update.message.reply_text(
+        "⚠️ <b>समय समाप्त!</b> 2 मिनट पूरे हो चुके हैं।\nकृपया पुनः संपर्क करने के"
+        " लिए <code>/owner</code> दबाएँ।",
+        parse_mode=ParseMode.HTML,
+    )
+    return ConversationHandler.END
+
+  msg = update.message
+  content_text = msg.text or msg.caption or "[फ़ाइल / मीडिया]"
+  username_str = f"@{user.username}" if user.username else "कोई यूज़रनेम नहीं"
+
+  owner_alert = (
+      "📩 <b>नया छात्र संदेश प्राप्त हुआ!</b>\n\n"
+      f"👤 <b>छात्र का नाम:</b> {user.first_name}\n"
+      f"🆔 <b>यूज़र ID:</b> <code>{user.id}</code>\n"
+      f"🔗 <b>यूज़रनेम:</b> {username_str}\n\n"
+      f"💬 <b>संदेश:</b>\n{content_text}\n\n"
+      "👉 <i>(इस छात्र को जवाब देने के लिए इस मैसेज पर सीधे <b>Reply</b> करें)</i>"
+  )
+
+  for admin_id in ADMIN_IDS:
+    try:
+      await context.bot.send_message(
+          chat_id=admin_id, text=owner_alert, parse_mode=ParseMode.HTML
+      )
+    except Exception as e:
+      print(f"Error notifying admin {admin_id}: {e}")
+
+  await update.message.reply_text(
+      "✅ <b>आपका संदेश ओनर को भेज दिया गया है!</b>\nजैसे ही वे इसे देखेंगे,"
+      " आपको यहीं रिप्लाई मिल जाएगा।",
+      parse_mode=ParseMode.HTML,
+  )
+  CONTACT_SESSIONS.pop(user_id, None)
+  return ConversationHandler.END
+
+
+async def handle_admin_reply_to_user(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+  msg = update.message
+  if not msg.reply_to_message:
+    return
+
+  admin_id = update.effective_user.id
+  if admin_id not in ADMIN_IDS:
+    return
+
+  reply_to_text = msg.reply_to_message.text or ""
+  match = re.search(r"यूज़र ID:\s*<code>(\d+)</code>", reply_to_text)
+  if match:
+    target_user_id = int(match.group(1))
+    reply_body = msg.text or msg.caption or ""
+
+    user_notification = (
+        f"🔔 <b>ओनर ({AUTHOR_NAME}) का जवाब:</b>\n\n"
+        f"{reply_body}\n\n"
+        f"📢 <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
+    )
+    try:
+      await context.bot.send_message(
+          chat_id=target_user_id,
+          text=user_notification,
+          parse_mode=ParseMode.HTML,
+          disable_web_page_preview=True,
+      )
+      await msg.reply_text("✅ जवाब सफलतापूर्वक उस छात्र को भेज दिया गया!")
+    except Exception as e:
+      await msg.reply_text(f"❌ छात्र तक मैसेज नहीं पहुँचा: {e}")
+
+
+# ================= BROADCAST SYSTEM (ADMIN ONLY) =================
+async def broadcast_cmd(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+  admin_id = update.effective_user.id
+  if admin_id not in ADMIN_IDS:
+    await update.message.reply_text("⛔ यह कमांड केवल एडमिन के लिए आरक्षित है।")
+    return ConversationHandler.END
+
+  all_users = get_all_users()
+  await update.message.reply_text(
+      "📢 <b>ब्रॉडकास्ट प्रणाली</b>\n\n"
+      f"कुल पंजीकृत छात्र: <b>{len(all_users)}</b>\n\n"
+      "कृपया वह मैसेज भेजें जो आप सभी छात्रों को एक साथ भेजना चाहते"
+      " हैं:\n<i>(रद्द करने हेतु <code>/cancel</code> भेजें)</i>",
+      parse_mode=ParseMode.HTML,
+  )
+  return WAITING_BROADCAST_MSG
+
+
+async def execute_broadcast(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
+  admin_id = update.effective_user.id
+  if admin_id not in ADMIN_IDS:
+    return ConversationHandler.END
+
+  b_msg = update.message
+  all_users = get_all_users()
+
+  status_msg = await update.message.reply_text(
+      f"⏳ ब्रॉडकास्ट शुरू हो रहा है... (कुल: {len(all_users)})"
+  )
+
+  success_count = 0
+  fail_count = 0
+
+  for uid in all_users:
+    try:
+      if b_msg.text:
+        await context.bot.send_message(
+            chat_id=uid,
+            text=f"📢 <b>UPSC HTML सूचना:</b>\n\n{b_msg.text}",
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+      else:
+        await context.bot.copy_message(
+            chat_id=uid, from_chat_id=admin_id, message_id=b_msg.message_id
+        )
+      success_count += 1
+      await asyncio.sleep(0.05)
+    except Exception:
+      fail_count += 1
+
+  report = (
+      "✅ <b>ब्रॉडकास्ट पूर्ण हुआ!</b>\n\n"
+      f"🎯 <b>सफल डिलीवरी:</b> {success_count} छात्र\n"
+      f"❌ <b>असफल (ब्लॉक आदि):</b> {fail_count} छात्र\n"
+      f"📊 <b>कुल लक्षित:</b> {len(all_users)}"
+  )
+  await status_msg.edit_text(report, parse_mode=ParseMode.HTML)
+  return ConversationHandler.END
+
+
+# ================= ADMIN-ONLY HTML GENERATION =================
 async def start_html_session(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
   user_id = update.effective_user.id
+  if user_id not in ADMIN_IDS:
+    await update.message.reply_text(
+        "⛔ क्षमा करें, नोट्स निर्माण की यह कमांड केवल एडमिन के लिए है।"
+    )
+    return
+
   USER_BUFFERS[user_id] = {
       "active": True,
       "texts": [],
@@ -409,20 +781,20 @@ async def start_html_session(
       "suggested_topic": "UPSC_Notes",
   }
   await update.message.reply_text(
-      "🟢 **सत्र शुरू हो गया है!**\n\n"
+      "🟢 <b>एडमिन सत्र प्रारंभ!</b>\n\n"
       "अब अपनी HTML फ़ाइल, फ़ोटो या टेक्स्ट फॉरवर्ड करें।\n"
-      "जब सारा मटेरियल भेज लें, तब **/sachin** भेजें।"
+      "जब सारा मटेरियल भेज लें, तब <code>/sachin</code> भेजें।",
+      parse_mode=ParseMode.HTML,
   )
 
 
-# 2. बीच की सामग्री इकट्ठा करना
 async def collect_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
   user_id = update.effective_user.id
+  if user_id not in ADMIN_IDS:
+    return
+
   session = USER_BUFFERS.get(user_id)
   if not session or not session.get("active"):
-    await update.message.reply_text(
-        "💡 नए नोट्स बनाने के लिए पहले **/html** भेजें।"
-    )
     return
 
   msg = update.message
@@ -479,48 +851,46 @@ async def collect_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
       session["suggested_topic"] = first_l[:40] if first_l else "UPSC_Notes"
 
 
-# 3. /sachin कमांड - नाम पूछना और सुझाव देना
 async def ask_for_name(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
   user_id = update.effective_user.id
-  session = USER_BUFFERS.get(user_id)
+  if user_id not in ADMIN_IDS:
+    await update.message.reply_text("⛔ यह कमांड केवल एडमिन के लिए है।")
+    return ConversationHandler.END
 
+  session = USER_BUFFERS.get(user_id)
   if not session or (
       not session.get("texts") and not session.get("html_soups")
   ):
     await update.message.reply_text(
-        "❌ कोई सामग्री नहीं मिली। कृपया पहले **/html** भेजकर कुछ नोट्स या"
-        " फ़ाइलें भेजें।"
+        "❌ कोई सामग्री नहीं मिली। कृपया पहले <code>/html</code> भेजकर नोट्स"
+        " भेजें।",
+        parse_mode=ParseMode.HTML,
     )
     return ConversationHandler.END
 
   suggested = session.get("suggested_topic", "UPSC_Notes")
 
-  prompt_msg = f"""📝 **फ़ाइल नाम की पुष्टि:**
-
-📌 **सुझाया गया नाम:**
-`{suggested}`
-
-👉 **विकल्प:**
-1. यदि **यही नाम** रखना है, तो सिर्फ **1** लिखकर भेजें।
-2. यदि **नाम बदलना है**, तो ऊपर दिए गए नाम पर एक बार टैप करके कॉपी करें, एडिट करें और नया नाम भेज दें!"""
-
-  await update.message.reply_text(prompt_msg, parse_mode=ParseMode.MARKDOWN)
+  prompt_msg = (
+      "📝 <b>फ़ाइल नाम की पुष्टि:</b>\n\n"
+      "📌 <b>सुझाया गया नाम (एक टैप में कॉपी करें):</b>\n"
+      f"<code>{suggested}</code>\n\n"
+      "👉 <b>विकल्प:</b>\n"
+      "1. यदि <b>यही नाम</b> रखना है, तो सिर्फ <b>1</b> लिखकर भेजें।\n"
+      "2. यदि <b>नाम बदलना है</b>, तो ऊपर दिए नाम पर टैप करें, एडिट करें और"
+      " नया नाम भेज दें!"
+  )
+  await update.message.reply_text(prompt_msg, parse_mode=ParseMode.HTML)
   return WAITING_FOR_NAME
 
 
-# 4. यूज़र का नाम रिसीव करके फ़ाइनल HTML जनरेट करना
 async def generate_final_file(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
   user_id = update.effective_user.id
   session = USER_BUFFERS.get(user_id)
-
   if not session:
-    await update.message.reply_text(
-        "सत्र समाप्त हो चुका है। कृपया दोबारा **/html** से शुरू करें।"
-    )
     return ConversationHandler.END
 
   user_reply = update.message.text.strip()
@@ -544,6 +914,8 @@ async def generate_final_file(
     final_output_html = build_interactive_dashboard_html(
         final_topic, combined_text, session["images"]
     )
+
+  save_to_archive("daily", final_topic, clean_filename, final_output_html)
 
   with open(clean_filename, "w", encoding="utf-8") as f:
     f.write(final_output_html)
@@ -572,13 +944,20 @@ async def generate_final_file(
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
   user_id = update.effective_user.id
   USER_BUFFERS.pop(user_id, None)
+  CONTACT_SESSIONS.pop(user_id, None)
   await update.message.reply_text("प्रक्रिया रद्द कर दी गई।")
   return ConversationHandler.END
 
 
+# ================= RENDER KEEP-ALIVE WEB SERVER =================
 async def run_server():
   app = web.Application()
-  app.router.add_get("/", lambda r: web.Response(text="Bot Alive 24/7"))
+  app.router.add_get(
+      "/",
+      lambda r: web.Response(
+          text="Bot Alive 24/7 with SQLite & Admin Security"
+      ),
+  )
   runner = web.AppRunner(app)
   await runner.setup()
   port = int(os.environ.get("PORT", 8080))
@@ -586,14 +965,51 @@ async def run_server():
   await site.start()
 
 
+# ================= MAIN APPLICATION =================
 async def main():
   await run_server()
   bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
   bot_app.add_handler(CommandHandler("start", start_handler))
-  bot_app.add_handler(CommandHandler("html", start_html_session))
+  bot_app.add_handler(CommandHandler("help", help_handler))
+  bot_app.add_handler(CommandHandler("today", today_cmd))
+  bot_app.add_handler(CommandHandler("weekly", weekly_cmd))
+  bot_app.add_handler(CommandHandler("monthly", monthly_cmd))
+  bot_app.add_handler(CommandHandler("yearly", yearly_cmd))
 
-  conv_handler = ConversationHandler(
+  contact_conv = ConversationHandler(
+      entry_points=[
+          CommandHandler("owner", contact_cmd),
+          CommandHandler("contact", contact_cmd),
+      ],
+      states={
+          WAITING_CONTACT_MSG: [
+              MessageHandler(
+                  filters.TEXT & (~filters.COMMAND), forward_contact_msg
+              )
+          ]
+      },
+      fallbacks=[CommandHandler("cancel", cancel)],
+  )
+  bot_app.add_handler(contact_conv)
+
+  broadcast_conv = ConversationHandler(
+      entry_points=[CommandHandler("broadcast", broadcast_cmd)],
+      states={
+          WAITING_BROADCAST_MSG: [
+              MessageHandler(
+                  (filters.TEXT | filters.PHOTO | filters.DOCUMENT)
+                  & (~filters.COMMAND),
+                  execute_broadcast,
+              )
+          ]
+      },
+      fallbacks=[CommandHandler("cancel", cancel)],
+  )
+  bot_app.add_handler(broadcast_conv)
+
+  bot_app.add_handler(CommandHandler("html", start_html_session))
+  html_conv = ConversationHandler(
       entry_points=[CommandHandler("sachin", ask_for_name)],
       states={
           WAITING_FOR_NAME: [
@@ -604,8 +1020,11 @@ async def main():
       },
       fallbacks=[CommandHandler("cancel", cancel)],
   )
+  bot_app.add_handler(html_conv)
 
-  bot_app.add_handler(conv_handler)
+  bot_app.add_handler(
+      MessageHandler(filters.REPLY & filters.TEXT, handle_admin_reply_to_user)
+  )
   bot_app.add_handler(
       MessageHandler(filters.ALL & (~filters.COMMAND), collect_messages)
   )
