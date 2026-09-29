@@ -5,6 +5,7 @@ import asyncio
 import base64
 import sqlite3
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from aiohttp import web
 from bs4 import BeautifulSoup
 import google.generativeai as genai
@@ -28,6 +29,12 @@ ADMIN_IDS = [1745425595, 7850454902]
 CHANNEL_LINK = "https://t.me/UPSCHTML"
 CHANNEL_NAME = "@UPSCHTML"
 AUTHOR_NAME = "सचिन शर्मा"
+
+# भारतीय मानक समय (IST)
+IST = ZoneInfo("Asia/Kolkata")
+
+def get_ist_now():
+    return datetime.now(IST)
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -79,7 +86,7 @@ def register_user(user_id, username, first_name):
         c.execute("""
             INSERT OR IGNORE INTO users (user_id, username, first_name, joined_at)
             VALUES (?, ?, ?, ?)
-        """, (user_id, username or "", first_name or "", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        """, (user_id, username or "", first_name or "", get_ist_now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -96,8 +103,8 @@ def is_authorized(user_id):
         conn.close()
         if row and row[0] == 1:
             if row[1]:
-                expiry = datetime.strptime(row[1], "%Y-%m-%d %H:%M:%S")
-                if datetime.now() <= expiry:
+                expiry = datetime.strptime(row[1], "%Y-%m-%d %H:%M:%S").replace(tzinfo=IST)
+                if get_ist_now() <= expiry:
                     return True
             else:
                 return True
@@ -109,7 +116,7 @@ def save_to_archive(period, topic, filename, html_content, date_str=None):
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        now = datetime.now()
+        now = get_ist_now()
         t_str = date_str if date_str else now.strftime("%Y-%m-%d")
         month_str = now.strftime("%B %Y")
         year_str = now.strftime("%Y")
@@ -203,23 +210,17 @@ def clean_stars_and_markdown(text: str) -> str:
     return text.strip()
 
 def format_nav_title(title: str, idx: int) -> str:
-    # 1. अंकों, बुलेट्स और इमोजी को आगे से हटाना
+    # बिना किसी शब्द को काटे सटीक नाम निकालना
     clean = re.sub(r'^[\d\.\-\s📌🎯⚡📖💡🗳️⚖️🔍📝🛣️❄️🌏📰🌍🌱🔬💰🔑📚🔸]+', '', title).strip()
-    # 2. फालतू स्टार, हैश हटाना
     clean = re.sub(r'[*#_~`]', '', clean).strip()
     
-    # 3. यदि 'संदर्भ / चर्चा में क्यों' जैसा हो तो मुख्य अर्थ निकालना
     if '/' in clean:
         parts = [p.strip() for p in clean.split('/') if len(p.strip()) > 2]
         clean = parts[-1] if parts else clean
         
     clean = clean.replace(':', '').replace('-', '').strip()
     
-    if len(clean) > 18:
-        clean = clean[:16] + ".."
-        
-    # अगर बिल्कुल खाली या केवल चिन्ह बचे तो सार्थक नाम
-    if not clean or len(clean) < 2 or clean in ['.', '/', '-', '_', '..']:
+    if not clean or len(clean) < 2 or clean in ['.', '/', '-', '_']:
         names = ["चर्चा में क्यों", "संवैधानिक ढांचा", "मुख्य विश्लेषण", "प्रमुख आयाम", "आगे की राह", "प्रीलिम्स फैक्ट्स", "मेन्स प्रश्न"]
         clean = names[(idx - 1) % len(names)]
         
@@ -341,6 +342,7 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
 
             formatted = re.sub(r'(GS-[I|II|III|IV]+|GS-\d)', r'<span class="badge-gs">\1</span>', formatted)
             formatted = re.sub(r'(Article\s+\d+[A-Za-z]?|अनुच्छेद\s+\d+[A-Za-z]?)', r'<span class="badge-art">\1</span>', formatted, flags=re.IGNORECASE)
+            formatted = re.sub(r'(The Hindu|Indian Express|PIB|योजना|डाउन टू अर्थ)', r'<span class="badge-src">📰 स्रोत: \1</span>', formatted)
             formatted = re.sub(r'(https?://[^\s]+)', r'<a href="\1" target="_blank" class="text-link">\1</a>', formatted)
             sec_body_html += f"<p class='para'>{formatted}</p>"
             i += 1
@@ -422,7 +424,7 @@ nav.dashboard {{
 }}
 nav.dashboard .nav-wrap {{ display:flex; gap:8px; max-width:920px; margin:0 auto; }}
 nav.dashboard a {{
-  display:inline-block; padding:6px 14px; background:var(--tag-bg); color:var(--tag-text);
+  display:inline-block; padding:7px 15px; background:var(--tag-bg); color:var(--tag-text);
   border-radius:16px; font-size:0.86rem; font-weight:600; text-decoration:none; flex:none;
   transition:all 0.2s ease;
 }}
@@ -448,6 +450,7 @@ nav.dashboard a:hover {{ background:var(--accent); color:#fff; }}
 }}
 .badge-gs {{ background:#0284c7; color:#fff; padding:2px 8px; border-radius:6px; font-size:0.82rem; font-weight:bold; margin:0 4px; }}
 .badge-art {{ background:#10b981; color:#fff; padding:2px 8px; border-radius:6px; font-size:0.82rem; font-weight:bold; margin:0 4px; }}
+.badge-src {{ background:#f59e0b; color:#000; padding:2px 8px; border-radius:6px; font-size:0.80rem; font-weight:bold; margin:0 4px; }}
 .text-link {{ color:#0284c7; text-decoration:underline; font-weight:600; }}
 .flow-container {{ display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; align-items:center; }}
 .flow-step {{ background:var(--tag-bg); color:var(--tag-text); border:1px solid var(--border); padding:5px 12px; border-radius:8px; font-size:0.88rem; font-weight:600; display:inline-flex; align-items:center; }}
@@ -522,7 +525,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{admin_badge}"
         "नीचे सभी मुख्य कमांड्स उपलब्ध हैं:\n\n"
         "📖 <b>अध्ययन एवं नोट्स:</b>\n"
-        "• <code>/daily</code> — दैनिक नोट्स (कैलेंडर चयन)\n"
+        "• <code>/daily</code> — दैनिक नोट्स (IST कैलेंडर चयन)\n"
+        "• <code>/trending</code> — चर्चा में चल रहे स्थान, व्यक्ति व मुद्दे\n"
         "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन\n"
         "• <code>/monthly</code> — सम्पूर्ण मासिक संकलन\n"
         "• <code>/yearly</code> — वार्षिक कंपाइलेशन\n"
@@ -545,18 +549,19 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user.id, user.username, user.first_name)
     help_text = (
         "📖 <b>UPSC HTML BOT — सहायता केंद्र</b>\n\n"
-        "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> आज, पिछली 5 और अगली 3 तारीखों के बटन मिलेंगे। जिस पर भी क्लिक करेंगे, उसका पूरा HTML नोट्स तुरंत तैयार होकर मिल जाएगा।\n\n"
-        "2️⃣ <b>मासिक पत्रिका (`/monthly`):</b> पूरे माह का विषयवार सार और अंत में सभी अभ्यास प्रश्न एक साथ मिलेंगे।\n\n"
-        "3️⃣ <b>प्रिंट व पीडीएफ वॉटरमार्क:</b> किसी भी फ़ाइल को Chrome में खोलकर <b>'🖨️ प्रिंट / PDF'</b> दबाएं। सभी पन्नों पर <b>SACHIN SHARMA</b> का 50% दृश्यता वाला वॉटरमार्क स्वतः प्रिंट होगा।\n\n"
-        "4️⃣ <b>सीधे एडमिन से संपर्क:</b> <code>/owner</code> दबाएं और 2 मिनट में अपनी बात लिखें।"
+        "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> भारतीय मानक समय (IST) के अनुसार आज, पिछली 5 और अगली 3 तारीखों के बटन मिलेंगे।\n\n"
+        "2️⃣ <b>ट्रेंडिंग रडार (`/trending`):</b> चर्चा में चल रहे स्थान (Places in News), व्यक्ति, और कल-आज-कल का घटनाक्रम देखें।\n\n"
+        "3️⃣ <b>मासिक पत्रिका (`/monthly`):</b> पूरे माह का विषयवार सार और अंत में सभी अभ्यास प्रश्न एक साथ मिलेंगे।\n\n"
+        "4️⃣ <b>प्रिंट व पीडीएफ वॉटरमार्क:</b> किसी भी फ़ाइल को खोलकर <b>'🖨️ प्रिंट / PDF'</b> दबाएं। सभी पन्नों पर <b>SACHIN SHARMA</b> का 50% दृश्यता वाला वॉटरमार्क स्वतः प्रिंट होगा।\n\n"
+        "5️⃣ <b>सीधे एडमिन से संपर्क:</b> <code>/owner</code> दबाएं और 2 मिनट में अपनी बात लिखें।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
-# /daily: आज, पिछले 5 दिन और अगले 3 दिन के डायनामिक बटन
+# /daily: भारतीय मानक समय (IST) के आधार पर आज, -5 दिन, +3 दिन
 async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
-    today = datetime.now()
+    today = get_ist_now()
     keyboard = []
     
     for i in range(-5, 4):
@@ -566,7 +571,33 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append([InlineKeyboardButton(label, callback_data=f"gendate_{d_str}")])
 
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("📅 <b>जिस तारीख के UPSC नोट्स चाहिए, उस बटन पर क्लिक करें:</b>", reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    await update.message.reply_text("📅 <b>जिस तारीख के UPSC दैनिक नोट्स चाहिए, उस बटन पर क्लिक करें:</b>", reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+# /trending: समसामयिक स्थान, व्यक्ति व 1 दिन आगे-पीछे का घटनाक्रम
+async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    register_user(user.id, user.username, user.first_name)
+    today = get_ist_now().strftime("%Y-%m-%d")
+    
+    wait_msg = await update.message.reply_text("🛰 <b>UPSC रडार:</b> समसामयिक स्थानों, व्यक्तियों व ट्रेंडिंग मुद्दों का संकलन हो रहा है...", parse_mode=ParseMode.HTML)
+    
+    prompt = f"""
+आज की तारीख {today} (भारतीय समय) के संदर्भ में UPSC CSE परीक्षा के लिए ट्रेंडिंग रडार तैयार करें:
+1. 📍 Places in News (चर्चा में रहे 2-3 राष्ट्रीय व अंतर्राष्ट्रीय स्थान और उनका भौगोलिक/रणनीतिक महत्व)
+2. 👤 Persons/Institutions in News (चर्चा में रहे व्यक्तित्व या संस्थाएं)
+3. ⏪ कल का मुख्य घटनाक्रम (Yesterday Recap)
+4. ⚡ आज के शीर्ष 3 मुद्दे (Today's Core Issues)
+5. ⏩ कल का संभावित विमर्श / आने वाली बैठकें (Tomorrow's Outlook)
+
+प्रत्येक बिंदु के आगे The Hindu / PIB / IE का संदर्भ दें। भाषा शुद्ध और परीक्षा-उन्मुख हिंदी रखें।
+अनावश्यक मार्कडाउन स्टार्स का प्रयोग न करें।
+"""
+    try:
+        trend_text = await asyncio.to_thread(call_gemini_safely, prompt)
+        clean_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', trend_text)
+        await wait_msg.edit_text(f"🧭 <b>UPSC TRENDING RADAR ({today})</b>\n\n{clean_text}\n\n💡 <i>किसी भी मुद्दे के विस्तृत 360° नोट्स हेतु लिखें: <code>/generate &lt;मुद्दे का नाम&gt;</code></i>", parse_mode=ParseMode.HTML)
+    except Exception as e:
+        await wait_msg.edit_text(f"❌ ट्रेंडिंग डेटा संकलन में त्रुटि: {e}")
 
 async def monthly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -585,10 +616,10 @@ async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
-    today = datetime.now()
+    today = get_ist_now()
     d_str = today.strftime("%Y-%m-%d")
     keyboard = [
-        [InlineKeyboardButton("🗓️️ इस सप्ताह का क्विक रिवीजन", callback_data=f"genweek_{d_str}")],
+        [InlineKeyboardButton("🗓️ इस सप्ताह का क्विक रिवीजन", callback_data=f"genweek_{d_str}")],
         [InlineKeyboardButton("🗓️ पिछले सप्ताह का रिवीजन", callback_data=f"genweek_{(today - timedelta(days=7)).strftime('%Y-%m-%d')}")]
     ]
     await update.message.reply_text("🗓️ <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -619,32 +650,37 @@ async def process_dynamic_generation(user_id, data, context):
                     f"   🏛 <b>UPSC STUDY DESK</b>\n"
                     f"╚════════════════════════╝\n\n"
                     f"📅 <b>दिनांक:</b> <code>{target_date}</code>\n"
-                    f"📊 <b>स्थिति:</b> The Hindu, PIB एवं GS-1/2/3/4 विश्लेषण जारी...\n\n"
-                    f"<i>2-कॉलम सारणी व महत्वपूर्ण बिंदु संकलित किए जा रहे हैं...</i>"
+                    f"📊 <b>स्थिति:</b> The Hindu, PIB, Yojana विश्लेषण जारी...\n\n"
+                    f"<i>2-कॉलम सारणी, स्रोत एवं मेन्स आंसर फ्रेमवर्क संकलित किए जा रहे हैं...</i>"
                 ), 
                 parse_mode=ParseMode.HTML
             )
             prompt = f"""
-तारीख: "{target_date}" के लिए 'Zero to Hero' स्तर के गहन, परीक्षा-केंद्रित, पूर्ण और समृद्ध UPSC दैनिक नोट्स तैयार करें।
-हेडिंग्स:
+तारीख: "{target_date}" के लिए 'Zero to Hero' स्तर के गहन, परीक्षा-केंद्रित, पूर्ण और समृद्ध UPSC दैनिक करेंट अफेयर्स नोट्स तैयार करें।
+शीर्षक: "दैनिक करेंट अफेयर्स — {target_date}"
+
+प्रत्येक विषय में स्पष्ट स्रोत टैग (The Hindu / Indian Express / PIB) अनिवार्य रूप से दें।
+
+संरचना:
 1. संदर्भ / चर्चा में क्यों
-2. संवैधानिक एवं वैधानिक स्थिति
+2. संवैधानिक एवं वैधानिक स्थिति (अनुच्छेद व कानून)
 3. मुख्य विश्लेषण (2-कॉलम टेबल प्रारूप: 'चरण' और 'विवरण')
 4. प्रमुख तकनीकें / चुनौतियाँ (बुलेट पॉइंट्स, मुख्य शब्दों के आगे :)
 5. आगे की राह (Way Forward)
 6. 📌 Prelims Facts & Key Concepts (फ्लो हेतु → का प्रयोग)
-7. 📝 Mains Question:
+7. 📝 Mains Answer Writing Framework:
    - प्रश्न
-   - भूमिका (Intro): क्या लिखें
-   - मुख्य भाग (Body): 3 मुख्य बिंदु
-   - निष्कर्ष (Way Forward): संतुलित राय
+   - 📌 भूमिका (Intro): क्या डेटा, रिपोर्ट या अनुच्छेद कोट करें
+   - 📌 मुख्य भाग (Body Dimensions): 3 मुख्य विश्लेषणात्मक बिंदु (समिति अनुशंसा सहित)
+   - 📌 निष्कर्ष (Way Forward): संतुलित प्रशासनिक समाधान
 8. अंत में 4 Practice MCQs (व्याख्या सहित)।
-मार्कडाउन स्टार्स (**) का अनावश्यक प्रयोग न करें। भाषा सहज हिंदी रखें।
+
+मार्कडाउन स्टार्स (**) का अनावश्यक प्रयोग न करें। भाषा सहज व उच्च-स्तरीय हिंदी रखें।
 """
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-                topic = f"UPSC Daily Notes — {target_date}"
-                filename = f"UPSC_Notes_{target_date}.html"
+                topic = f"दैनिक करेंट अफेयर्स — {target_date}"
+                filename = f"Current_Affairs_{target_date}.html"
                 html_content = build_interactive_dashboard_html(topic, ai_text)
                 save_to_archive("daily", topic, filename, html_content, date_str=target_date)
                 await wait_m.delete()
@@ -658,12 +694,8 @@ async def process_dynamic_generation(user_id, data, context):
         if arch_data:
             topic, filename, html_content = arch_data
         else:
-            wait_m = await context.bot.send_message(
-                chat_id=user_id, 
-                text=f"📁 <b>{m_name}</b> का सम्पूर्ण मासिक कंपाइलेशन तैयार हो रहा है...", 
-                parse_mode=ParseMode.HTML
-            )
-            prompt = f"माह: '{m_name}' का सम्पूर्ण UPSC Monthly Current Affairs Digest 2-कॉलम टेबल्स और अंत में 15 MCQs बैंक के साथ हिंदी में तैयार करें।"
+            wait_m = await context.bot.send_message(chat_id=user_id, text=f"📁 <b>{m_name}</b> का मासिक कंपाइलेशन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+            prompt = f"माह: '{m_name}' का सम्पूर्ण UPSC Monthly Current Affairs Digest स्रोत, 2-कॉलम टेबल्स और अंत में 15 MCQs बैंक के साथ हिंदी में तैयार करें।"
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
                 topic = f"UPSC Monthly Digest — {m_name}"
@@ -718,7 +750,7 @@ async def process_dynamic_generation(user_id, data, context):
             document=send_doc,
             filename=filename,
             caption=(
-                f"📄 <b>UPSC नोट्स डाउनलोड:</b> <code>{topic}</code>\n"
+                f"📄 <b>नोट्स फ़ाइल:</b> <code>{topic}</code>\n"
                 f"👤 <b>संकलन:</b> {AUTHOR_NAME}\n"
                 f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
             ),
@@ -749,7 +781,6 @@ async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_query = " ".join(context.args).strip()
 
-    # 1. सनातन धर्म व आदरसूचक अभिवादन का अत्यंत विनम्र उत्तर (बिना किसी प्रश्न के)
     faith_greetings = [
         "जय सियाराम", "जय श्री राम", "जय श्रीराम", "राधे राधे", "जय श्री कृष्णा",
         "हर हर महादेव", "नमस्ते", "प्रणाम", "चरण स्पर्श", "जय बजरंगबली"
@@ -762,7 +793,6 @@ async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # 2. व्यक्तिगत व गैर-अध्ययन बातचीत ब्लॉक
     blocked_patterns = [
         r"मेरा नाम", r"तुम्हारा नाम", r"आपका नाम", r"तुम कौन", r"आप कौन",
         r"हेलो", r"हाय", r"hello", r"hi", r"hey", r"कैसे हो", r"क्या कर रहे",
@@ -855,7 +885,7 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"   🏛 <b>UPSC NOTE BUILDER</b>\n"
         f"╚════════════════════════╝\n\n"
         f"📌 <b>विषय:</b> <code>{query}</code>\n"
-        f"⚙️ <b>स्थिति:</b> GS-1/2/3/4 विश्लेषण एवं 2-कॉलम सारणी निर्माण चालू...",
+        f"⚙️ <b>स्थिति:</b> The Hindu, PIB स्रोत, 2-कॉलम सारणी व मेन्स आंसर फ्रेमवर्क तैयार चालू...",
         parse_mode=ParseMode.HTML
     )
 
@@ -864,29 +894,32 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 निम्नलिखित विषय/तारीख पर 'Zero to Hero' स्तर के गहन, परीक्षा-केंद्रित, पूर्ण और समृद्ध UPSC नोट्स तैयार करें:
 विषय: "{query}"
 
+शीर्षक: "दैनिक करेंट अफेयर्स — {query}" (स्रोत अनिवार्य रूप से लिखें)
+
 सख्त संरचना नियम:
 1. पहली पंक्ति में मुख्य शीर्षक दें।
 2. सभी संबंधित विषयों को अनिवार्य रूप से शामिल करें (GS-1, GS-2, GS-3, GS-4)।
 3. मुख्य हेडिंग्स:
-   - 1. संदर्भ / चर्चा में क्यों
+   - 1. संदर्भ / चर्चा में क्यों (स्रोत टैग सहित)
    - 2. संवैधानिक एवं वैधानिक स्थिति (संबद्ध अनुच्छेद, कानून व केस लॉ)
    - 3. मुख्य विश्लेषण (2-कॉलम टेबल प्रारूप: पहली पंक्ति हेडर 'चरण' और 'विवरण')
-   - 4. प्रमुख तकनीकें / चुनौतियाँ (बुलेट पॉइंट्स, मुख्य शब्दों के आगे :)
+   - 4. प्रमुख आयाम / चुनौतियाँ (बुलेट पॉइंट्स, मुख्य शब्दों के आगे :)
    - 5. आगे की राह (Way Forward)
    - 6. 📌 Prelims Facts & Key Concepts (फ्लो दिखाने के लिए → का प्रयोग)
-   - 7. 📝 Mains Question:
+   - 7. 📝 Mains Answer Writing Framework:
         - प्रश्न
-        - भूमिका (Intro): क्या लिखें
-        - मुख्य भाग (Body): 3 मुख्य बिंदु
-        - निष्कर्ष (Way Forward): संतुलित राय
+        - 📌 भूमिका (Intro): क्या डेटा, रिपोर्ट या अनुच्छेद कोट करें
+        - 📌 मुख्य भाग (Body Dimensions): 3 मुख्य विश्लेषणात्मक बिंदु
+        - 📌 निष्कर्ष (Way Forward): संतुलित राय
    - 8. 4 Practice MCQs (व्याख्या सहित)
 मार्कडाउन स्टार्स (**) का अनावश्यक प्रयोग न करें। भाषा हिंदी रखें।
 """
         ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-        clean_topic = re.sub(r'[^\w\s-]', '', query).strip()[:40]
+        clean_topic = f"दैनिक करेंट अफेयर्स — {query}"[:40]
         html_output = build_interactive_dashboard_html(clean_topic, ai_text)
 
-        filename = f"{re.sub(r'[^a-zA-Z0-9\u0900-\u097F]', '_', clean_topic)[:25]}.html"
+        safe_fname = re.sub(r'[^a-zA-Z0-9\u0900-\u097F]', '_', query)[:25]
+        filename = f"Current_Affairs_{safe_fname}.html"
         save_to_archive("daily", clean_topic, filename, html_output)
 
         with open(filename, "w", encoding="utf-8") as f:
@@ -897,8 +930,7 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 document=send_doc,
                 filename=filename,
                 caption=(
-                    f"✨ <b>UPSC Master Notes (Zero to Hero)</b>\n"
-                    f"📌 <b>विषय:</b> <code>{clean_topic}</code>\n"
+                    f"✨ <b>{clean_topic}</b>\n"
                     f"👤 <b>संकलन:</b> {AUTHOR_NAME}\n"
                     f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
                 ),
@@ -924,14 +956,14 @@ async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         target_uid = int(context.args[0])
         days = int(context.args[1])
-        expiry_date = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+        expiry_date = (get_ist_now() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("""
             INSERT INTO users (user_id, is_vip, vip_expiry, joined_at)
             VALUES (?, 1, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET is_vip = 1, vip_expiry = ?
-        """, (target_uid, expiry_date, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), expiry_date))
+        """, (target_uid, expiry_date, get_ist_now().strftime("%Y-%m-%d %H:%M:%S"), expiry_date))
         conn.commit()
         conn.close()
         await update.message.reply_text(f"✅ यूज़र <code>{target_uid}</code> को <b>{days} दिन</b> के लिए अधिकृत कर दिया गया है।", parse_mode=ParseMode.HTML)
@@ -973,7 +1005,7 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"• <b>{fn}</b> (<code>{uid}</code>) | {un_str}\n  वैधता: <code>{exp}</code>\n\n"
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
-# ================= CONTACT / OWNER FEEDBACK (2 MIN TIMER & SWIPE REPLY) =================
+# ================= CONTACT / OWNER FEEDBACK =================
 async def contact_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -994,7 +1026,7 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
     start_time = CONTACT_SESSIONS.get(user_id, 0)
     if time.time() - start_time > 120:
         CONTACT_SESSIONS.pop(user_id, None)
-        await update.message.reply_text("⚠️ <b>समय समाप्त!</b> पुनः प्रयास हेतु <code>/owner</code> भेजें।", parse_mode=ParseMode.HTML)
+        await update.message.reply_text("⚠️️ <b>समय समाप्त!</b> पुनः प्रयास हेतु <code>/owner</code> भेजें।", parse_mode=ParseMode.HTML)
         return ConversationHandler.END
 
     msg = update.message
@@ -1093,7 +1125,6 @@ async def start_html_session(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parse_mode=ParseMode.HTML
     )
 
-# ऑटो-कलेक्टर (चाहे /html दबाया हो या सीधे फॉरवर्ड किया हो)
 async def collect_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_authorized(user_id):
@@ -1245,8 +1276,9 @@ async def generate_final_file(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 नियम:
 1. मुख्य हेडिंग्स बनाएं (1. संदर्भ, 2. मुख्य बिंदु, 3. चुनौतियाँ, 4. आगे की राह, 5. Prelims Facts)।
-2. जहाँ भी तुलना, चरण या वर्गीकरण हो, 2-कॉलम टेबल प्रारूप में लिखें (पहली पंक्ति हेडर जैसे 'चरण' और 'विवरण')।
-3. अनावश्यक स्टार्स (**) का प्रयोग न करें। भाषा शुद्ध हिंदी रखें।
+2. जहाँ भी तुलना, चरण या वर्गीकरण हो, 2-कॉलम टेबल प्रारूप में लिखें (पहली पंक्ति हेडर 'चरण' और 'विवरण')।
+3. प्रत्येक मुद्दे का समाचार स्रोत अवश्य लिखें।
+4. अनावश्यक स्टार्स (**) का प्रयोग न करें। भाषा शुद्ध हिंदी रखें।
 """
             enhanced_text = await asyncio.to_thread(call_gemini_safely, ai_struct_prompt)
         except Exception:
@@ -1289,7 +1321,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ================= RENDER KEEP-ALIVE SERVER =================
 async def run_server():
     app = web.Application()
-    app.router.add_get("/", lambda r: web.Response(text="UPSC Smart Bot Active 24/7 with Topper Tone"))
+    app.router.add_get("/", lambda r: web.Response(text="UPSC Smart Bot Active 24/7 with IST Clock & Trending Radar"))
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.environ.get("PORT", 8080))
@@ -1305,6 +1337,7 @@ async def main():
     bot_app.add_handler(CommandHandler("start", start_handler))
     bot_app.add_handler(CommandHandler("help", help_handler))
     bot_app.add_handler(CommandHandler("daily", daily_cmd))
+    bot_app.add_handler(CommandHandler("trending", trending_cmd))
     bot_app.add_handler(CommandHandler("weekly", weekly_cmd))
     bot_app.add_handler(CommandHandler("monthly", monthly_cmd))
     bot_app.add_handler(CommandHandler("yearly", yearly_cmd))
