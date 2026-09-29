@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime
 from aiohttp import web
 from bs4 import BeautifulSoup
+import google.generativeai as genai
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -21,10 +22,15 @@ from telegram.ext import (
 
 # ================= CONFIGURATION =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
 ADMIN_IDS = [1745425595, 7850454902]
 CHANNEL_LINK = "https://t.me/UPSCHTML"
 CHANNEL_NAME = "@UPSCHTML"
 AUTHOR_NAME = "सचिन शर्मा"
+
+# AI Configuration
+if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY_HERE":
+    genai.configure(api_key=GEMINI_API_KEY)
 
 WAITING_FOR_NAME = 1
 WAITING_CONTACT_MSG = 2
@@ -188,10 +194,9 @@ def sanitize_and_rebrand_html(soup: BeautifulSoup, custom_title: str = None) -> 
 def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list = None) -> str:
     lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
     sections = []
-    current_sec_title = "भूमिका एवं अवलोकन"
+    current_sec_title = "भूमिका एवं सामान्य अवलोकन"
     current_sec_lines = []
 
-    # 1. सेक्शन पहचानना
     for line in lines:
         is_heading = (
             re.match(r'^[0-9]+\.\s*', line) 
@@ -212,11 +217,8 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
     nav_links_html = ""
     content_html = ""
 
-    # 2. प्रत्येक सेक्शन को प्रोसेस करना
     for idx, (sec_title, sec_lines) in enumerate(sections, 1):
         sec_id = f"topic-sec-{idx}"
-        
-        # नेविगेशन बटन के लिए वास्तविक नाम साफ़ करना (भाग 1 / भाग 2 हटाकर अर्थपूर्ण नाम)
         clean_nav_name = re.sub(r'^[0-9]+\.\s*', '', sec_title)
         clean_nav_name = re.sub(r'[📌💡⚡✨🔥📖🎯📝🌪️🗳️⚖️🔍🔑|━─—_:-🔸]', '', clean_nav_name).strip()
         if len(clean_nav_name) > 22:
@@ -235,7 +237,6 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
         while i < n:
             line = sec_lines[i]
 
-            # (क) पाइप वाली टेबल (| A | B |)
             if line.startswith('|') and line.endswith('|') and len(line.split('|')) >= 3:
                 cells = [c.strip() for c in line.split('|')[1:-1]]
                 if not in_pipe_table:
@@ -250,9 +251,9 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
                 in_pipe_table = False
                 pipe_table_rows = []
 
-            # (ख) बिना पाइप वाली टेबल पहचानना (जैसे: "चरण" और अगली लाइन में "AI का उपयोग")
+            # 2-कॉलम टेबल पहचानना (जैसे: "चरण" और अगली पंक्ति "AI का उपयोग")
             is_table_header = (
-                (line in ["चरण", "विषय", "क्षेत्र", "तकनीक", "प्रावधान", "Article", "क्रम"]) 
+                (line in ["चरण", "विषय", "क्षेत्र", "तकनीक", "प्रावधान", "Article", "घटक", "आयाम", "क्रम"]) 
                 and (i + 1 < n)
             )
             if is_table_header:
@@ -263,11 +264,10 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
                 while i + 1 < n:
                     c1 = sec_lines[i]
                     c2 = sec_lines[i+1]
-                    # यदि पैराग्राफ या नया टॉपिक आ जाए तो टेबल रोकें
                     if (
                         len(c1) > 65 
                         or c1.startswith(('•', '-', '①', '②', '③', '④', '⑤', '1.', '2.', '3.'))
-                        or any(c1.startswith(x) for x in ["📌", "🎯", "⚡", "📖", "💡", "📝"])
+                        or any(c1.startswith(x) for x in ["📌", "🎯", "⚡", "📖", "💡", "📝", "🔑"])
                     ):
                         break
                     table_html += f"<tr><td class='td-cell'><strong>{c1}</strong></td><td class='td-cell'>{c2}</td></tr>"
@@ -276,13 +276,11 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
                 sec_body_html += table_html
                 continue
 
-            # (ग) कोट्स / निष्कर्ष
             if line.startswith('>') or line.startswith('“') or line.startswith('"'):
                 sec_body_html += f"<blockquote>{line.strip('“\"')}</blockquote>"
                 i += 1
                 continue
 
-            # (घ) तीर वाले फ्लो (A → B → C)
             if '→' in line:
                 steps = [s.strip() for s in line.split('→') if s.strip()]
                 if len(steps) > 1:
@@ -291,7 +289,6 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
                     i += 1
                     continue
 
-            # (ङ) नंबर वाले पॉइंट्स (①, ② या 1., 2.)
             numbered_match = re.match(r'^([①②③④⑤⑥⑦⑧⑨⑩]|\d+\.)\s*(.*)', line)
             if numbered_match:
                 point_sym = numbered_match.group(1)
@@ -300,7 +297,6 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
                 i += 1
                 continue
 
-            # (च) बुलेट पॉइंट्स
             if line.startswith(('•', '-', '▪', '▫', '*')):
                 clean_bullet = re.sub(r'^[•\-▪▫\*]\s*', '', line)
                 if ':' in clean_bullet and len(clean_bullet.split(':')[0]) < 30:
@@ -310,7 +306,6 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
                 i += 1
                 continue
 
-            # (छ) सामान्य पैराग्राफ में कीवर्ड्स ऑटो-हाइलाइट
             formatted = line
             if ':' in formatted and len(formatted.split(':')[0]) < 28:
                 parts = formatted.split(':', 1)
@@ -458,7 +453,7 @@ footer a {{ color:#8bc4ef; font-weight:700; text-decoration:none; }}
   <h1>🇮🇳 {topic}</h1>
   <div class="author-pill">✍️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
   <div class="controls">
-    <input type="text" id="searchBox" placeholder="🔍 खोजें: AI, Early Warning, Rescue...">
+    <input type="text" id="searchBox" placeholder="🔍 खोजें: विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()">🌗 Dark / Light</button>
   </div>
 </header>
@@ -491,6 +486,100 @@ document.getElementById('searchBox').addEventListener('input', function() {{
 </body>
 </html>"""
 
+# ================= AI GENERATOR COMMAND (/generate) =================
+async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ यह AI जनरेशन फीचर केवल एडमिन के लिए है।")
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "💡 <b>उपयोग का तरीका:</b>\n"
+            "<code>/generate [तारीख या विषय]</code>\n\n"
+            "<b>उदाहरण:</b>\n"
+            "• <code>/generate 29 September 2026 Daily Current Affairs</code>\n"
+            "• <code>/generate AI in Disaster Management</code>\n"
+            "• <code>/generate September 2026 Monthly Compilation</code>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+
+    query = " ".join(context.args).strip()
+    status_msg = await update.message.reply_text(
+        f"🤖 <b>AI रिसर्च जारी है...</b>\n\n"
+        f"विषय: <code>{query}</code>\n"
+        "The Hindu, PIB, और UPSC सिलेबस के अनुसार नोट्स व सारणी तैयार की जा रही है...",
+        parse_mode=ParseMode.HTML
+    )
+
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        prompt = f"""
+आप UPSC CSE परीक्षा के मुख्य कंटेंट विश्लेषक और मेंटर हैं।
+निम्नलिखित विषय पर बिल्कुल 'Zero to Hero' स्तर के गहन, परीक्षा-केंद्रित और समृद्ध नोट्स तैयार करें:
+विषय: "{query}"
+
+सख्त संरचना नियम:
+1. पहली लाइन में स्पष्ट शीर्षक दें।
+2. GS पेपर का उल्लेख करें (उदा: GS-II: Polity / GS-III: Economy आदि)।
+3. मुख्य हेडिंग्स को क्रम से रखें:
+   - 1. संदर्भ / चर्चा में क्यों
+   - 2. संवैधानिक / वैधानिक स्थिति (संबद्ध अनुच्छेद, कानून व केस लॉ)
+   - 3. मुख्य विश्लेषण (जहाँ भी चरण, वर्गीकरण या पक्ष-विपक्ष हो, अनिवार्य रूप से 2-कॉलम टेबल प्रारूप में लिखें: पहली पंक्ति हेडर जैसे 'चरण' और 'विवरण' या 'घटक' और 'भूमिका')
+   - 4. प्रमुख तकनीकें / चुनौतियाँ (बुलेट पॉइंट्स में, मुख्य शब्दों के आगे कोलन : लगाएं)
+   - 5. आगे की राह (Way Forward)
+   - 6. 📌 Prelims Facts & Key Concepts (फ्लो दिखाने के लिए → का प्रयोग करें)
+   - 7. 📝 Mains Question & Answer Framework (भूमिका, मुख्य भाग के 3 बिंदु, संतुलित निष्कर्ष)
+4. भाषा हिंदी (आवश्यक तकनीकी शब्द कोष्ठक में अंग्रेजी) में रखें।
+5. कोई मार्कडाउन पाइप (|) न बनाएं, सीधे हेडर के नीचे मान लिखें जैसे:
+चरण
+AI का उपयोग
+Preparedness
+बाढ़ की पूर्व चेतावनी
+Risk Assessment
+सैटेलाइट मैपिंग
+"""
+        response = await asyncio.to_thread(model.generate_content, prompt)
+        ai_text = response.text
+
+        clean_topic = query[:40]
+        html_output = build_interactive_dashboard_html(clean_topic, ai_text)
+
+        period = "daily"
+        if "month" in query.lower() or "माह" in query or "मासिक" in query:
+            period = "monthly"
+        elif "week" in query.lower() or "सप्ताह" in query:
+            period = "weekly"
+        elif "year" in query.lower() or "वार्षिक" in query:
+            period = "yearly"
+
+        filename = f"{re.sub(r'[^a-zA-Z0-9\u0900-\u097F]', '_', clean_topic)[:25]}.html"
+        save_to_archive(period, clean_topic, filename, html_output)
+
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(html_output)
+
+        with open(filename, "rb") as send_doc:
+            await update.message.reply_document(
+                document=send_doc,
+                filename=filename,
+                caption=(
+                    f"✨ <b>AI द्वारा स्वतः तैयार यूपीएससी नोट्स!</b>\n"
+                    f"📌 <b>विषय:</b> <code>{clean_topic}</code>\n"
+                    f"👤 <b>संकलन:</b> {AUTHOR_NAME}\n"
+                    f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                ),
+                parse_mode=ParseMode.HTML,
+            )
+
+        await status_msg.delete()
+        if os.path.exists(filename):
+            os.remove(filename)
+
+    except Exception as e:
+        await status_msg.edit_text(f"❌ AI जनरेशन में त्रुटि आई: {e}")
+
 # ================= PUBLIC MENU & INLINE BUTTONS =================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -501,7 +590,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
             f"👋 <b>नमस्ते एडमिन {AUTHOR_NAME}!</b>\n\n"
             "👑 <b>एडमिन कंट्रोल सक्रिय है:</b>\n"
-            "• <code>/html</code> — नए नोट्स संकलन शुरू करें\n"
+            "• <code>/generate [विषय/तारीख]</code> — AI से स्वतः सम्पूर्ण HTML नोट्स तैयार कराएं\n"
+            "• <code>/html</code> — मैन्युअल फॉरवर्डेड नोट्स संकलन शुरू करें\n"
             "• <code>/sachin</code> — HTML फ़ाइल तैयार करें\n"
             "• <code>/broadcast</code> — सभी को मैसेज भेजें\n\n"
             "📚 <b>छात्रों के लिए आर्काइव कमांड्स:</b>\n"
@@ -509,7 +599,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• <code>/weekly</code> — सप्ताह चुनकर नोट्स देखें\n"
             "• <code>/monthly</code> — महीना चुनकर पत्रिका देखें\n"
             "• <code>/yearly</code> — साल चुनकर नोट्स देखें\n"
-            "• <code>/owner</code> — सीधे छात्रों के संदेश प्राप्त करें"
+            "• <code>/owner</code> — छात्रों के सीधे संदेश प्राप्त करें"
         )
     else:
         msg = (
@@ -625,7 +715,6 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.HTML
     )
 
-# जब छात्र बटन दबाएगा तो पिछला मैसेज डिलीट होकर फ़ाइल जाएगी
 async def archive_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -633,7 +722,6 @@ async def archive_button_click(update: Update, context: ContextTypes.DEFAULT_TYP
     arch_id = int(query.data.split("_")[1])
     data = get_archive_by_id(arch_id)
 
-    # बटन वाले पिछले संदेश को तुरंत डिलीट करना ताकि चैट साफ़ रहे
     try:
         await query.message.delete()
     except Exception:
@@ -802,7 +890,7 @@ async def execute_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await status_msg.edit_text(report, parse_mode=ParseMode.HTML)
     return ConversationHandler.END
 
-# ================= ADMIN-ONLY HTML GENERATION =================
+# ================= ADMIN-ONLY MANUAL HTML GENERATION =================
 async def start_html_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
@@ -924,7 +1012,6 @@ async def generate_final_file(update: Update, context: ContextTypes.DEFAULT_TYPE
         combined_text = "\n\n".join(session["texts"])
         final_output_html = build_interactive_dashboard_html(final_topic, combined_text, session["images"])
 
-    # डेटाबेस में नई फ़ाइल जोड़ना
     save_to_archive("daily", final_topic, clean_filename, final_output_html)
 
     with open(clean_filename, "w", encoding="utf-8") as f:
@@ -960,7 +1047,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ================= RENDER KEEP-ALIVE SERVER =================
 async def run_server():
     app = web.Application()
-    app.router.add_get("/", lambda r: web.Response(text="Bot Active 24/7 with Pre-loaded Archive Buttons"))
+    app.router.add_get("/", lambda r: web.Response(text="Bot Active 24/7 with Integrated AI Engine"))
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.environ.get("PORT", 8080))
@@ -972,6 +1059,8 @@ async def main():
     init_db()
     await run_server()
     bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    bot_app.add_handler(CommandHandler("generate", ai_generate_cmd))
 
     bot_app.add_handler(CommandHandler("start", start_handler))
     bot_app.add_handler(CommandHandler("help", help_handler))
