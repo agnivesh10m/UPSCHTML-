@@ -28,9 +28,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 ADMIN_IDS = [1745425595, 7850454902]
 CHANNEL_LINK = "https://t.me/UPSCHTML"
 CHANNEL_NAME = "@UPSCHTML"
-AUTHOR_NAME = "सचिन शर्मा"
+AUTHOR_NAME = "SACHIN SHARMA"
 
-# भारतीय मानक समय (IST)
 IST = ZoneInfo("Asia/Kolkata")
 
 def get_ist_now():
@@ -39,13 +38,11 @@ def get_ist_now():
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
-WAITING_FOR_NAME = 1
-WAITING_CONTACT_MSG = 2
-WAITING_BROADCAST_MSG = 3
+WAITING_CONTACT_MSG = 1
+WAITING_BROADCAST_MSG = 2
 
-USER_BUFFERS = {}
 CONTACT_SESSIONS = {}
-
+USER_QUIZ_SELECTIONS = {}
 DB_PATH = "upsc_bot.db"
 
 # ================= DATABASE SETUP =================
@@ -162,14 +159,13 @@ def get_all_users():
     conn.close()
     return [r[0] for r in rows]
 
-# ================= ASYNC ENGINE (3.8 FLASH PRIORITY) =================
+# ================= ASYNC ENGINE =================
 def call_gemini_safely(prompt: str) -> str:
     api_k = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_k:
         raise Exception("API Key सर्वर पर सेट नहीं है।")
 
     genai.configure(api_key=api_k)
-
     models_to_try = [
         "gemini-3.8-flash",
         "gemini-3.5-flash-lite",
@@ -201,7 +197,7 @@ def call_gemini_safely(prompt: str) -> str:
 
     raise Exception("सर्वर से कनेक्ट करने में असमर्थ।")
 
-# ================= CLEAN & ACCURATE HTML BUILDER =================
+# ================= CLEAN & ACCURATE HTML BUILDER WITH COMPLETE SOURCES & FRAMEWORK =================
 def clean_stars_and_markdown(text: str) -> str:
     text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
@@ -210,23 +206,18 @@ def clean_stars_and_markdown(text: str) -> str:
     return text.strip()
 
 def format_nav_title(title: str, idx: int) -> str:
-    # बिना किसी शब्द को काटे सटीक नाम निकालना
     clean = re.sub(r'^[\d\.\-\s📌🎯⚡📖💡🗳️⚖️🔍📝🛣️❄️🌏📰🌍🌱🔬💰🔑📚🔸]+', '', title).strip()
     clean = re.sub(r'[*#_~`]', '', clean).strip()
-    
     if '/' in clean:
         parts = [p.strip() for p in clean.split('/') if len(p.strip()) > 2]
         clean = parts[-1] if parts else clean
-        
     clean = clean.replace(':', '').replace('-', '').strip()
-    
     if not clean or len(clean) < 2 or clean in ['.', '/', '-', '_']:
-        names = ["चर्चा में क्यों", "संवैधानिक ढांचा", "मुख्य विश्लेषण", "प्रमुख आयाम", "आगे की राह", "प्रीलिम्स फैक्ट्स", "मेन्स प्रश्न"]
+        names = ["चर्चा में क्यों", "संवैधानिक ढांचा", "मुख्य विश्लेषण", "प्रमुख आयाम", "आगे की राह", "प्रीलिम्स फैक्ट्स", "मेन्स फ्रेमवर्क"]
         clean = names[(idx - 1) % len(names)]
-        
     return clean
 
-def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list = None) -> str:
+def build_interactive_dashboard_html(topic: str, raw_text: str) -> str:
     lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
     sections = []
     current_sec_title = "भूमिका एवं सामान्य अवलोकन"
@@ -249,7 +240,7 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
     if current_sec_lines or current_sec_title:
         sections.append((current_sec_title, current_sec_lines))
 
-    nav_links_html = ""
+    nav_links_html = '<a href="#quiz-zone-sec" style="background:#f59e0b; color:#000;">🎯 लाइव टेस्ट / क्विज़</a>\n'
     content_html = ""
 
     for idx, (sec_title, sec_lines) in enumerate(sections, 1):
@@ -305,6 +296,16 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
                 sec_body_html += table_html
                 continue
 
+            # मेन्स प्रश्न व फ्रेमवर्क का विशेष डिज़ाइन
+            if "Mains Question" in line or "मेन्स प्रश्न" in line:
+                sec_body_html += f"<div class='mains-card'><h4 style='color:#b45309;'>📝 मुख्य परीक्षा प्रश्न</h4><p class='para'><strong>{line}</strong></p>"
+                i += 1
+                while i < n and not any(sec_lines[i].startswith(x) for x in ["📌", "🎯", "⚡", "📖", "1.", "2.", "3.", "4."]):
+                    sec_body_html += f"<p class='para'>{clean_stars_and_markdown(sec_lines[i])}</p>"
+                    i += 1
+                sec_body_html += "</div>"
+                continue
+
             if line.startswith('>') or line.startswith('“') or line.startswith('"'):
                 sec_body_html += f"<blockquote>{line.strip('“\"')}</blockquote>"
                 i += 1
@@ -342,7 +343,7 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
 
             formatted = re.sub(r'(GS-[I|II|III|IV]+|GS-\d)', r'<span class="badge-gs">\1</span>', formatted)
             formatted = re.sub(r'(Article\s+\d+[A-Za-z]?|अनुच्छेद\s+\d+[A-Za-z]?)', r'<span class="badge-art">\1</span>', formatted, flags=re.IGNORECASE)
-            formatted = re.sub(r'(The Hindu|Indian Express|PIB|योजना|डाउन टू अर्थ)', r'<span class="badge-src">📰 स्रोत: \1</span>', formatted)
+            formatted = re.sub(r'(The Hindu|Indian Express|PIB|योजना|Vision IAS|Drishti IAS|Sanskriti IAS)', r'<span class="badge-src">📰 \1</span>', formatted, flags=re.IGNORECASE)
             formatted = re.sub(r'(https?://[^\s]+)', r'<a href="\1" target="_blank" class="text-link">\1</a>', formatted)
             sec_body_html += f"<p class='para'>{formatted}</p>"
             i += 1
@@ -357,17 +358,12 @@ def build_interactive_dashboard_html(topic: str, raw_text: str, image_list: list
         </section>
         """
 
-    img_markup = ""
-    if image_list:
-        for b64 in image_list:
-            img_markup += f"<div class='img-container'><img src='data:image/jpeg;base64,{b64}' class='post-img'/></div>"
-
     return f"""<!DOCTYPE html>
 <html lang="hi">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{topic} | संकलन: {AUTHOR_NAME}</title>
+<title>{topic} | {AUTHOR_NAME}</title>
 <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {{
@@ -402,7 +398,7 @@ body {{
     pointer-events: none;
     letter-spacing: 12px;
   }}
-  .controls, nav.dashboard, #telegramBtn, .print-btn {{ display: none !important; }}
+  .controls, nav.dashboard, #telegramBtn, .print-btn, #quiz-trigger-btn {{ display: none !important; }}
   .news-card {{ box-shadow: none !important; border: 1px solid #ccc !important; page-break-inside: avoid; }}
 }}
 .top-header {{
@@ -435,6 +431,11 @@ nav.dashboard a:hover {{ background:var(--accent); color:#fff; }}
   padding:24px; margin-bottom:22px; box-shadow:var(--shadow); width:100%;
   scroll-margin-top: 65px;
 }}
+.mains-card {{
+  background: #fef3c7; border-left: 5px solid var(--saffron); border-radius: 8px;
+  padding: 16px; margin: 16px 0; color: #78350f;
+}}
+[data-theme="dark"] .mains-card {{ background: #451a03; color: #fde68a; }}
 .section-title {{
   color:var(--accent); font-size:1.24rem; margin-bottom:14px;
   border-left:5px solid var(--saffron); padding-left:12px;
@@ -461,8 +462,22 @@ table {{ width:100%; border-collapse:collapse; text-align:left; }}
 th.th-cell {{ background:var(--accent); color:#fff; padding:10px 14px; font-size:0.95rem; font-weight:600; }}
 td.td-cell {{ padding:10px 14px; border-bottom:1px solid var(--border); font-size:0.94rem; }}
 tr:nth-child(even) td.td-cell {{ background:rgba(128,128,128,0.04); }}
-.img-container {{ text-align:center; margin:16px 0; }}
-.post-img {{ max-width:100%; border-radius:10px; }}
+
+/* क्विज़ बॉक्स डिज़ाइन */
+.quiz-box {{
+  background: var(--card); border: 2px solid var(--saffron); border-radius: 14px;
+  padding: 24px; margin: 24px 0; box-shadow: var(--shadow);
+}}
+.opt-label {{
+  display: block; padding: 10px 14px; margin: 8px 0; border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; transition: background 0.2s; font-size: 0.96rem;
+}}
+.opt-label:hover {{ background: var(--tag-bg); }}
+.timer-pill {{
+  background: #ef4444; color: #fff; padding: 4px 12px; border-radius: 20px;
+  font-weight: 700; font-size: 0.88rem; display: inline-block; margin-bottom: 12px;
+}}
+
 #telegramBtn {{
   position:fixed; bottom:18px; right:18px; z-index:90;
   background:#229ED9; color:#fff; border:none; border-radius:30px;
@@ -489,8 +504,16 @@ footer a {{ color:#8bc4ef; font-weight:700; text-decoration:none; }}
   </div>
 </nav>
 <main class="wrap" id="mainContent">
-  {img_markup}
   {content_html}
+  
+  <section id="quiz-zone-sec" class="news-card" style="border: 2px solid var(--saffron);">
+    <h3 class="section-title">🎯 UPSC CSE अभ्यास क्विज़ (Interactive Test)</h3>
+    <p class="para">दैनिक नोट्स पर आधारित लाइव मॉक टेस्ट। प्रत्येक सही उत्तर पर +2 अंक, गलत उत्तर पर -0.66 अंक।</p>
+    <div style="text-align:center; margin: 18px 0;">
+      <button id="quiz-trigger-btn" onclick="startUPSCQuiz()" style="background:var(--saffron); color:#000; font-weight:bold; font-size:1.05rem; padding:12px 26px; border:none; border-radius:30px; cursor:pointer;">📝 टेस्ट शुरू करें (Start Quiz)</button>
+    </div>
+    <div id="quiz-engine-area" style="display:none;"></div>
+  </section>
 </main>
 <button id="telegramBtn" onclick="window.open('{CHANNEL_LINK}','_blank')">📲 TELEGRAM — {CHANNEL_NAME}</button>
 <footer>
@@ -508,6 +531,93 @@ document.getElementById('searchBox').addEventListener('input', function() {{
     card.style.display = card.innerText.toLowerCase().includes(q) ? 'block' : 'none';
   }});
 }});
+
+let testTimer = null;
+let secondsLeft = 360;
+
+function startUPSCQuiz() {{
+  document.getElementById('quiz-trigger-btn').style.display = 'none';
+  const area = document.getElementById('quiz-engine-area');
+  area.style.display = 'block';
+
+  area.innerHTML = `
+    <div style="text-align:right;"><span class="timer-pill" id="timeDisplay">⏱ शेष समय: 06:00</span></div>
+    <form id="upscTestForm">
+      <div class="quiz-box">
+        <p><strong>प्रश्न 1: राजकोषीय घाटा (Fiscal Deficit) और बाह्य ऋण के संदर्भ में कौन सा कथन सही है?</strong></p>
+        <label class="opt-label"><input type="radio" name="q1" value="a"> (a) यह केवल सरकारी निवेश पर ब्याज अदायगी को प्रदर्शित करता है।</label>
+        <label class="opt-label"><input type="radio" name="q1" value="b"> (b) यह कुल व्यय और उधारियों को छोड़कर कुल प्राप्तियों के बीच का अंतर है।</label>
+        <label class="opt-label"><input type="radio" name="q1" value="c"> (c) भारत का बाह्य ऋण इसके आंतरिक ऋण से काफी अधिक है।</label>
+        <label class="opt-label"><input type="radio" name="q1" value="d"> (d) उपर्युक्त में से कोई नहीं।</label>
+      </div>
+      <div class="quiz-box">
+        <p><strong>प्रश्न 2: 'आर्टिकल 356' के अंतर्गत राष्ट्रपति शासन लागू करने के संदर्भ में एस.आर. बोम्मई वाद (1994) का मुख्य निष्कर्ष क्या था?</strong></p>
+        <label class="opt-label"><input type="radio" name="q2" value="a"> (a) यह पूरी तरह से न्यायिक समीक्षा से परे है।</label>
+        <label class="opt-label"><input type="radio" name="q2" value="b"> (b) राष्ट्रपति शासन की उद्घोषणा न्यायिक समीक्षा के अधीन है।</label>
+        <label class="opt-label"><input type="radio" name="q2" value="c"> (c) राज्यपाल की रिपोर्ट को सार्वजनिक करना अनिवार्य नहीं है।</label>
+        <label class="opt-label"><input type="radio" name="q2" value="d"> (d) विधानसभा स्वतः भंग मानी जाएगी।</label>
+      </div>
+      <div class="quiz-box">
+        <p><strong>प्रश्न 3: 'राष्ट्रीय हरित अधिकरण' (NGT) के संदर्भ में निम्नलिखित कथनों पर विचार करें:</strong></p>
+        <label class="opt-label"><input type="radio" name="q3" value="a"> (a) यह सिविल प्रक्रिया संहिता (CPC) 1908 से बाध्य है।</label>
+        <label class="opt-label"><input type="radio" name="q3" value="b"> (b) यह प्राकृतिक न्याय के सिद्धांतों द्वारा निर्देशित है।</label>
+        <label class="opt-label"><input type="radio" name="q3" value="c"> (c) यह केवल वन्यजीव संरक्षण अधिनियम के तहत मामलों की सुनवाई करता है।</label>
+        <label class="opt-label"><input type="radio" name="q3" value="d"> (d) इसके फैसलों को सुप्रीम कोर्ट में चुनौती नहीं दी जा सकती।</label>
+      </div>
+      <div style="text-align:center; margin-top:20px;">
+        <button type="button" onclick="submitUPSCTest()" style="background:#10b981; color:#fff; font-weight:bold; font-size:1.05rem; padding:12px 30px; border:none; border-radius:30px; cursor:pointer;">📊 टेस्ट सबमिट करें</button>
+      </div>
+    </form>
+    <div id="testResultZone" style="margin-top:24px;"></div>
+  `;
+
+  testTimer = setInterval(() => {{
+    secondsLeft--;
+    let m = Math.floor(secondsLeft / 60);
+    let s = secondsLeft % 60;
+    document.getElementById('timeDisplay').innerText = `⏱ शेष समय: ${{m < 10 ? '0' : ''}}${{m}}:${{s < 10 ? '0' : ''}}${{s}}`;
+    if (secondsLeft <= 0) {{
+      clearInterval(testTimer);
+      submitUPSCTest();
+    }}
+  }}, 1000);
+}}
+
+function submitUPSCTest() {{
+  clearInterval(testTimer);
+  const answers = {{ q1: 'b', q2: 'b', q3: 'b' }};
+  let score = 0;
+  let correct = 0;
+  let wrong = 0;
+  let unattempted = 0;
+
+  for (let key in answers) {{
+    const sel = document.querySelector(`input[name="${{key}}"]:checked`);
+    if (sel) {{
+      if (sel.value === answers[key]) {{
+        score += 2.0;
+        correct++;
+      }} else {{
+        score -= 0.66;
+        wrong++;
+      }}
+    }} else {{
+      unattempted++;
+    }}
+  }}
+
+  const resultZone = document.getElementById('testResultZone');
+  resultZone.innerHTML = `
+    <div style="background:var(--tag-bg); border:2px solid var(--accent); border-radius:12px; padding:20px; text-align:center;">
+      <h3 style="color:var(--accent); font-size:1.3rem;">🏆 आपका UPSC CSE टेस्ट परिणाम</h3>
+      <p style="font-size:1.15rem; margin:10px 0;"><strong>कुल प्राप्तांक:</strong> <span style="color:#ef4444; font-weight:bold;">${{score.toFixed(2)}} / 6.00</span></p>
+      <p>✅ सही: <b>${{correct}}</b> | ❌ गलत: <b>${{wrong}}</b> | ⚪ अनुत्तरित: <b>${{unattempted}}</b></p>
+      <div style="margin-top:15px;">
+        <button onclick="window.print()" style="background:#0284c7; color:#fff; padding:8px 18px; border:none; border-radius:20px; cursor:pointer; font-weight:bold;">🖨️️ स्कोरकार्ड प्रिंट करें (PDF)</button>
+      </div>
+    </div>
+  `;
+}}
 </script>
 </body>
 </html>"""
@@ -525,17 +635,16 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{admin_badge}"
         "नीचे सभी मुख्य कमांड्स उपलब्ध हैं:\n\n"
         "📖 <b>अध्ययन एवं नोट्स:</b>\n"
-        "• <code>/daily</code> — दैनिक नोट्स (IST कैलेंडर चयन)\n"
+        "• <code>/daily</code> — दैनिक नोट्स (IST लाइव कैलेंडर)\n"
+        "• <code>/quiz</code> — विषयवार लाइव टेस्ट शुरू करें\n"
         "• <code>/trending</code> — चर्चा में चल रहे स्थान, व्यक्ति व मुद्दे\n"
         "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन\n"
         "• <code>/monthly</code> — सम्पूर्ण मासिक संकलन\n"
         "• <code>/yearly</code> — वार्षिक कंपाइलेशन\n"
         "• <code>/ask &lt;सवाल&gt;</code> — डाउट पूछें\n\n"
-        "🛠️ <b>प्रशासनिक व निर्माण कमांड्स:</b>\n"
+        "🛠 <b>प्रशासनिक व निर्माण कमांड्स:</b>\n"
         "• <code>/generate &lt;तारीख/विषय&gt;</code> — नोट्स निर्माण\n"
-        "• <code>/html</code> — सामग्री संग्रह सत्र चालू करें\n"
-        "• <code>/sachin</code> — संयुक्त HTML फ़ाइल बनाएं\n"
-        "• <code>/broadcast</code> — सभी को मैसेज भेजें\n"
+        "• <code>/broadcast</code> — सभी पंजीकृत छात्रों को संदेश भेजें\n"
         "• <code>/adduser</code> | <code>/removeuser</code> | <code>/listusers</code> — मेंबर्स संभालें\n\n"
         "💬 <b>सहायता व संपर्क:</b>\n"
         "• <code>/owner</code> — सचिन शर्मा से सीधे संपर्क करें\n"
@@ -548,16 +657,15 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
     help_text = (
-        "📖 <b>UPSC HTML BOT — सहायता केंद्र</b>\n\n"
-        "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> भारतीय मानक समय (IST) के अनुसार आज, पिछली 5 और अगली 3 तारीखों के बटन मिलेंगे।\n\n"
-        "2️⃣ <b>ट्रेंडिंग रडार (`/trending`):</b> चर्चा में चल रहे स्थान (Places in News), व्यक्ति, और कल-आज-कल का घटनाक्रम देखें।\n\n"
-        "3️⃣ <b>मासिक पत्रिका (`/monthly`):</b> पूरे माह का विषयवार सार और अंत में सभी अभ्यास प्रश्न एक साथ मिलेंगे।\n\n"
-        "4️⃣ <b>प्रिंट व पीडीएफ वॉटरमार्क:</b> किसी भी फ़ाइल को खोलकर <b>'🖨️ प्रिंट / PDF'</b> दबाएं। सभी पन्नों पर <b>SACHIN SHARMA</b> का 50% दृश्यता वाला वॉटरमार्क स्वतः प्रिंट होगा।\n\n"
-        "5️⃣ <b>सीधे एडमिन से संपर्क:</b> <code>/owner</code> दबाएं और 2 मिनट में अपनी बात लिखें।"
+        f"📖 <b>UPSC SMART DESK — सहायता केंद्र ({AUTHOR_NAME})</b>\n\n"
+        "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> भारतीय समय (IST) के अनुसार तारीख चुनें। The Hindu, PIB, Vision, Sanskriti व Drishti IAS के समन्वय से तैयार नोट्स पाएं।\n\n"
+        "2️⃣ <b>सीधे PDF भेजें:</b> कोई भी UPSC मैगज़ीन या न्यूज़पेपर PDF सीधे बॉट को भेजें, यह स्वतः उसका 360° HTML नोट्स बनाकर लौटा देगा।\n\n"
+        "3️⃣ <b>लाइव टेस्ट (`/quiz`):</b> प्रश्नों की संख्या (5, 10, 15) व विषय चुनकर अपनी पसंद का टेस्ट शुरू करें।\n\n"
+        "4️⃣ <b>प्रिंट व वॉटरमार्क:</b> सभी फाइलों पर <b>SACHIN SHARMA</b> का 50% विजिबिलिटी वाला वॉटरमार्क प्रिंट होगा।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
-# /daily: भारतीय मानक समय (IST) के आधार पर आज, -5 दिन, +3 दिन
+# /daily: IST कैलेंडर
 async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -573,31 +681,39 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("📅 <b>जिस तारीख के UPSC दैनिक नोट्स चाहिए, उस बटन पर क्लिक करें:</b>", reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
-# /trending: समसामयिक स्थान, व्यक्ति व 1 दिन आगे-पीछे का घटनाक्रम
+# /quiz: दो-चरणीय क्विज़ विज़ार्ड (Step 1: विषय का चयन)
+async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    register_user(user.id, user.username, user.first_name)
+    keyboard = [
+        [InlineKeyboardButton("🏛 राजव्यवस्था (Polity)", callback_data="qsubj_polity"), InlineKeyboardButton("💰 अर्थव्यवस्था (Economy)", callback_data="qsubj_economy")],
+        [InlineKeyboardButton("🌿 पर्यावरण (Environment)", callback_data="qsubj_env"), InlineKeyboardButton("🔬 विज्ञान एवं टेक (Sci & Tech)", callback_data="qsubj_scitech")],
+        [InlineKeyboardButton("🧭 इतिहास एवं भूगोल", callback_data="qsubj_histgeo"), InlineKeyboardButton("⚡ केवल आज के करंट अफेयर्स", callback_data="qsubj_todayca")]
+    ]
+    await update.message.reply_text("🎯 <b>चरण 1/2:</b> किस विषय का टेस्ट लगाना चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+# /trending
 async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
     today = get_ist_now().strftime("%Y-%m-%d")
-    
     wait_msg = await update.message.reply_text("🛰 <b>UPSC रडार:</b> समसामयिक स्थानों, व्यक्तियों व ट्रेंडिंग मुद्दों का संकलन हो रहा है...", parse_mode=ParseMode.HTML)
     
     prompt = f"""
-आज की तारीख {today} (भारतीय समय) के संदर्भ में UPSC CSE परीक्षा के लिए ट्रेंडिंग रडार तैयार करें:
+आज की तारीख {today} के संदर्भ में UPSC CSE परीक्षा हेतु ट्रेंडिंग रडार तैयार करें:
 1. 📍 Places in News (चर्चा में रहे 2-3 राष्ट्रीय व अंतर्राष्ट्रीय स्थान और उनका भौगोलिक/रणनीतिक महत्व)
 2. 👤 Persons/Institutions in News (चर्चा में रहे व्यक्तित्व या संस्थाएं)
 3. ⏪ कल का मुख्य घटनाक्रम (Yesterday Recap)
-4. ⚡ आज के शीर्ष 3 मुद्दे (Today's Core Issues)
-5. ⏩ कल का संभावित विमर्श / आने वाली बैठकें (Tomorrow's Outlook)
-
-प्रत्येक बिंदु के आगे The Hindu / PIB / IE का संदर्भ दें। भाषा शुद्ध और परीक्षा-उन्मुख हिंदी रखें।
-अनावश्यक मार्कडाउन स्टार्स का प्रयोग न करें।
+4. ⚡ आज के शीर्ष मुद्दे (The Hindu, PIB, Vision IAS संदर्भ)
+5. ⏩ कल का संभावित विमर्श / आने वाली बैठकें
+भाषा शुद्ध व उच्च-स्तरीय हिंदी रखें। अनावश्यक मार्कडाउन स्टार्स का प्रयोग न करें।
 """
     try:
         trend_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', trend_text)
-        await wait_msg.edit_text(f"🧭 <b>UPSC TRENDING RADAR ({today})</b>\n\n{clean_text}\n\n💡 <i>किसी भी मुद्दे के विस्तृत 360° नोट्स हेतु लिखें: <code>/generate &lt;मुद्दे का नाम&gt;</code></i>", parse_mode=ParseMode.HTML)
+        await wait_msg.edit_text(f"🧭 <b>UPSC TRENDING RADAR ({today})</b>\n\n{clean_text}\n\n💡 <i>विस्तृत नोट्स हेतु लिखें: <code>/generate &lt;विषय&gt;</code></i>", parse_mode=ParseMode.HTML)
     except Exception as e:
-        await wait_msg.edit_text(f"❌ ट्रेंडिंग डेटा संकलन में त्रुटि: {e}")
+        await wait_msg.edit_text(f"❌ त्रुटि: {e}")
 
 async def monthly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -624,7 +740,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓️ <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# डायनामिक बटन क्लिक हैंडलर
+# डायनामिक बटन क्लिक और लाइव प्रोग्रेस इंजन
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -634,6 +750,81 @@ async def handle_dynamic_generation_click(update: Update, context: ContextTypes.
         await query.message.delete()
     except Exception:
         pass
+
+    # क्विज़ स्टेप 1: विषय चुना -> प्रश्नों की संख्या पूछना
+    if data.startswith("qsubj_"):
+        subj_code = data.replace("qsubj_", "")
+        USER_QUIZ_SELECTIONS[user_id] = {"subj": subj_code}
+        
+        keyboard = [
+            [InlineKeyboardButton("⚡ 5 प्रश्न (क्विक टेस्ट - 6 मिनट)", callback_data=f"qcount_{subj_code}_5")],
+            [InlineKeyboardButton("🎯 10 प्रश्न (मानक टेस्ट - 12 मिनट)", callback_data=f"qcount_{subj_code}_10")],
+            [InlineKeyboardButton("🏆 15 प्रश्न (मेगा टेस्ट - 18 मिनट)", callback_data=f"qcount_{subj_code}_15")]
+        ]
+        await context.bot.send_message(chat_id=user_id, text="🎯 <b>चरण 2/2:</b> आप कितने प्रश्नों का टेस्ट देना चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        return
+
+    # क्विज़ स्टेप 2: संख्या चुनी -> टेस्ट जनरेट करना
+    if data.startswith("qcount_"):
+        parts = data.split("_")
+        subj_code = parts[1]
+        count = int(parts[2])
+        
+        subj_map = {
+            "polity": "भारतीय राजव्यवस्था एवं संविधान",
+            "economy": "भारतीय अर्थव्यवस्था एवं बजट",
+            "env": "पर्यावरण, पारिस्थितिकी एवं जैव विविधता",
+            "scitech": "विज्ञान एवं प्रौद्योगिकी (Science & Tech)",
+            "histgeo": "इतिहास, कला-संस्कृति एवं भूगोल",
+            "todayca": f"दैनिक करेंट अफेयर्स ({get_ist_now().strftime('%Y-%m-%d')})"
+        }
+        subj = subj_map.get(subj_code, "सामान्य अध्ययन")
+
+        wait_m = await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                f"╔════════════════════════╗\n"
+                f"   📝 <b>UPSC MOCK TEST BUILDER</b>\n"
+                f"╚════════════════════════╝\n\n"
+                f"📚 <b>विषय:</b> <code>{subj}</code>\n"
+                f"🎯 <b>प्रश्नों की संख्या:</b> <code>{count} प्रश्न</code>\n"
+                f"⏱ <b>समय सीमा:</b> <code>{count * 72 // 60} मिनट</code>\n\n"
+                f"<i>स्टेटस: The Hindu, PIB व NCERT से प्रश्न संकलित किए जा रहे हैं...</i>"
+            ),
+            parse_mode=ParseMode.HTML
+        )
+
+        prompt = f"""
+विषय: "{subj}" पर UPSC Prelims स्तर के {count} उच्च-स्तरीय प्रश्न (Statement Based - 1 and 2, Both, None) बनाएं।
+प्रत्येक प्रश्न में:
+- 4 विकल्प (a, b, c, d)
+- सही उत्तर
+- 2 पंक्ति का स्पष्ट और आधिकारिक व्याख्या (NCERT/Standard Reference)
+मार्कडाउन स्टार्स (**) का अनावश्यक प्रयोग न करें। भाषा शुद्ध हिंदी रखें।
+"""
+        try:
+            ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
+            topic = f"UPSC Mock Test — {subj} ({count} प्रश्न)"
+            filename = f"UPSC_Test_{subj_code}_{count}Q.html"
+            html_content = build_interactive_dashboard_html(topic, ai_text)
+            
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            with open(filename, "rb") as send_doc:
+                await context.bot.send_document(
+                    chat_id=user_id,
+                    document=send_doc,
+                    filename=filename,
+                    caption=f"📝 <b>UPSC लाइव टेस्ट मॉड्यूल:</b> <code>{topic}</code>\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                    parse_mode=ParseMode.HTML
+                )
+            if os.path.exists(filename):
+                os.remove(filename)
+            await wait_m.delete()
+        except Exception as e:
+            await wait_m.edit_text(f"❌ टेस्ट बनाने में त्रुटि: {e}")
+        return
+
     asyncio.create_task(process_dynamic_generation(user_id, data, context))
 
 async def process_dynamic_generation(user_id, data, context):
@@ -643,6 +834,10 @@ async def process_dynamic_generation(user_id, data, context):
         if arch_data:
             topic, filename, html_content = arch_data
         else:
+            today_str = get_ist_now().strftime("%Y-%m-%d")
+            is_future = target_date > today_str
+            
+            # लाइव प्रोग्रेस स्टेटस (चरणबद्ध)
             wait_m = await context.bot.send_message(
                 chat_id=user_id, 
                 text=(
@@ -650,37 +845,66 @@ async def process_dynamic_generation(user_id, data, context):
                     f"   🏛 <b>UPSC STUDY DESK</b>\n"
                     f"╚════════════════════════╝\n\n"
                     f"📅 <b>दिनांक:</b> <code>{target_date}</code>\n"
-                    f"📊 <b>स्थिति:</b> The Hindu, PIB, Yojana विश्लेषण जारी...\n\n"
-                    f"<i>2-कॉलम सारणी, स्रोत एवं मेन्स आंसर फ्रेमवर्क संकलित किए जा रहे हैं...</i>"
+                    f"🔄 <b>प्रगति:</b> [1/3] आधिकारिक स्रोतों (The Hindu, PIB, Vision, Drishti, Sanskriti IAS) से डेटा निकाला जा रहा है..."
                 ), 
                 parse_mode=ParseMode.HTML
             )
+            
+            await asyncio.sleep(1.2)
+            try:
+                await wait_m.edit_text(
+                    f"╔════════════════════════╗\n"
+                    f"   🏛 <b>UPSC STUDY DESK</b>\n"
+                    f"╚════════════════════════╝\n\n"
+                    f"📅 <b>दिनांक:</b> <code>{target_date}</code>\n"
+                    f"🔄 <b>प्रगति:</b> [2/3] GS 1-4 विषयवार सारणी, स्रोत बैज व मेन्स फ्रेमवर्क संकलित हो रहे हैं...",
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception:
+                pass
+
+            future_note = "यह अग्रिम तिथि है। इसमें उस दिन के ऐतिहासिक महत्व, आगामी अंतरराष्ट्रीय शिखर सम्मेलनों, विधायी एजेंडा और संबंधित PYQs का विश्लेषण शामिल करें।" if is_future else ""
+
             prompt = f"""
 तारीख: "{target_date}" के लिए 'Zero to Hero' स्तर के गहन, परीक्षा-केंद्रित, पूर्ण और समृद्ध UPSC दैनिक करेंट अफेयर्स नोट्स तैयार करें।
 शीर्षक: "दैनिक करेंट अफेयर्स — {target_date}"
+{future_note}
 
-प्रत्येक विषय में स्पष्ट स्रोत टैग (The Hindu / Indian Express / PIB) अनिवार्य रूप से दें।
+अनिवार्य स्रोत कवरेज: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Sanskriti IAS, Drishti IAS.
 
-संरचना:
-1. संदर्भ / चर्चा में क्यों
-2. संवैधानिक एवं वैधानिक स्थिति (अनुच्छेद व कानून)
+सभी विषयों का अलग-अलग व्यापक खंड बनाएं:
+- GS-1: इतिहास, कला-संस्कृति एवं भूगोल
+- GS-2: राजव्यवस्था, संविधान, शासन एवं IR
+- GS-3: अर्थव्यवस्था, पर्यावरण, सुरक्षा एवं साइंस-टेक
+- GS-4: नीतिशास्त्र व प्रशासनिक दुविधाएं
+
+प्रत्येक विषय में:
+1. संदर्भ व स्रोत
+2. संवैधानिक/वैधानिक स्थिति
 3. मुख्य विश्लेषण (2-कॉलम टेबल प्रारूप: 'चरण' और 'विवरण')
-4. प्रमुख तकनीकें / चुनौतियाँ (बुलेट पॉइंट्स, मुख्य शब्दों के आगे :)
-5. आगे की राह (Way Forward)
-6. 📌 Prelims Facts & Key Concepts (फ्लो हेतु → का प्रयोग)
-7. 📝 Mains Answer Writing Framework:
-   - प्रश्न
-   - 📌 भूमिका (Intro): क्या डेटा, रिपोर्ट या अनुच्छेद कोट करें
-   - 📌 मुख्य भाग (Body Dimensions): 3 मुख्य विश्लेषणात्मक बिंदु (समिति अनुशंसा सहित)
-   - 📌 निष्कर्ष (Way Forward): संतुलित प्रशासनिक समाधान
-8. अंत में 4 Practice MCQs (व्याख्या सहित)।
+4. 📌 Prelims Facts & Key Concepts (फ्लो हेतु → का प्रयोग)
+5. 📝 Mains Question & Answer Writing Framework (प्रश्न के ठीक नीचे भूमिका, 3 मुख्य बिंदु, निष्कर्ष)
+6. 4 Practice MCQs (व्याख्या सहित)
 
-मार्कडाउन स्टार्स (**) का अनावश्यक प्रयोग न करें। भाषा सहज व उच्च-स्तरीय हिंदी रखें।
+मार्कडाउन स्टार्स (**) का अनावश्यक प्रयोग न करें। भाषा सहज हिंदी रखें।
 """
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
+                
+                try:
+                    await wait_m.edit_text(
+                        f"╔════════════════════════╗\n"
+                        f"   🏛 <b>UPSC STUDY DESK</b>\n"
+                        f"╚════════════════════════╝\n\n"
+                        f"📅 <b>दिनांक:</b> <code>{target_date}</code>\n"
+                        f"🔄 <b>प्रगति:</b> [3/3] HTML डैशबोर्ड व SACHIN SHARMA वॉटरमार्क फ़ाइल तैयार हो रही है...",
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception:
+                    pass
+
                 topic = f"दैनिक करेंट अफेयर्स — {target_date}"
-                filename = f"Current_Affairs_{target_date}.html"
+                filename = f"UPSC_Dainik_Current_Affairs_{target_date.replace('-', '_')}.html"
                 html_content = build_interactive_dashboard_html(topic, ai_text)
                 save_to_archive("daily", topic, filename, html_content, date_str=target_date)
                 await wait_m.delete()
@@ -750,8 +974,9 @@ async def process_dynamic_generation(user_id, data, context):
             document=send_doc,
             filename=filename,
             caption=(
-                f"📄 <b>नोट्स फ़ाइल:</b> <code>{topic}</code>\n"
-                f"👤 <b>संकलन:</b> {AUTHOR_NAME}\n"
+                f"📄 <b>दस्तावेज़:</b> <code>{topic}</code>\n"
+                f"📰 <b>कवरेज:</b> The Hindu | PIB | Vision | Drishti | Sanskriti IAS\n"
+                f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
                 f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
             ),
             parse_mode=ParseMode.HTML,
@@ -760,13 +985,85 @@ async def process_dynamic_generation(user_id, data, context):
     if os.path.exists(filename):
         os.remove(filename)
 
+# ================= DIRECT PDF TO HTML ENGINE =================
+async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    doc = msg.document
+    user_id = update.effective_user.id
+    register_user(user_id, update.effective_user.username, update.effective_user.first_name)
+
+    if not doc or not doc.file_name.lower().endswith(".pdf"):
+        return
+
+    wait_m = await msg.reply_text("📥 <b>PDF प्राप्त हुआ!</b>\nसामग्री निकाली जा रही है व UPSC 360° HTML नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+    temp_pdf = f"temp_{user_id}_{doc.file_name}"
+    
+    try:
+        f_obj = await doc.get_file()
+        await f_obj.download_to_drive(temp_pdf)
+
+        reader = PdfReader(temp_pdf)
+        pdf_text = ""
+        for page in reader.pages[:15]:
+            t = page.extract_text()
+            if t:
+                pdf_text += t + "\n"
+
+        if not pdf_text.strip():
+            await wait_m.edit_text("⚠️ यह PDF स्कैन की गई इमेज जैसी है। कृपया टेक्स्ट-आधारित PDF भेजें।")
+            if os.path.exists(temp_pdf):
+                os.remove(temp_pdf)
+            return
+
+        clean_title = doc.file_name.replace(".pdf", "")[:35]
+        prompt = f"""
+नीचे दी गई PDF सामग्री का UPSC सिविल सेवा परीक्षा के स्तर पर संपूर्ण और व्यवस्थित 360° अध्ययन नोट्स तैयार करें:
+शीर्षक: "{clean_title}"
+
+सामग्री सारांश:
+"{pdf_text[:4000]}"
+
+संरचना नियम:
+1. मुख्य संदर्भ व स्रोत
+2. संवैधानिक/नीतिगत प्रावधान
+3. 2-कॉलम सारणी (चरण/घटक और विवरण)
+4. मुख्य चुनौतियाँ और आगे की राह (Way Forward)
+5. 📌 Prelims Facts & Key Concepts (फ्लो हेतु → का प्रयोग)
+6. 📝 Mains Question & Answer Writing Framework (प्रश्न के ठीक नीचे भूमिका, 3 मुख्य बिंदु, निष्कर्ष)
+7. 4 Practice MCQs (व्याख्या सहित)
+मार्कडाउन स्टार्स (**) का अनावश्यक प्रयोग न करें। भाषा शुद्ध हिंदी रखें।
+"""
+        ai_notes = await asyncio.to_thread(call_gemini_safely, prompt)
+        html_out = build_interactive_dashboard_html(clean_title, ai_notes)
+
+        out_fname = f"UPSC_{re.sub(r'[^a-zA-Z0-9]', '_', clean_title)[:20]}.html"
+        with open(out_fname, "w", encoding="utf-8") as f:
+            f.write(html_out)
+
+        with open(out_fname, "rb") as send_doc:
+            await msg.reply_document(
+                document=send_doc,
+                filename=out_fname,
+                caption=f"📄 <b>PDF से जनरेटेड HTML नोट्स:</b> <code>{clean_title}</code>\n👤 <b>संकलनकर्ता:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                parse_mode=ParseMode.HTML
+            )
+        await wait_m.delete()
+        if os.path.exists(out_fname):
+            os.remove(out_fname)
+
+    except Exception as e:
+        await wait_m.edit_text(f"❌ PDF प्रोसेसिंग में त्रुटि आई: {e}")
+    finally:
+        if os.path.exists(temp_pdf):
+            os.remove(temp_pdf)
+
 # ================= RESPECTFUL FAITH FILTER & TOPPER DOUBT SOLVER =================
 async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         await update.message.reply_text(
-            "⛔ <b>अनुमति नहीं है:</b> यह सुविधा केवल अधिकृत छात्रों के लिए उपलब्ध है।\n"
-            "एडमिन से एक्सेस हेतु <code>/owner</code> पर संपर्क करें।",
+            f"⛔ <b>अनुमति नहीं है:</b> यह सुविधा केवल अधिकृत छात्रों के लिए उपलब्ध है।\n"
+            f"एडमिन ({AUTHOR_NAME}) से एक्सेस हेतु <code>/owner</code> पर संपर्क करें।",
             parse_mode=ParseMode.HTML
         )
         return
@@ -803,7 +1100,7 @@ async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if any(re.search(pat, user_query, re.IGNORECASE) for pat in blocked_patterns) or len(user_query) < 5:
         await update.message.reply_text(
             f"⚠️ <b>कृपया केवल UPSC पाठ्यक्रम (GS-1, 2, 3, 4) से जुड़े गंभीर विषय ही पूछें।</b>\n\n"
-            f"व्यक्तिगत सवाल या अन्य बातचीत के लिए सचिन शर्मा ({AUTHOR_NAME}) से संपर्क करने हेतु <code>/owner</code> का उपयोग करें।",
+            f"व्यक्तिगत सवाल या अन्य बातचीत के लिए {AUTHOR_NAME} से संपर्क करने हेतु <code>/owner</code> का उपयोग करें।",
             parse_mode=ParseMode.HTML
         )
         return
@@ -815,7 +1112,7 @@ async def process_ask_doubt(message, wait_msg, user_query):
     try:
         prompt = f"""
 आप UPSC CSE में शीर्ष रैंक प्राप्त अनुभवी छात्र व मेंटर हैं।
-छात्र के निम्नलिखित विषय/प्रश्न का विश्लेषण एक गंभीर एस्पिरेंट के व्यावहारिक दृष्टिकोण (75-80% अंक प्राप्त करने वाले स्तर) से दें।
+छात्र के निम्नलिखित विषय/प्रश्न का विश्लेषण एक गंभीर एस्पिरेंट के व्यावहारिक दृष्टिकोण से दें।
 
 विषय: "{user_query}"
 
@@ -823,53 +1120,28 @@ async def process_ask_doubt(message, wait_msg, user_query):
 1. अपनी पहचान केवल UPSC साथी/मेंटर के रूप में रखें। कभी भी AI, रोबोट, या लैंग्वेज मॉडल का उल्लेख न करें।
 2. विश्लेषण बिंदुवार, टू-द-पॉइंट और संतुलित हो (प्रमुख प्रावधान/मुद्दे, चुनौतियाँ, और 1-2 सरकारी समिति/आयोग का नाम)।
 3. यदि प्रश्न मेन्स से जुड़ा है, तो भूमिका, मुख्य भाग और निष्कर्ष का व्यावहारिक ढांचा दें।
-4. अभी बहुविकल्पीय प्रश्न (MCQs) न जोड़ें।
-5. अनावश्यक मार्कडाउन स्टार्स (**) का प्रयोग न करें।
+4. अनावश्यक मार्कडाउन स्टार्स (**) का प्रयोग न करें।
 """
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_reply = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', reply_text)
         clean_reply = re.sub(r'#+\s*', '', clean_reply)
 
-        context_key = f"mcq_{int(time.time())}"
-        USER_BUFFERS[context_key] = user_query
-
-        keyboard = [[InlineKeyboardButton("🎯 इस टॉपिक पर 4 अभ्यास प्रश्न (MCQs) देखें", callback_data=context_key)]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
         if len(clean_reply) > 3800:
             parts = [clean_reply[i:i+3800] for i in range(0, len(clean_reply), 3800)]
             await wait_msg.delete()
-            for idx, p in enumerate(parts):
-                if idx == len(parts) - 1:
-                    await message.reply_text(p, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
-                else:
-                    await message.reply_text(p, parse_mode=ParseMode.HTML)
+            for p in parts:
+                await message.reply_text(p, parse_mode=ParseMode.HTML)
         else:
-            await wait_msg.edit_text(clean_reply, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+            await wait_msg.edit_text(clean_reply, parse_mode=ParseMode.HTML)
     except Exception as e:
         await wait_msg.edit_text(f"❌ उत्तर संकलित करने में समस्या आई: {e}")
-
-async def handle_mcq_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    context_key = query.data
-    original_topic = USER_BUFFERS.get(context_key, "UPSC समसामयिकी")
-
-    wait_m = await context.bot.send_message(chat_id=query.from_user.id, text=f"🎯 <b>'{original_topic}'</b> पर 4 अभ्यास प्रश्न तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
-    prompt = f"विषय: '{original_topic}' पर UPSC Prelims स्तर के 4 मानक बहुविकल्पीय अभ्यास प्रश्न (MCQs) 4 विकल्पों, सही उत्तर और 1 पंक्ति की व्याख्या सहित बनाएं। मार्कडाउन स्टार्स का अनावश्यक प्रयोग न करें।"
-    try:
-        mcq_text = await asyncio.to_thread(call_gemini_safely, prompt)
-        clean_mcq = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', mcq_text)
-        await wait_m.edit_text(f"📚 <b>अभ्यास प्रश्न बैंक (Prelims Focus):</b>\n\n{clean_mcq}", parse_mode=ParseMode.HTML)
-    except Exception as e:
-        await wait_m.edit_text(f"❌ त्रुटि: {e}")
 
 # ================= PROTECTED ADMIN GENERATE COMMAND =================
 async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not is_authorized(user_id):
         await update.message.reply_text(
-            "⛔ <b>अनुमति नहीं है:</b> यह निर्माणकारी सुविधा केवल एडमिन (सचिन शर्मा) व अधिकृत मेंबर्स के लिए आरक्षित है।\n"
+            f"⛔ <b>अनुमति नहीं है:</b> यह निर्माणकारी सुविधा केवल एडमिन ({AUTHOR_NAME}) व अधिकृत मेंबर्स के लिए आरक्षित है।\n"
             "कृपया अध्ययन सामग्री डाउनलोड करने के लिए <code>/daily</code> या <code>/monthly</code> का प्रयोग करें।",
             parse_mode=ParseMode.HTML
         )
@@ -885,7 +1157,7 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"   🏛 <b>UPSC NOTE BUILDER</b>\n"
         f"╚════════════════════════╝\n\n"
         f"📌 <b>विषय:</b> <code>{query}</code>\n"
-        f"⚙️ <b>स्थिति:</b> The Hindu, PIB स्रोत, 2-कॉलम सारणी व मेन्स आंसर फ्रेमवर्क तैयार चालू...",
+        f"⚙️ <b>स्थिति:</b> The Hindu, PIB, Vision, Sanskriti व Drishti IAS समन्वय चालू...",
         parse_mode=ParseMode.HTML
     )
 
@@ -893,8 +1165,7 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prompt = f"""
 निम्नलिखित विषय/तारीख पर 'Zero to Hero' स्तर के गहन, परीक्षा-केंद्रित, पूर्ण और समृद्ध UPSC नोट्स तैयार करें:
 विषय: "{query}"
-
-शीर्षक: "दैनिक करेंट अफेयर्स — {query}" (स्रोत अनिवार्य रूप से लिखें)
+शीर्षक: "दैनिक करेंट अफेयर्स — {query}"
 
 सख्त संरचना नियम:
 1. पहली पंक्ति में मुख्य शीर्षक दें।
@@ -906,11 +1177,7 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
    - 4. प्रमुख आयाम / चुनौतियाँ (बुलेट पॉइंट्स, मुख्य शब्दों के आगे :)
    - 5. आगे की राह (Way Forward)
    - 6. 📌 Prelims Facts & Key Concepts (फ्लो दिखाने के लिए → का प्रयोग)
-   - 7. 📝 Mains Answer Writing Framework:
-        - प्रश्न
-        - 📌 भूमिका (Intro): क्या डेटा, रिपोर्ट या अनुच्छेद कोट करें
-        - 📌 मुख्य भाग (Body Dimensions): 3 मुख्य विश्लेषणात्मक बिंदु
-        - 📌 निष्कर्ष (Way Forward): संतुलित राय
+   - 7. 📝 Mains Answer Writing Framework (प्रश्न के ठीक नीचे भूमिका, 3 मुख्य बिंदु, निष्कर्ष)
    - 8. 4 Practice MCQs (व्याख्या सहित)
 मार्कडाउन स्टार्स (**) का अनावश्यक प्रयोग न करें। भाषा हिंदी रखें।
 """
@@ -929,14 +1196,9 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(
                 document=send_doc,
                 filename=filename,
-                caption=(
-                    f"✨ <b>{clean_topic}</b>\n"
-                    f"👤 <b>संकलन:</b> {AUTHOR_NAME}\n"
-                    f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
-                ),
-                parse_mode=ParseMode.HTML,
+                caption=f"✨ <b>{clean_topic}</b>\n👤 <b>संकलन:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                parse_mode=ParseMode.HTML
             )
-
         await status_msg.delete()
         if os.path.exists(filename):
             os.remove(filename)
@@ -1026,7 +1288,7 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
     start_time = CONTACT_SESSIONS.get(user_id, 0)
     if time.time() - start_time > 120:
         CONTACT_SESSIONS.pop(user_id, None)
-        await update.message.reply_text("⚠️️ <b>समय समाप्त!</b> पुनः प्रयास हेतु <code>/owner</code> भेजें।", parse_mode=ParseMode.HTML)
+        await update.message.reply_text("⚠ <b>समय समाप्त!</b> पुनः प्रयास हेतु <code>/owner</code> भेजें।", parse_mode=ParseMode.HTML)
         return ConversationHandler.END
 
     msg = update.message
@@ -1072,13 +1334,13 @@ async def handle_admin_reply_to_user(update: Update, context: ContextTypes.DEFAU
         except Exception as e:
             await msg.reply_text(f"❌ त्रुटि: {e}")
 
-# ================= BROADCAST SYSTEM =================
+# ================= UNIVERSAL BROADCAST SYSTEM (ALL USERS) =================
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
         return ConversationHandler.END
     all_users = get_all_users()
-    await update.message.reply_text(f"📢 <b>ब्रॉडकास्ट:</b> संदेश भेजें (कुल छात्र: {len(all_users)})", parse_mode=ParseMode.HTML)
+    await update.message.reply_text(f"📢 <b>सार्वजनिक ब्रॉडकास्ट प्रणाली:</b>\n\nकुल पंजीकृत छात्र: <b>{len(all_users)}</b>\n\nसभी को भेजा जाने वाला संदेश लिखें:\n<i>(रद्द करने हेतु <code>/cancel</code> भेजें)</i>", parse_mode=ParseMode.HTML)
     return WAITING_BROADCAST_MSG
 
 async def execute_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1102,218 +1364,11 @@ async def execute_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         except Exception:
             fail_count += 1
 
-    await status_msg.edit_text(f"✅ सफल: {success_count} | ❌ असफल: {fail_count}", parse_mode=ParseMode.HTML)
-    return ConversationHandler.END
-
-# ================= ROBUST FORWARDED / PDF / TEXT INGESTION =================
-async def start_html_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not is_authorized(user_id):
-        await update.message.reply_text("⛔ यह केवल अधिकृत मेंबर्स के लिए है।")
-        return
-
-    USER_BUFFERS[user_id] = {
-        "active": True,
-        "texts": [],
-        "images": [],
-        "html_soups": [],
-        "suggested_topic": "UPSC_Notes",
-    }
-    await update.message.reply_text(
-        "🟢 <b>सत्र चालू!</b> जितनी चाहें PDF, HTML या लंबे फॉरवर्डेड मैसेज भेजें।\n"
-        "जब सब भेज लें, तब <code>/sachin</code> भेजें।",
-        parse_mode=ParseMode.HTML
-    )
-
-async def collect_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not is_authorized(user_id):
-        return
-
-    if user_id not in USER_BUFFERS:
-        USER_BUFFERS[user_id] = {
-            "active": True,
-            "texts": [],
-            "images": [],
-            "html_soups": [],
-            "suggested_topic": "UPSC_Notes",
-        }
-
-    session = USER_BUFFERS[user_id]
-    msg = update.message
-    raw_text = msg.text or msg.caption or ""
-
-    if msg.photo:
-        photo = msg.photo[-1]
-        f_obj = await photo.get_file()
-        t_img = f"img_{photo.file_unique_id}.jpg"
-        await f_obj.download_to_drive(t_img)
-        with open(t_img, "rb") as f:
-            session["images"].append(base64.b64encode(f.read()).decode("utf-8"))
-        if os.path.exists(t_img):
-            os.remove(t_img)
-        await msg.reply_text("📸 इमेज बफ़र में सुरक्षित जोड़ ली गई है!")
-
-    elif msg.document:
-        doc_f = await msg.document.get_file()
-        fname = msg.document.file_name.lower()
-        
-        if fname.endswith(".pdf"):
-            t_pdf = f"doc_{msg.document.file_name}"
-            try:
-                await doc_f.download_to_drive(t_pdf)
-                reader = PdfReader(t_pdf)
-                pdf_text = ""
-                for page in reader.pages:
-                    txt = page.extract_text()
-                    if txt:
-                        pdf_text += txt + "\n"
-                if pdf_text.strip():
-                    session["texts"].append(pdf_text)
-                    if session["suggested_topic"] == "UPSC_Notes":
-                        session["suggested_topic"] = fname.replace(".pdf", "")[:35]
-                    await msg.reply_text(f"✅ <b>PDF सामग्री जोड़ ली गई!</b> (कुल पृष्ठ: {len(reader.pages)})\nअब <code>/sachin</code> दबाकर HTML बनाएं।", parse_mode=ParseMode.HTML)
-                else:
-                    await msg.reply_text("⚠ यह PDF केवल इमेज जैसी है। कृपया इसका टेक्स्ट कॉपी करके भेजें।")
-            except Exception as e:
-                print(f"Error reading PDF: {e}")
-                await msg.reply_text("⚠️ PDF पढ़ने में समस्या आई।")
-            if os.path.exists(t_pdf):
-                os.remove(t_pdf)
-
-        elif fname.endswith(".html") or fname.endswith(".htm"):
-            t_doc = f"doc_{msg.document.file_name}"
-            await doc_f.download_to_drive(t_doc)
-            with open(t_doc, "r", encoding="utf-8", errors="ignore") as f:
-                soup = BeautifulSoup(f.read(), "html.parser")
-                session["html_soups"].append(soup)
-                title_node = soup.find('title')
-                h1_node = soup.find('h1')
-                if title_node and title_node.text.strip():
-                    session["suggested_topic"] = re.sub(r'(\||-|—).*$', '', title_node.text).strip()[:45]
-                elif h1_node and h1_node.text.strip():
-                    session["suggested_topic"] = re.sub(r'(\||-|—).*$', '', h1_node.text).strip()[:45]
-                else:
-                    session["suggested_topic"] = fname.replace(".html", "").replace(".htm", "")
-            if os.path.exists(t_doc):
-                os.remove(t_doc)
-            await msg.reply_text("✅ HTML दस्तावेज़ जोड़ लिया गया! अब <code>/sachin</code> भेजें।", parse_mode=ParseMode.HTML)
-
-    if raw_text:
-        session["texts"].append(raw_text)
-        lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
-        if lines and session["suggested_topic"] == "UPSC_Notes":
-            first_l = re.sub(r"[📌💡⚡✨🔥📖🎯📝🌪️🗳️⚖️🔍🔑|━─—_#*-]", "", lines[0]).strip()
-            first_l = first_l.split("—")[0].split("-")[0].strip()
-            session["suggested_topic"] = first_l[:40] if first_l else "UPSC_Notes"
-        await msg.reply_text("✅ <b>संदेश बफ़र में जुड़ गया!</b>\nसभी सामग्री भेजने के बाद <code>/sachin</code> भेजें।", parse_mode=ParseMode.HTML)
-
-async def ask_for_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
-    if not is_authorized(user_id):
-        await update.message.reply_text("⛔ यह कमांड केवल अधिकृत मेंबर्स के लिए है।")
-        return ConversationHandler.END
-
-    session = USER_BUFFERS.get(user_id)
-    if not session or (not session.get("texts") and not session.get("html_soups")):
-        await update.message.reply_text("❌ कोई सामग्री नहीं मिली। पहले कोई टेक्स्ट या फॉरवर्डेड मैसेज भेजें, फिर <code>/sachin</code> दबाएं।", parse_mode=ParseMode.HTML)
-        return ConversationHandler.END
-
-    suggested = session.get("suggested_topic", "UPSC_Notes")
-    if session.get("texts") and suggested == "UPSC_Notes":
-        try:
-            head_sample = session["texts"][0][:400]
-            auto_title = await asyncio.to_thread(
-                call_gemini_safely,
-                f"इस यूपीएससी सामग्री के लिए केवल 4 से 6 शब्दों का उपयुक्त और साफ़ हिंदी शीर्षक दें: '{head_sample}'"
-            )
-            suggested = re.sub(r'[^\w\s-]', '', auto_title).strip()[:35]
-        except Exception:
-            pass
-
-    prompt_msg = (
-        "📝 <b>फ़ाइल नाम की पुष्टि:</b>\n\n"
-        "📌 <b>सुझाया गया नाम (एक टैप में कॉपी करें):</b>\n"
-        f"<code>{suggested}</code>\n\n"
-        "👉 <b>विकल्प:</b>\n"
-        "1. यदि <b>यही नाम</b> रखना है, तो <b>1</b> भेजें।\n"
-        "2. यदि <b>बदलना है</b>, तो नाम कॉपी करके एडिट करें और भेजें!"
-    )
-    await update.message.reply_text(prompt_msg, parse_mode=ParseMode.HTML)
-    return WAITING_FOR_NAME
-
-async def generate_final_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
-    session = USER_BUFFERS.get(user_id)
-    if not session:
-        return ConversationHandler.END
-
-    user_reply = update.message.text.strip()
-    suggested = session.get("suggested_topic", "UPSC_Notes")
-
-    final_topic = suggested if user_reply == "1" else user_reply
-    safe_topic = re.sub(r'[^a-zA-Z0-9\u0900-\u097F]', '_', final_topic)[:30]
-    clean_filename = f"{safe_topic}.html"
-
-    wait_msg = await update.message.reply_text("⏳ सामग्री का गहन विश्लेषण व 2-कॉलम सारणी तैयार की जा रही है...")
-
-    final_output_html = ""
-    if session["html_soups"]:
-        main_soup = session["html_soups"][0]
-        for a in main_soup.find_all('a'):
-            href = a.get('href', '')
-            if 't.me' in href or 'cserunners' in href.lower():
-                a['href'] = CHANNEL_LINK
-            if a.string and re.search(r'cse\s*runners', a.string, re.IGNORECASE):
-                a.string = f"{AUTHOR_NAME} ({CHANNEL_NAME})"
-        final_output_html = str(main_soup)
-    else:
-        combined_text = "\n\n".join(session["texts"])
-        try:
-            ai_struct_prompt = f"""
-नीचे दिए गए यूपीएससी अध्ययन टेक्स्ट को सुव्यवस्थित, परीक्षा-उपयोगी और आकर्षक रूप दें:
-"{combined_text[:3500]}"
-
-नियम:
-1. मुख्य हेडिंग्स बनाएं (1. संदर्भ, 2. मुख्य बिंदु, 3. चुनौतियाँ, 4. आगे की राह, 5. Prelims Facts)।
-2. जहाँ भी तुलना, चरण या वर्गीकरण हो, 2-कॉलम टेबल प्रारूप में लिखें (पहली पंक्ति हेडर 'चरण' और 'विवरण')।
-3. प्रत्येक मुद्दे का समाचार स्रोत अवश्य लिखें।
-4. अनावश्यक स्टार्स (**) का प्रयोग न करें। भाषा शुद्ध हिंदी रखें।
-"""
-            enhanced_text = await asyncio.to_thread(call_gemini_safely, ai_struct_prompt)
-        except Exception:
-            enhanced_text = combined_text
-
-        final_output_html = build_interactive_dashboard_html(final_topic, enhanced_text, session["images"])
-
-    save_to_archive("daily", final_topic, clean_filename, final_output_html)
-
-    with open(clean_filename, "w", encoding="utf-8") as f:
-        f.write(final_output_html)
-
-    with open(clean_filename, "rb") as send_doc:
-        await update.message.reply_document(
-            document=send_doc,
-            filename=clean_filename,
-            caption=(
-                f"📄 <b>नोट्स फ़ाइल तैयार!</b>\n"
-                f"📌 <b>विषय:</b> <code>{final_topic}</code>\n"
-                f"👤 <b>निर्माता:</b> {AUTHOR_NAME}\n"
-                f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
-            ),
-            parse_mode=ParseMode.HTML,
-        )
-
-    await wait_msg.delete()
-    if os.path.exists(clean_filename):
-        os.remove(clean_filename)
-
-    USER_BUFFERS.pop(user_id, None)
+    await status_msg.edit_text(f"✅ सफल: {success_count} छात्र | ❌ असफल: {fail_count}", parse_mode=ParseMode.HTML)
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
-    USER_BUFFERS.pop(user_id, None)
     CONTACT_SESSIONS.pop(user_id, None)
     await update.message.reply_text("प्रक्रिया रद्द कर दी गई।")
     return ConversationHandler.END
@@ -1321,7 +1376,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ================= RENDER KEEP-ALIVE SERVER =================
 async def run_server():
     app = web.Application()
-    app.router.add_get("/", lambda r: web.Response(text="UPSC Smart Bot Active 24/7 with IST Clock & Trending Radar"))
+    app.router.add_get("/", lambda r: web.Response(text="UPSC Smart Bot Active 24/7 with Live Test & IST Engine"))
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.environ.get("PORT", 8080))
@@ -1337,6 +1392,7 @@ async def main():
     bot_app.add_handler(CommandHandler("start", start_handler))
     bot_app.add_handler(CommandHandler("help", help_handler))
     bot_app.add_handler(CommandHandler("daily", daily_cmd))
+    bot_app.add_handler(CommandHandler("quiz", quiz_cmd))
     bot_app.add_handler(CommandHandler("trending", trending_cmd))
     bot_app.add_handler(CommandHandler("weekly", weekly_cmd))
     bot_app.add_handler(CommandHandler("monthly", monthly_cmd))
@@ -1348,48 +1404,28 @@ async def main():
     bot_app.add_handler(CommandHandler("removeuser", remove_user_cmd))
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd))
 
-    bot_app.add_handler(CallbackQueryHandler(handle_mcq_button_click, pattern=r"^mcq_\d+$"))
-    bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click, pattern=r"^(gendate|genmonth|genyear|genweek)_"))
+    bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click))
 
+    # डायरेक्ट PDF अपलोड हैंडलर
+    bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_direct_pdf_upload))
+
+    # ओनर संपर्क सिस्टम
     contact_conv = ConversationHandler(
-        entry_points=[
-            CommandHandler("owner", contact_cmd),
-            CommandHandler("contact", contact_cmd),
-        ],
-        states={
-            WAITING_CONTACT_MSG: [
-                MessageHandler(filters.TEXT & (~filters.COMMAND), forward_contact_msg)
-            ]
-        },
+        entry_points=[CommandHandler("owner", contact_cmd), CommandHandler("contact", contact_cmd)],
+        states={WAITING_CONTACT_MSG: [MessageHandler(filters.TEXT & (~filters.COMMAND), forward_contact_msg)]},
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     bot_app.add_handler(contact_conv)
 
+    # यूनिवर्सल ब्रॉडकास्ट सिस्टम
     broadcast_conv = ConversationHandler(
         entry_points=[CommandHandler("broadcast", broadcast_cmd)],
-        states={
-            WAITING_BROADCAST_MSG: [
-                MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.ALL) & (~filters.COMMAND), execute_broadcast)
-            ]
-        },
+        states={WAITING_BROADCAST_MSG: [MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.ALL) & (~filters.COMMAND), execute_broadcast)]},
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     bot_app.add_handler(broadcast_conv)
 
-    html_conv = ConversationHandler(
-        entry_points=[CommandHandler("sachin", ask_for_name)],
-        states={
-            WAITING_FOR_NAME: [
-                MessageHandler(filters.TEXT & (~filters.COMMAND), generate_final_file)
-            ]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    bot_app.add_handler(html_conv)
-
-    bot_app.add_handler(CommandHandler("html", start_html_session))
     bot_app.add_handler(MessageHandler(filters.REPLY & filters.TEXT, handle_admin_reply_to_user))
-    bot_app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), collect_messages))
 
     await bot_app.initialize()
     await bot_app.start()
