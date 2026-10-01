@@ -224,8 +224,7 @@ def call_gemini_safely(prompt: str) -> str:
 
     raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {last_err}")
 
-# ================= REAL MAP & IMAGE EMBEDDER ENGINE =================
-# प्रमुख स्थानों के सार्वजनिक रूप से सत्यापित उच्च-गुणवत्ता वाले मानचित्र / फ़ोटो
+# ================= IMAGE ENGINE (SINGLE MAP INJECTION) =================
 KNOWN_MAPS = {
     "मन्नार": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/Gulf_of_Mannar_map.png/640px-Gulf_of_Mannar_map.png",
     "कच्छ": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Rann_of_Kutch_map.svg/640px-Rann_of_Kutch_map.svg.png",
@@ -243,16 +242,15 @@ def resolve_real_image_or_map(place_name: str) -> str:
     for key, url in KNOWN_MAPS.items():
         if key in place_name:
             return url
-    clean_keyword = urllib.parse.quote(place_name.replace(" ", "+") + "+map")
-    return f"https://images.unsplash.com/photo-1524661135-423995f22d0b?w=800&auto=format&fit=crop&q=80"
+    return "https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/World_map_-_low_resolution.svg/800px-World_map_-_low_resolution.svg.png"
 
-def clean_all_markdown_and_inject_real_images(raw_text: str) -> str:
+def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = raw_text.strip()
     
-    # 1. कोड बाड़ और काले रेक्टेंगल हटाना
-    text = re.sub(r'<rect[^>]*fill=["\'](?:#000000|#000|black)["\'][^>]*\/>', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'```(?:xml|svg|html)?', '', text, flags=re.IGNORECASE)
+    # 1. सभी पुराने कच्चे कोड्स और खाली बॉक्सेज को मिटाना
+    text = re.sub(r'```(?:xml|svg|html)?[\s\S]*?```', '', text, flags=re.IGNORECASE)
     text = re.sub(r'```', '', text)
+    text = re.sub(r'<figure[^>]*>[\s\S]*?<\/figure>', '', text, flags=re.IGNORECASE)
 
     # 2. हेडिंग्स सुधारना
     text = re.sub(r'###\s*(.*)', r'<h4 class="sub-title">\1</h4>', text)
@@ -269,27 +267,25 @@ def clean_all_markdown_and_inject_real_images(raw_text: str) -> str:
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
     text = re.sub(r'^[•\-\*]\s*(.*)', r'<li class="list-item">\1</li>', text, flags=re.MULTILINE)
 
-    # 4. केवल कैप्शन लिखे छोड़े गए डिब्बों या खाली फिगर की जगह वास्तविक फ़ोटो/मैप लगाना
-    def inject_real_photo_tag(match):
-        caption_full = match.group(1).strip()
-        img_url = resolve_real_image_or_map(caption_full)
-        return f"""
-        <figure class="img-figure">
-          <img src="{img_url}" alt="{caption_full}" loading="lazy" style="width:100%; max-height:360px; object-fit:cover; border-radius:8px; border:1px solid #bae6fd;">
-          <figcaption>🗺️ {caption_full}</figcaption>
-        </figure>
-        """
-
-    # यदि AI ने केवल <figure>...<figcaption>...</figcaption></figure> लिखा हो
-    text = re.sub(r'<figure[^>]*>[\s\S]*?<figcaption>(.*?)<\/figcaption>[\s\S]*?<\/figure>', inject_real_photo_tag, text, flags=re.IGNORECASE)
-    
-    # यदि AI ने सीधे "चित्र: ..." लिखकर छोड़ दिया हो (जैसा स्क्रीनशॉट में हुआ)
-    text = re.sub(r'(?:चित्र|Figure)\s*[:\-]?\s*(.*?)(?=\n|$)', inject_real_photo_tag, text, flags=re.IGNORECASE)
+    # 4. मैपिंग सेक्शन में केवल 1 साफ़ इमेज लगाना (कोई डुप्लीकेशन नहीं)
+    placed_image = False
+    for key in KNOWN_MAPS.keys():
+        if key in text and not placed_image:
+            img_url = KNOWN_MAPS[key]
+            img_html = f"""
+            <figure class="img-figure">
+              <img src="{img_url}" alt="{key} मानचित्र" loading="lazy">
+              <figcaption>🗺️ भौगोलिक एवं रणनीतिक मानचित्र: {key}</figcaption>
+            </figure>
+            """
+            text = re.sub(r'(मन्नार की खाड़ी|कच्छ का रण|होर्मुज़|लाल सागर|अंडमान|पश्चिमी घाट|लद्दाख|ताइवान)', r'\1' + img_html, text, count=1)
+            placed_image = True
+            break
 
     return text
 
 def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "", is_trending: bool = False) -> str:
-    cleaned_body = clean_all_markdown_and_inject_real_images(raw_content)
+    cleaned_body = clean_all_markdown_and_fix_content(raw_content)
     display_date = date_str if date_str else get_ist_now().strftime("%Y-%m-%d")
 
     nav_links = '<a href="#sec-overview">📋 सत्र सार</a>\n'
@@ -297,15 +293,21 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
     soup = BeautifulSoup(cleaned_body, 'html.parser')
     sec_idx = 1
 
-    for tag in soup.find_all(['h2', 'h3', 'section']):
+    for tag in soup.find_all(['h2', 'h3']):
         title_text = tag.get_text().strip()
         if len(title_text) > 3 and not tag.get('id'):
             sec_id = f"custom-sec-{sec_idx}"
             tag['id'] = sec_id
             
-            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳️⚖️🔍📝🛣️❄️🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', title_text).strip()
-            if len(clean_tab_name) > 20:
-                clean_tab_name = clean_tab_name[:18] + ".."
+            # 'खंड 1', 'खंड 2', 'खण्ड', 'भाग' हटाकर सीधे मुख्य विषय का नाम लगाना
+            clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|\d+|[:\.\-\s])+', '', title_text).strip()
+            clean_tab_name = re.sub(r'^[0-9]+\s*[:\.\-]?\s*', '', clean_tab_name).strip()
+            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳️⚖️🔍📝🛣️❄️🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
+            
+            if not clean_tab_name:
+                clean_tab_name = f"विषय {sec_idx}"
+            if len(clean_tab_name) > 22:
+                clean_tab_name = clean_tab_name[:20] + ".."
             
             nav_links += f'<a href="#{sec_id}">{clean_tab_name}</a>\n'
             sec_idx += 1
@@ -321,7 +323,7 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{topic} | {AUTHOR_NAME}</title>
-<link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="[https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap)" rel="stylesheet">
 <style>
 :root {{
   --bg: #f4f6f9; --card: #ffffff; --text: #1c2430; --muted: #5b6675; --border: #e2e8f0;
@@ -418,9 +420,9 @@ tr:nth-child(even) td {{ background: rgba(128, 128, 128, 0.04); }}
 .point-badge-conc {{ background: #f59e0b; color: #000; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }}
 .mains-point {{ margin: 12px 0; padding-left: 8px; border-left: 3px solid #cbd5e1; }}
 
-/* वास्तविक और स्वच्छ मैप/इमेज कार्ड */
+/* सिंगल वास्तविक इमेज स्टाइल */
 .img-figure {{
-  margin: 22px 0; text-align: center; background: #ffffff; padding: 14px;
+  margin: 20px 0; text-align: center; background: #ffffff; padding: 12px;
   border-radius: 12px; border: 1.5px solid #bae6fd; box-shadow: var(--shadow);
 }}
 [data-theme="dark"] .img-figure {{ background: #1e293b; border-color: #0369a1; }}
@@ -453,7 +455,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 
 <header class="top-header">
   <h1>🇮🇳 {topic}</h1>
-  <div class="author-pill">✍️️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
+  <div class="author-pill">✍️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
   <div class="controls">
     <input type="text" id="searchBox" placeholder="🔍 खोजें: GS विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()" class="theme-btn">🌗 डार्क / लाइट</button>
@@ -668,7 +670,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
-# /daily: IST कैलेंडर
+# /daily
 async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -695,7 +697,7 @@ async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🎯 <b>चरण 1/2:</b> किस विषय का टेस्ट लगाना चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= TRENDING RADAR WITH CACHED STABILITY & 8 ISSUES =================
+# ================= TRENDING RADAR =================
 def generate_fresh_trending(date_str):
     prompt = f"""
 तारीख {date_str} के संदर्भ में UPSC सिविल सेवा परीक्षा हेतु 8 मुख्य ज्वलंत मुद्दे तैयार करें।
@@ -770,17 +772,27 @@ async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक संकलन", callback_data=f"genyear_{y}")] for y in years]
     await update.message.reply_text("🏛️ <b>जिस वर्ष का वार्षिक कंपाइलेशन चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# /weekly
+# /weekly (केवल वर्तमान दिन तक का रिवीजन - कोई काल्पनिक तारीख नहीं)
 async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
     today = get_ist_now()
-    d_str = today.strftime("%Y-%m-%d")
+    
+    # इस सप्ताह के सोमवार से आज तक के दिन की गणना
+    days_since_monday = today.weekday()
+    start_of_current_week = today - timedelta(days=days_since_monday)
+    current_week_str = f"{start_of_current_week.strftime('%d %b')} से {today.strftime('%d %b %Y')}"
+
+    # पिछला पूर्ण सप्ताह
+    last_week_end = start_of_current_week - timedelta(days=1)
+    last_week_start = last_week_end - timedelta(days=6)
+    last_week_str = f"{last_week_start.strftime('%d %b')} से {last_week_end.strftime('%d %b %Y')}"
+
     keyboard = [
-        [InlineKeyboardButton("🗓️ इस सप्ताह का क्विक रिवीजन", callback_data=f"genweek_{d_str}")],
-        [InlineKeyboardButton("🗓️ पिछले सप्ताह का रिवीजन", callback_data=f"genweek_{(today - timedelta(days=7)).strftime('%Y-%m-%d')}")]
+        [InlineKeyboardButton(f"🗓️ चालू सप्ताह ({current_week_str})", callback_data=f"genweek_current_{today.strftime('%Y-%m-%d')}")],
+        [InlineKeyboardButton(f"🗓️ पिछला पूर्ण सप्ताह ({last_week_str})", callback_data=f"genweek_last_{last_week_end.strftime('%Y-%m-%d')}")]
     ]
-    await update.message.reply_text("🗓️ <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("🗓️ <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें (केवल आज तक का वास्तविक कवरेज):</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 # डायनामिक बटन क्लिक और केंद्रीय कैशिंग
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -857,7 +869,7 @@ async def process_dynamic_generation(user_id, data, context):
 
             prompt = f"""
 आप UPSC सिविल सेवा परीक्षा के शीर्ष विषय विशेषज्ञ हैं।
-तारीख: "{target_date}" के लिए 'Zero to Hero' स्तर का, संपूर्ण, 360° आत्मनिर्भर UPSC करंट अफेयर्स संकलन तैयार करें।
+तारीख: "{target_date}" के लिए 'Zero to Hero' स्तर का, संपूर्ण, 360° आत्मनिर्भर UPSC करेंट अफेयर्स संकलन तैयार करें।
 शीर्षक: "दैनिक समसामयिक महा-संकलन — {target_date}"
 {future_note}
 
@@ -865,12 +877,12 @@ async def process_dynamic_generation(user_id, data, context):
 
 सख्त तकनीकी नियम:
 1. शून्य मार्कडाउन लीक्स: तालिकाओं में '|' या '---' का प्रयोग वर्जित है। केवल मानक HTML (<div class="table-box"><table><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table></div>) का प्रयोग करें।
-2. इमेज/मैपिंग नियम: जहाँ भी किसी स्थान का विवरण आए (जैसे मन्नार की खाड़ी, कच्छ का रण, होर्मुज़ आदि), वहाँ <figure><figcaption>चित्र: स्थान का नाम</figcaption></figure> लगाएं।
+2. कोई भी कच्चा SVG या ```xml कोड न लिखें।
 3. केवल उन विषयों को शामिल करें जिनकी सामग्री आज वास्तव में प्रासंगिक है।
 
 सामग्री संरचना:
 - संदर्भ, संवैधानिक स्थिति, 2-कॉलम HTML सारणी।
-- मैपिंग एवं चर्चित स्थल विवरण।
+- मैपिंग एवं चर्चित स्थल विवरण (स्थान का नाम स्पष्ट लिखें)।
 - Prelims Facts (बुलेट प्वाइंट्स)।
 - Mains Framework: प्रश्न, भूमिका, 3 मुख्य बिंदु, आगे की राह, निष्कर्ष।
 - 4 Practice MCQs (व्याख्या सहित)।
@@ -925,23 +937,31 @@ async def process_dynamic_generation(user_id, data, context):
                 return
 
     elif data.startswith("genweek_"):
-        w_date = data.split("_")[1]
-        arch_data = get_archive_by_period_name("weekly", w_date)
-        if arch_data:
-            topic, filename, html_content = arch_data
+        parts = data.split("_")
+        mode = parts[1]
+        w_date = parts[2]
+        
+        today = get_ist_now()
+        if mode == "current":
+            days_since_mon = today.weekday()
+            mon_dt = today - timedelta(days=days_since_mon)
+            period_label = f"{mon_dt.strftime('%d %B')} से {today.strftime('%d %B %Y')} (चालू सप्ताह, आज तक)"
+            prompt = f"सप्ताह की शुरुआत ({mon_dt.strftime('%Y-%m-%d')}) से लेकर आज ({today.strftime('%Y-%m-%d')}) तक के {days_since_mon + 1} दिनों के महत्वपूर्ण UPSC घटनाक्रमों का संपूर्ण रिवीजन तैयार करें। आगे की किसी भी तारीख का उल्लेख न करें।"
         else:
-            wait_m = await context.bot.send_message(chat_id=user_id, text="⏳ साप्ताहिक रिवीजन डाइजेस्ट तैयार हो रहा है...", parse_mode=ParseMode.HTML)
-            prompt = f"सप्ताह ({w_date}) के मुख्य UPSC घटनाक्रमों का 7-दिवसीय रिवीजन डाइजेस्ट HTML टेबल्स के साथ हिंदी में तैयार करें।"
-            try:
-                ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-                topic = f"UPSC Weekly Revision — {w_date}"
-                filename = f"UPSC_Weekly_{w_date.replace('-', '')}.html"
-                html_content = build_standalone_master_html(topic, ai_text, date_str=w_date)
-                save_to_archive("weekly", topic, filename, html_content)
-                await wait_m.delete()
-            except Exception as e:
-                await wait_m.edit_text(f"❌ त्रुटि: {e}")
-                return
+            period_label = f"विगत पूर्ण सप्ताह (7 दिवसीय रिवीजन)"
+            prompt = f"विगत पूर्ण सप्ताह के मुख्य UPSC घटनाक्रमों का 7-दिवसीय रिवीजन डाइजेस्ट HTML टेबल्स के साथ हिंदी में तैयार करें।"
+
+        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ <b>{period_label}</b> का सटीक रिवीजन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        try:
+            ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
+            topic = f"UPSC Weekly Revision — {period_label}"
+            filename = f"UPSC_Weekly_{w_date.replace('-', '')}.html"
+            html_content = build_standalone_master_html(topic, ai_text, date_str=period_label)
+            save_to_archive("weekly", topic, filename, html_content)
+            await wait_m.delete()
+        except Exception as e:
+            await wait_m.edit_text(f"❌ त्रुटि: {e}")
+            return
 
     with open(filename, "w", encoding="utf-8") as f:
         f.write(html_content)
@@ -973,13 +993,13 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if user_input == "all":
         raw_trend = get_or_create_trending_cache(today, generate_fresh_trending)
-        wait_m = await msg.reply_text("⏳ <b>सभी 8 ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स (मानचित्रों व फ़ोटो सहित) तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+        wait_m = await msg.reply_text("⏳ <b>सभी 8 ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
         prompt = f"""
 नीचे दिए गए सभी 8 समसामयिक ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स तैयार करें:
 "{raw_trend}"
 सख्त नियम:
 1. सभी मुद्दों में संदर्भ, चर्चा में क्यों, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क और 2 MCQs अनिवार्य रूप से दें।
-2. जहाँ भी स्थान आए, <figure><figcaption>चित्र: स्थान का नाम</figcaption></figure> लगाएं।
+2. कोई भी कच्चा कोड या SVG न लिखें।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1017,7 +1037,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC सिविल सेवा परीक्षा हेतु गहन 360° विश्लेषण तैयार करें।
 सूची:
 "{raw_trend}"
-नियम: संदर्भ, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, मैपिंग विवरण (चित्र: स्थान का नाम) और MCQs दें।
+नियम: संदर्भ, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, और MCQs दें। कोई भी कच्चा कोड न लिखें।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1153,7 +1173,7 @@ async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         prompt = f"UPSC मेंटर के दृष्टिकोण से इस विषय का बिंदुवार और संतुलित विश्लेषण दें: '{user_query}'। मार्कडाउन स्टार्स का प्रयोग न करें।"
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
-        clean_reply = clean_all_markdown_and_inject_real_images(reply_text)
+        clean_reply = clean_all_markdown_and_fix_content(reply_text)
 
         if len(clean_reply) > 3800:
             parts = [clean_reply[i:i+3800] for i in range(0, len(clean_reply), 3800)]
@@ -1187,7 +1207,7 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 विषय: "{query}" पर 'Zero to Hero' स्तर के गहन, परीक्षा-केंद्रित UPSC नोट्स तैयार करें।
 सख्त नियम:
 1. 2-कॉलम HTML सारणी (<div class="table-box"><table>...</table></div>), मेन्स फ्रेमवर्क शुद्ध HTML में लिखें।
-2. जहाँ भी मैप या स्थल आए, शुद्ध <figure><figcaption>चित्र: स्थान का नाम</figcaption></figure> लगाएं।
+2. कोई कच्चा कोड न लिखें।
 3. मार्कडाउन स्टार्स का प्रयोग न करें।
 """
         ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
