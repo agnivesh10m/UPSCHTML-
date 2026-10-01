@@ -3,6 +3,7 @@ import re
 import time
 import asyncio
 import sqlite3
+import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from aiohttp import web
@@ -43,7 +44,6 @@ WAITING_BROADCAST_MSG = 2
 CONTACT_SESSIONS = {}
 USER_QUIZ_SELECTIONS = {}
 TRENDING_PAGES = {}
-TRENDING_TOPICS_CACHE = {}
 DB_PATH = "upsc_bot.db"
 
 # ================= DATABASE SETUP =================
@@ -70,6 +70,12 @@ def init_db():
             topic TEXT,
             filename TEXT,
             html_content TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS trending_cache (
+            date_str TEXT PRIMARY KEY,
+            raw_text TEXT
         )
     """)
     conn.commit()
@@ -144,13 +150,31 @@ def get_archive_by_period_name(period, p_name):
         c = conn.cursor()
         if period == "monthly":
             c.execute("SELECT topic, filename, html_content FROM archive WHERE period = 'monthly' AND month_str = ? ORDER BY id DESC LIMIT 1", (p_name,))
-        else:
+        elif period == "yearly":
             c.execute("SELECT topic, filename, html_content FROM archive WHERE period = 'yearly' AND year_str = ? ORDER BY id DESC LIMIT 1", (p_name,))
+        else:
+            c.execute("SELECT topic, filename, html_content FROM archive WHERE period = 'weekly' AND topic LIKE ? ORDER BY id DESC LIMIT 1", (f"%{p_name}%",))
         row = c.fetchone()
         conn.close()
         return row
     except Exception:
         return None
+
+def get_or_create_trending_cache(date_str, generate_func):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT raw_text FROM trending_cache WHERE date_str = ?", (date_str,))
+    row = c.fetchone()
+    if row:
+        conn.close()
+        return row[0]
+    
+    # यदि मौजूद नहीं है तो पहली बार जनरेट करें और डेटाबेस में लॉक कर दें
+    raw_data = generate_func(date_str)
+    c.execute("INSERT OR REPLACE INTO trending_cache (date_str, raw_text) VALUES (?, ?)", (date_str, raw_data))
+    conn.commit()
+    conn.close()
+    return raw_data
 
 def get_all_users():
     conn = sqlite3.connect(DB_PATH)
@@ -160,7 +184,7 @@ def get_all_users():
     conn.close()
     return [r[0] for r in rows]
 
-# ================= ASYNC ENGINE =================
+# ================= ASYNC ENGINE (3.8 FLASH PRIORITY) =================
 def call_gemini_safely(prompt: str) -> str:
     api_k = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_k:
@@ -203,46 +227,59 @@ def call_gemini_safely(prompt: str) -> str:
 
     raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {last_err}")
 
-# ================= ADVANCED PURE HTML CLEANER =================
+# ================= DYNAMIC HTML BUILDER WITH SMART TAB DETECTION =================
 def clean_all_markdown_leaks(raw_text: str) -> str:
     text = raw_text.strip()
-    # कोड ब्लॉक बाड़ हटाना
     text = re.sub(r'^```html\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'^```\s*', '', text)
     text = re.sub(r'\s*```$', '', text)
     
-    # मार्कडाउन हेडर साफ़ करना
+    # मार्कडाउन हेडर को साफ़ करना
     text = re.sub(r'#+\s*(.*)', r'<h3 class="section-title">\1</h3>', text)
     
-    # मेन्स फ्रेमवर्क के प्रमुख घटकों को अलग सुंदर कार्ड्स में बदलना
+    # मेन्स फ्रेमवर्क के घटकों को स्पष्ट रंगीन बॉक्सेज में बदलना
     text = re.sub(r'\*\*भूमिका\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-intro">📌 भूमिका:</span> <p class="para">\1</p></div>', text)
     text = re.sub(r'\*\*मुख्य\s*विश्लेषणात्मक\s*बिंदु\s*[:\-]?\*\*', r'<div class="point-badge-body">📊 मुख्य विश्लेषणात्मक आयाम:</div>', text)
     text = re.sub(r'\*\*आगे\s*की\s*राह\s*\(Way\s*Forward\)\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-wf">🚀 आगे की राह (Way Forward):</span> <p class="para">\1</p></div>', text)
     text = re.sub(r'\*\*संतुलित\s*निष्कर्ष\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-conc">⚖️ संतुलित प्रशासनिक निष्कर्ष:</span> <p class="para">\1</p></div>', text)
 
-    # मार्कडाउन बोल्ड व इटैलिक को पक्के HTML में बदलना
+    # मार्कडाउन बोल्ड/इटैलिक साफ़ करना
     text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
-    
-    # बुलेट पॉइंट्स को परिष्कृत करना
     text = re.sub(r'^[•\-\*]\s*(.*)', r'<li class="list-item">\1</li>', text, flags=re.MULTILINE)
     return text
 
-def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "") -> str:
+def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "", is_trending: bool = False) -> str:
     cleaned_body = clean_all_markdown_leaks(raw_content)
-
     display_date = date_str if date_str else get_ist_now().strftime("%Y-%m-%d")
 
-    nav_links = """
-      <a href="#sec-overview">📋 सत्र सार</a>
-      <a href="#sec-gs1">GS-1: कला, समाज व भूगोल</a>
-      <a href="#sec-gs2">GS-2: शासन व राजव्यवस्था</a>
-      <a href="#sec-gs3">GS-3: आर्थिकी व विज्ञान-टेक</a>
-      <a href="#sec-gs4">GS-4: नीतिशास्त्र व केस स्टडी</a>
-      <a href="#sec-value">मूल्य संवर्धन & PYQ</a>
-      <a href="#sec-quiz" style="background:#f59e0b; color:#000;">🎯 लाइव इंटरएक्टिव टेस्ट</a>
-    """
+    # डायनामिक टैब डिटेक्शन: केवल मौजूद सेक्शन के टैब्स ही बनेंगे
+    nav_links = '<a href="#sec-overview">📋 सत्र सार</a>\n'
 
+    if is_trending:
+        if 'id="sec-trend-1"' in cleaned_body or 'मुद्दा 1' in cleaned_body:
+            nav_links += '<a href="#sec-trend-1">📍 राष्ट्रीय मुद्दे व स्थान</a>\n'
+        if 'id="sec-trend-2"' in cleaned_body or 'मुद्दा 2' in cleaned_body:
+            nav_links += '<a href="#sec-trend-2">🌍 अंतर्राष्ट्रीय स्थल व संधियाँ</a>\n'
+        if 'id="sec-trend-3"' in cleaned_body or 'मुद्दा 3' in cleaned_body:
+            nav_links += '<a href="#sec-trend-3">⚡ नीतियां एवं विमर्श</a>\n'
+    else:
+        # सामान्य GS पेपर्स के लिए स्मार्ट चेक
+        if 'id="sec-gs1"' in cleaned_body or 'GS-1' in cleaned_body:
+            nav_links += '<a href="#sec-gs1">GS-1: कला, समाज व भूगोल</a>\n'
+        if 'id="sec-gs2"' in cleaned_body or 'GS-2' in cleaned_body:
+            nav_links += '<a href="#sec-gs2">GS-2: शासन व राजव्यवस्था</a>\n'
+        if 'id="sec-gs3"' in cleaned_body or 'GS-3' in cleaned_body:
+            nav_links += '<a href="#sec-gs3">GS-3: आर्थिकी व विज्ञान-टेक</a>\n'
+        if 'id="sec-gs4"' in cleaned_body or 'GS-4' in cleaned_body:
+            nav_links += '<a href="#sec-gs4">GS-4: नीतिशास्त्र व केस स्टडी</a>\n'
+        if 'id="sec-value"' in cleaned_body or 'मूल्य संवर्धन' in cleaned_body:
+            nav_links += '<a href="#sec-value">मूल्य संवर्धन & PYQ</a>\n'
+
+    nav_links += '<a href="#sec-quiz" style="background:#f59e0b; color:#000;">🎯 लाइव इंटरएक्टिव टेस्ट</a>\n'
+
+    overview_title = "🧭 ट्रेंडिंग समसामयिक विश्लेषण" if is_trending else "📌 सत्र विहंगावलोकन (Session Scope & Core Index)"
+    
     return f"""<!DOCTYPE html>
 <html lang="hi">
 <head>
@@ -370,7 +407,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
   <h1>🇮🇳 {topic}</h1>
   <div class="author-pill">✍️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
   <div class="controls">
-    <input type="text" id="searchBox" placeholder="🔍 खोजें: GS पेपर, संवैधानिक प्रावधान, कीवर्ड...">
+    <input type="text" id="searchBox" placeholder="🔍 खोजें: GS विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()" class="theme-btn">🌗 डार्क / लाइट</button>
     <button onclick="window.print()" class="print-btn">🖨️ प्रिंट / सेव PDF</button>
   </div>
@@ -385,13 +422,75 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 <main class="wrap" id="mainContent">
 
   <section id="sec-overview" class="overview-box">
-    <div class="overview-title">📌 सत्र विहंगावलोकन (Session Scope & Core Index)</div>
+    <div class="overview-title">📌 {overview_title}</div>
     <p class="para"><strong>📅 दिनांक एवं संस्करण:</strong> {display_date} (भारतीय मानक समय)</p>
-    <p class="para"><strong>🎯 मुख्य केंद्रित आयाम:</strong> संघवाद एवं विधायी वीटो (GS-2), राष्ट्रीय हरित हाइड्रोजन व कार्बन शमन (GS-3), डिजिटल न्यायपालिका (ODR), एवं लोक सेवा आचरण नियमावली (GS-4)।</p>
-    <p class="para"><strong>📰 अधिकृत स्रोत समन्वय:</strong> The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS, Sanskriti IAS।</p>
+    <p class="para"><strong>🎯 संकलन ढांचा:</strong> उच्च-स्तरीय परीक्षा-उन्मुख विश्लेषण, 2-कॉलम सारणी, फ्लोचार्ट एवं संबंधित अभ्यास प्रश्न।</p>
+    <p class="para"><strong>📰 अधिकृत स्रोत:</strong> The Hindu, Indian Express, PIB, Vision IAS, Drishti IAS, Sanskriti IAS।</p>
   </section>
 
   {cleaned_body}
+
+  <!-- संरेखित 5 प्रश्नों का इंटरएक्टिव टेस्ट इंजन -->
+  <section id="sec-quiz" class="quiz-engine-card">
+    <h3 class="section-title" style="color:var(--accent); border-left-color:var(--saffron);">🎯 विषय आधारित लाइव अभ्यास टेस्ट (5 Questions)</h3>
+    <p class="para">इस संकलन के मुख्य बिंदुओं पर आधारित लाइव टेस्ट। प्रत्येक सही उत्तर पर +2.0 अंक, गलत उत्तर पर -0.66 अंक।</p>
+    
+    <div style="text-align:center; margin: 20px 0;">
+      <button id="quiz-trigger-btn" onclick="startDailyQuiz()" style="background:var(--saffron); color:#000; font-weight:700; font-size:1.08rem; padding:12px 28px; border:none; border-radius:30px; cursor:pointer;">📝 टेस्ट प्रारंभ करें (Start Test)</button>
+    </div>
+
+    <div id="quiz-area" style="display:none;">
+      <div style="text-align:right;"><span class="timer-pill" id="timeRemaining">⏱ शेष समय: 06:00</span></div>
+      <form id="dailyUPSCForm">
+        
+        <div class="mcq-box">
+          <p><strong>प्रश्न 1: प्रस्तुत संकलन के संदर्भ में मुख्य विधिक/संवैधानिक प्रावधान के संबंध में कौन सा कथन सही है?</strong></p>
+          <label class="opt-label"><input type="radio" name="q1" value="a"> (a) यह केवल गैर-संवैधानिक कार्यकारी आदेशों द्वारा संचालित होता है।</label>
+          <label class="opt-label"><input type="radio" name="q1" value="b"> (b) यह संविधान के मूल ढांचे और विधिक उत्तरदायित्व के सिद्धांतों के अनुरूप है।</label>
+          <label class="opt-label"><input type="radio" name="q1" value="c"> (c) न्यायिक समीक्षा का इस पर कोई अधिकार क्षेत्र नहीं है।</label>
+          <label class="opt-label"><input type="radio" name="q1" value="d"> (d) उपर्युक्त में से कोई नहीं।</label>
+        </div>
+
+        <div class="mcq-box">
+          <p><strong>प्रश्न 2: समसामयिक नीतिगत विश्लेषण के अंतर्गत उल्लिखित मुख्य तकनीकी या आर्थिक घटक क्या है?</strong></p>
+          <label class="opt-label"><input type="radio" name="q2" value="a"> (a) पूर्णतः विदेशी तकनीकों पर निर्भरता।</label>
+          <label class="opt-label"><input type="radio" name="q2" value="b"> (b) स्वदेशी क्षमता निर्माण, डिजिटल अवसंरचना और सतत विकास का समन्वय।</label>
+          <label class="opt-label"><input type="radio" name="q2" value="c"> (c) पर्यावरण मानकों की पूर्ण अनदेखी।</label>
+          <label class="opt-label"><input type="radio" name="q2" value="d"> (d) केवल अल्पकालिक बजटीय आवंटन।</label>
+        </div>
+
+        <div class="mcq-box">
+          <p><strong>प्रश्न 3: चर्चित भौगोलिक/पर्यावरणीय स्थल के संदर्भ में निम्नलिखित कथनों पर विचार कीजिए:</strong></p>
+          <label class="opt-label"><input type="radio" name="q3" value="a"> (a) यह केवल शुष्क और मरुस्थलीय पारिस्थितिकी तंत्र में पाया जाता है।</label>
+          <label class="opt-label"><input type="radio" name="q3" value="b"> (b) यह वैश्विक स्तर पर जैव विविधता और रणनीतिक जल-संसाधनों हेतु अत्यंत महत्वपूर्ण है।</label>
+          <label class="opt-label"><input type="radio" name="q3" value="c"> (c) यहाँ किसी भी अंतरराष्ट्रीय संधि के प्रावधान लागू नहीं होते।</label>
+          <label class="opt-label"><input type="radio" name="q3" value="d"> (d) यह पूर्णतः मानव हस्तक्षेप से मुक्त क्षेत्र है।</label>
+        </div>
+
+        <div class="mcq-box">
+          <p><strong>प्रश्न 4: प्रशासनिक सुधार एवं शासन (Governance) के दृष्टिकोण से प्राथमिक आवश्यकता क्या है?</strong></p>
+          <label class="opt-label"><input type="radio" name="q4" value="a"> (a) जटिल विनियामक बाधाओं का विस्तार।</label>
+          <label class="opt-label"><input type="radio" name="q4" value="b"> (b) पारदर्शिता, अंतर-विभागीय समन्वय और जन-केंद्रित समाधान।</label>
+          <label class="opt-label"><input type="radio" name="q4" value="c"> (c) नागरिक अधिकारों को सीमित करना।</label>
+          <label class="opt-label"><input type="radio" name="q4" value="d"> (d) वित्तीय उत्तरदायित्व से विमुख होना।</label>
+        </div>
+
+        <div class="mcq-box">
+          <p><strong>प्रश्न 5: प्रस्तुत विषय पर सुप्रीम कोर्ट / आधिकारिक आयोग की प्रमुख अनुशंसा क्या दर्शाती है?</strong></p>
+          <label class="opt-label"><input type="radio" name="q5" value="a"> (a) शक्तियों का संकेंद्रण ही एकमात्र उपाय है।</label>
+          <label class="opt-label"><input type="radio" name="q5" value="b"> (b) संस्थागत स्वायत्तता, समयबद्ध निर्णय और संवैधानिक नैतिकता का पालन अनिवार्य है।</label>
+          <label class="opt-label"><input type="radio" name="q5" value="c"> (c) संसदीय नियमों को निलंबित किया जाना चाहिए।</label>
+          <label class="opt-label"><input type="radio" name="q5" value="d"> (d) सभी राज्य सरकारों के अधिकारों का हनन।</label>
+        </div>
+
+        <div style="text-align:center; margin-top:22px;">
+          <button type="button" onclick="evaluateQuiz()" style="background:#10b981; color:#fff; font-weight:700; font-size:1.05rem; padding:12px 32px; border:none; border-radius:30px; cursor:pointer;">📊 टेस्ट सबमिट करें</button>
+        </div>
+      </form>
+
+      <div id="quizScoreZone" style="margin-top:24px;"></div>
+    </div>
+  </section>
 
 </main>
 
@@ -417,8 +516,8 @@ document.getElementById('searchBox').addEventListener('input', function() {{
 }});
 
 let timer = null;
-let seconds = 300;
-const ANSWER_KEY = {{"q1": "b", "q2": "b", "q3": "b", "q4": "b"}};
+let seconds = 360;
+const ANSWER_KEY = {{"q1": "b", "q2": "b", "q3": "b", "q4": "b", "q5": "b"}};
 
 function startDailyQuiz() {{
   const btn = document.getElementById('quiz-trigger-btn');
@@ -449,10 +548,6 @@ function evaluateQuiz() {{
 
   for (let q in ANSWER_KEY) {{
     const sel = document.querySelector(`input[name="${{q}}"]:checked`);
-    const qNum = q.replace('q', '');
-    const explainDiv = document.getElementById(`ans-explain-${{qNum}}`);
-    if (explainDiv) explainDiv.style.display = 'block';
-
     if (sel) {{
       if (sel.value.toLowerCase() === ANSWER_KEY[q].toLowerCase()) {{
         score += 2.0;
@@ -497,8 +592,8 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "नीचे सभी मुख्य कमांड्स उपलब्ध हैं:\n\n"
         "📖 <b>अध्ययन एवं नोट्स:</b>\n"
         "• <code>/daily</code> — दैनिक नोट्स (IST लाइव कैलेंडर)\n"
+        "• <code>/trending</code> — समसामयिक स्थान, व्यक्ति व ट्रेंडिंग मुद्दे\n"
         "• <code>/quiz</code> — विषयवार लाइव टेस्ट शुरू करें\n"
-        "• <code>/trending</code> — चर्चा में चल रहे स्थान, व्यक्ति व मुद्दे\n"
         "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन\n"
         "• <code>/monthly</code> — सम्पूर्ण मासिक संकलन\n"
         "• <code>/yearly</code> — वार्षिक कंपाइलेशन\n"
@@ -519,7 +614,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user.id, user.username, user.first_name)
     help_text = (
         f"📖 <b>UPSC SMART DESK — सहायता केंद्र ({AUTHOR_NAME})</b>\n\n"
-        "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> भारतीय समय (IST) के अनुसार तारीख चुनें। The Hindu, PIB, Vision IAS, Sanskriti IAS व Drishti IAS के समन्वय से तैयार नोट्स पाएं।\n\n"
+        "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> भारतीय समय (IST) के अनुसार तारीख चुनें। केवल मौजूद विषयों के ही टैब्स बनेंगे।\n\n"
         "2️⃣ <b>ट्रेंडिंग रडार (`/trending`):</b> लाइव राष्ट्रीय व अंतरराष्ट्रीय स्थान और मुद्दे देखें। किसी का नंबर (उदा. <code>1, 2</code>) या <code>all</code> भेजकर सीधे पूर्ण नोट्स पाएं।\n\n"
         "3️⃣ <b>मासिक व साप्ताहिक पत्रिकाएं:</b> <code>/monthly</code> व <code>/weekly</code> से सम्पूर्ण विषयवार कंपाइलेशन प्राप्त करें।\n\n"
         "4️⃣ <b>प्रिंट व वॉटरमार्क:</b> सभी फाइलों पर <b>SACHIN SHARMA</b> का 50% विजिबिलिटी वाला वॉटरमार्क प्रिंट होगा।"
@@ -553,7 +648,23 @@ async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🎯 <b>चरण 1/2:</b> किस विषय का टेस्ट लगाना चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= TRENDING RADAR WITH PAGINATION & DIRECT NUMBER SELECTION =================
+# ================= TRENDING RADAR WITH CACHED STABILITY & 8 ISSUES =================
+def generate_fresh_trending(date_str):
+    prompt = f"""
+तारीख {date_str} के संदर्भ में UPSC सिविल सेवा परीक्षा हेतु 8 मुख्य ज्वलंत मुद्दे तैयार करें।
+प्रारूप:
+1. मुद्दा 1 (स्थान/योजना/विमर्श का सटीक नाम) - 2 पंक्ति सारांश (स्रोत: The Hindu/PIB)
+2. मुद्दा 2 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
+3. मुद्दा 3 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
+4. मुद्दा 4 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
+5. मुद्दा 5 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
+6. मुद्दा 6 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
+7. मुद्दा 7 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
+8. मुद्दा 8 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
+भाषा शुद्ध व उच्च-स्तरीय हिंदी रखें।
+"""
+    return call_gemini_safely(prompt)
+
 async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -561,28 +672,17 @@ async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     wait_msg = await update.message.reply_text("🛰 <b>UPSC रडार:</b> समसामयिक स्थानों, व्यक्तियों व ट्रेंडिंग मुद्दों का संकलन हो रहा है...", parse_mode=ParseMode.HTML)
     
-    prompt = f"""
-आज की तारीख {today} के संदर्भ में UPSC CSE परीक्षा हेतु 6 मुख्य ट्रेंडिंग मुद्दे तैयार करें।
-प्रारूप:
-1. मुद्दा 1 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश (स्रोत: The Hindu/PIB)
-2. मुद्दा 2 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-3. मुद्दा 3 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-4. मुद्दा 4 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-5. मुद्दा 5 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-6. मुद्दा 6 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-भाषा शुद्ध व उच्च-स्तरीय हिंदी रखें।
-"""
     try:
-        trend_text = await asyncio.to_thread(call_gemini_safely, prompt)
+        # डेटाबेस कैशिंग ताकि सभी यूज़र्स को 100% एक जैसा डेटा दिखे
+        trend_text = await asyncio.to_thread(get_or_create_trending_cache, today, generate_fresh_trending)
         lines = [l.strip() for l in trend_text.split('\n') if l.strip()]
         
-        TRENDING_TOPICS_CACHE[user.id] = trend_text
         TRENDING_PAGES[user.id] = 1
 
-        p1_text = "🧭 <b>UPSC TRENDING RADAR (भाग 1/2)</b>\n\n" + "\n\n".join(lines[:3])
-        p1_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे का संपूर्ण विश्लेषण पाने हेतु उसका नंबर भेजें (उदा. <code>1, 2</code> या <code>1</code>)\n• सभी मुद्दों के विस्तृत नोट्स हेतु लिखें: <code>all</code>"
+        p1_text = f"🧭 <b>UPSC TRENDING RADAR — {today} (पेज 1/2)</b>\n\n" + "\n\n".join(lines[:4])
+        p1_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के पूर्ण नोट्स हेतु नंबर भेजें (उदा. <code>1, 2</code> या <code>1</code>)\n• सभी 8 मुद्दों के संपूर्ण 360° नोट्स हेतु लिखें: <code>all</code>"
 
-        keyboard = [[InlineKeyboardButton("अगला पेज ▶️", callback_data="trend_next")]]
+        keyboard = [[InlineKeyboardButton("अगला पेज (5-8) ▶️", callback_data="trend_next")]]
         await wait_msg.edit_text(p1_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
     except Exception as e:
         await wait_msg.edit_text(f"❌ त्रुटि: {e}")
@@ -591,28 +691,22 @@ async def handle_trending_pagination(update: Update, context: ContextTypes.DEFAU
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-    raw_data = TRENDING_TOPICS_CACHE.get(user_id, "")
+    today = get_ist_now().strftime("%Y-%m-%d")
     
-    if not raw_data:
-        await query.message.reply_text("⚠️ सत्र समाप्त हो गया है। पुनः <code>/trending</code> भेजें।", parse_mode=ParseMode.HTML)
-        return
-
-    lines = [l.strip() for l in raw_text_lines(raw_data)]
+    raw_data = get_or_create_trending_cache(today, generate_fresh_trending)
+    lines = [l.strip() for l in raw_data.split('\n') if l.strip()]
     
     if query.data == "trend_next":
-        p2_text = "🧭 <b>UPSC TRENDING RADAR (भाग 2/2)</b>\n\n" + "\n\n".join(lines[3:6])
-        p2_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे का विश्लेषण पाने हेतु नंबर भेजें (उदा. <code>4, 5</code>)\n• सभी मुद्दों के लिए लिखें: <code>all</code>"
-        keyboard = [[InlineKeyboardButton("◀️ पिछला पेज", callback_data="trend_prev")]]
+        p2_text = f"🧭 <b>UPSC TRENDING RADAR — {today} (पेज 2/2)</b>\n\n" + "\n\n".join(lines[4:8])
+        p2_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के विश्लेषण हेतु नंबर भेजें (उदा. <code>5, 6</code>)\n• सभी मुद्दों के लिए लिखें: <code>all</code>"
+        keyboard = [[InlineKeyboardButton("◀️ पिछला पेज (1-4)", callback_data="trend_prev")]]
         await query.message.edit_text(p2_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         
     elif query.data == "trend_prev":
-        p1_text = "🧭 <b>UPSC TRENDING RADAR (भाग 1/2)</b>\n\n" + "\n\n".join(lines[:3])
-        p1_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे का विश्लेषण पाने हेतु नंबर भेजें (उदा. <code>1, 2</code>)\n• सभी मुद्दों के लिए लिखें: <code>all</code>"
-        keyboard = [[InlineKeyboardButton("अगला पेज ▶️", callback_data="trend_next")]]
+        p1_text = f"🧭 <b>UPSC TRENDING RADAR — {today} (पेज 1/2)</b>\n\n" + "\n\n".join(lines[:4])
+        p1_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के विश्लेषण हेतु नंबर भेजें (उदा. <code>1, 2</code>)\n• सभी मुद्दों के लिए लिखें: <code>all</code>"
+        keyboard = [[InlineKeyboardButton("अगला पेज (5-8) ▶️", callback_data="trend_next")]]
         await query.message.edit_text(p1_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-
-def raw_text_lines(text):
-    return [l for l in text.split('\n') if l.strip()]
 
 # /monthly
 async def monthly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -642,7 +736,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓️ <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# डायनामिक बटन क्लिक और केंद्रीय कैशिंग (एक जैसी फ़ाइल गारंटी)
+# डायनामिक बटन क्लिक और केंद्रीय कैशिंग
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -701,7 +795,7 @@ async def process_dynamic_generation(user_id, data, context):
         target_date = data.split("_")[1]
         arch_data = get_archive_by_date(target_date)
         
-        # यदि डेटाबेस में पहले से मौजूद है, तो सीधे वही फ़ाइल दें (100% समानता)
+        # यदि डेटाबेस में पहले से मौजूद है तो वही फ़ाइल दें (100% एकरूपता)
         if arch_data:
             topic, filename, html_content = arch_data
         else:
@@ -725,49 +819,17 @@ async def process_dynamic_generation(user_id, data, context):
 अनिवार्य स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Sanskriti IAS, Drishti IAS.
 
 सख्त नियम:
-1. शून्य मार्कडाउन लीक्स: तालिकाओं में '|' या '---' का प्रयोग वर्जित है। केवल शुद्ध HTML (<div class="table-box"><table><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table></div>) टैग्स का प्रयोग करें।
+1. शून्य मार्कडाउन लीक्स: तालिकाओं में '|' या '---' का प्रयोग वर्जित है। केवल मानक HTML (<div class="table-box"><table><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table></div>) का प्रयोग करें।
 2. मेन्स फ्रेमवर्क के प्रत्येक बिंदु को पूरा लिखें।
-3. जहाँ भी आवश्यक हो, वास्तुकला या मैपिंग को दर्शाने हेतु SVG रेखाचित्र या सुंदर figure टैग शामिल करें।
+3. केवल उन विषयों को शामिल करें जिनकी सामग्री आज वास्तव में प्रासंगिक है।
+4. जहाँ भी आवश्यक हो, वास्तुकला या मैपिंग को दर्शाने हेतु सुंदर और स्पष्ट इनलाइन SVG आरेख या विस्तृत विवरण शामिल करें (कोई खाली डिब्बा न दिखे)।
 
-अनिवार्य संरचना:
-<section id="sec-gs1" class="news-card">
-<h3 class="section-title">GS-1: इतिहास, विरासत, समाज एवं भूगोल</h3>
-<span class="badge-src">📰 स्रोत: The Hindu, PIB, Sanskriti IAS</span>
-- संदर्भ, संवैधानिक स्थिति (अनुच्छेद 49), 2-कॉलम HTML सारणी।
-- मैपिंग एवं चर्चित स्थल विवरण।
+सामग्री संरचना (केवल प्रासंगिक खंड रखें):
+- संदर्भ, संवैधानिक स्थिति, 2-कॉलम HTML सारणी।
+- मैपिंग एवं चर्चित स्थल विवरण (मानचित्र आरेख सहित)।
 - Prelims Facts (बुलेट प्वाइंट्स)।
 - Mains Framework: प्रश्न, भूमिका, 3 मुख्य बिंदु, आगे की राह, निष्कर्ष।
 - 4 Practice MCQs (व्याख्या सहित)।
-</section>
-
-<section id="sec-gs2" class="news-card">
-<h3 class="section-title">GS-2: शासन, संविधान, राजव्यवस्था एवं अंतर्राष्ट्रीय संबंध</h3>
-<span class="badge-src">📰 स्रोत: The Hindu, Indian Express, Vision IAS</span>
-- संवैधानिक प्रावधान एवं सुप्रीम कोर्ट के ताज़ा व ऐतिहासिक वाद।
-- नीतिगत विश्लेषण एवं सरकारी योजना 2-कॉलम HTML टेबल।
-- Prelims Facts, Mains Framework व 4 Practice MCQs।
-</section>
-
-<section id="sec-gs3" class="news-card">
-<h3 class="section-title">GS-3: प्रौद्योगिकी, आर्थिक विकास, जैव विविधता एवं सुरक्षा</h3>
-<span class="badge-src">📰 स्रोत: PIB, NITI Aayog, Drishti IAS</span>
-- आधिकारिक डेटा, साइंस एवं टेक (Applied Sci-Tech) + फ्लो डायग्राम।
-- पर्यावरण लक्ष्य (Net-Zero 2070) व सुरक्षा।
-- Prelims Facts, Mains Framework व 4 Practice MCQs।
-</section>
-
-<section id="sec-gs4" class="news-card">
-<h3 class="section-title">GS-4: नीतिशास्त्र, सत्यनिष्ठा एवं अभिरुचि</h3>
-<span class="badge-src">📰 स्रोत: Administrative Ethics Framework</span>
-- सैद्धांतिक अवधारणा व विधिक स्थिति (AIS Rules)।
-- व्यावहारिक प्रशासनिक केस स्टडी / नैतिक दुविधा।
-- Mains Framework व 4 Practice MCQs।
-</section>
-
-<section id="sec-value" class="news-card">
-<h3 class="section-title">मूल्य संवर्धन खंड (Value-Addition & PYQ)</h3>
-- चर्चित परीक्षा शब्दावली (Keyword Decoder) एवं PYQ लिंकेज।
-</section>
 """
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -787,12 +849,12 @@ async def process_dynamic_generation(user_id, data, context):
             topic, filename, html_content = arch_data
         else:
             wait_m = await context.bot.send_message(chat_id=user_id, text=f"📁 <b>{m_name}</b> का मासिक कंपाइलेशन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
-            prompt = f"माह: '{m_name}' का सम्पूर्ण UPSC Monthly Current Affairs Digest स्रोत (The Hindu, Vision, Drishti, Sanskriti IAS), HTML टेबल्स और 10 MCQs बैंक के साथ हिंदी में तैयार करें।"
+            prompt = f"माह: '{m_name}' का सम्पूर्ण UPSC Monthly Current Affairs Digest स्रोत (The Hindu, Vision, Drishti, Sanskriti IAS), शुद्ध HTML टेबल्स और 10 MCQs बैंक के साथ हिंदी में तैयार करें।"
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
                 topic = f"UPSC Monthly Digest — {m_name}"
                 filename = f"UPSC_Monthly_{m_name.replace(' ', '_')}.html"
-                html_content = build_standalone_master_html(topic, ai_text)
+                html_content = build_standalone_master_html(topic, ai_text, date_str=m_name)
                 save_to_archive("monthly", topic, filename, html_content)
                 await wait_m.delete()
             except Exception as e:
@@ -811,7 +873,7 @@ async def process_dynamic_generation(user_id, data, context):
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
                 topic = f"UPSC Annual Compendium — {y_name}"
                 filename = f"UPSC_Annual_{y_name}.html"
-                html_content = build_standalone_master_html(topic, ai_text)
+                html_content = build_standalone_master_html(topic, ai_text, date_str=y_name)
                 save_to_archive("yearly", topic, filename, html_content)
                 await wait_m.delete()
             except Exception as e:
@@ -820,18 +882,22 @@ async def process_dynamic_generation(user_id, data, context):
 
     elif data.startswith("genweek_"):
         w_date = data.split("_")[1]
-        wait_m = await context.bot.send_message(chat_id=user_id, text="⏳ साप्ताहिक रिवीजन डाइजेस्ट तैयार हो रहा है...", parse_mode=ParseMode.HTML)
-        prompt = f"सप्ताह ({w_date}) के मुख्य UPSC घटनाक्रमों का 7-दिवसीय रिवीजन डाइजेस्ट HTML टेबल्स के साथ हिंदी में तैयार करें।"
-        try:
-            ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-            topic = f"UPSC Weekly Revision — {w_date}"
-            filename = f"UPSC_Weekly_{w_date}.html"
-            html_content = build_standalone_master_html(topic, ai_text)
-            save_to_archive("weekly", topic, filename, html_content)
-            await wait_m.delete()
-        except Exception as e:
-            await wait_m.edit_text(f"❌ त्रुटि: {e}")
-            return
+        arch_data = get_archive_by_period_name("weekly", w_date)
+        if arch_data:
+            topic, filename, html_content = arch_data
+        else:
+            wait_m = await context.bot.send_message(chat_id=user_id, text="⏳ साप्ताहिक रिवीजन डाइजेस्ट तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+            prompt = f"सप्ताह ({w_date}) के मुख्य UPSC घटनाक्रमों का 7-दिवसीय रिवीजन डाइजेस्ट HTML टेबल्स के साथ हिंदी में तैयार करें।"
+            try:
+                ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
+                topic = f"UPSC Weekly Revision — {w_date}"
+                filename = f"UPSC_Weekly_{w_date.replace('-', '')}.html"
+                html_content = build_standalone_master_html(topic, ai_text, date_str=w_date)
+                save_to_archive("weekly", topic, filename, html_content)
+                await wait_m.delete()
+            except Exception as e:
+                await wait_m.edit_text(f"❌ त्रुटि: {e}")
+                return
 
     with open(filename, "w", encoding="utf-8") as f:
         f.write(html_content)
@@ -853,32 +919,29 @@ async def process_dynamic_generation(user_id, data, context):
     if os.path.exists(filename):
         os.remove(filename)
 
-# ================= DIRECT TEXT / NUMBER / ALL HANDLER =================
+# ================= TEXT / NUMBER / 'ALL' TRENDING HANDLER =================
 async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     user_id = update.effective_user.id
     register_user(user_id, update.effective_user.username, update.effective_user.first_name)
     user_input = msg.text.strip().lower()
+    today = get_ist_now().strftime("%Y-%m-%d")
 
     # 1. 'all' भेजने पर सभी ट्रेंडिंग मुद्दों का संपूर्ण विश्लेषण
     if user_input == "all":
-        raw_trend = TRENDING_TOPICS_CACHE.get(user_id, "")
-        if not raw_trend:
-            await msg.reply_text("⚠️ पहले <code>/trending</code> चलाकर मुद्दे देखें, फिर 'all' भेजें।", parse_mode=ParseMode.HTML)
-            return
-
-        wait_m = await msg.reply_text("⏳ <b>सभी ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स (चित्रों व मैपिंग सहित) तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+        raw_trend = get_or_create_trending_cache(today, generate_fresh_trending)
+        wait_m = await msg.reply_text("⏳ <b>सभी 8 ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स (मानचित्रों व आरेखों सहित) तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
         prompt = f"""
-नीचे दिए गए समसामयिक मुद्दों पर UPSC स्तर के गहन और सम्पूर्ण नोट्स तैयार करें:
+नीचे दिए गए सभी 8 समसामयिक ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स तैयार करें:
 "{raw_trend}"
 सभी मुद्दों में संदर्भ, 2-कॉलम HTML सारणी, मैपिंग विवरण, मेन्स फ्रेमवर्क और प्रीलिम्स प्रश्न अनिवार्य रूप से दें।
-मार्कडाउन स्टार्स का प्रयोग न करें।
+जहाँ भी स्थान आए, इनलाइन आरेख/मैपिंग विवरण दें। मार्कडाउन स्टार्स का प्रयोग न करें।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-            topic = "UPSC Trending All Topics Compilation"
-            filename = f"UPSC_Trending_All_{int(time.time())}.html"
-            html_content = build_standalone_master_html(topic, ai_text)
+            topic = f"UPSC Trending Radar All Topics — {today}"
+            filename = f"UPSC_Trending_Radar_{today.replace('-', '_')}.html"
+            html_content = build_standalone_master_html(topic, ai_text, date_str=today, is_trending=True)
             
             with open(filename, "w", encoding="utf-8") as f:
                 f.write(html_content)
@@ -886,7 +949,12 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
                 await msg.reply_document(
                     document=send_doc,
                     filename=filename,
-                    caption=f"📄 <b>ट्रेंडिंग संपूर्ण संकलन</b>\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                    caption=(
+                        f"📄 <b>ट्रेंडिंग संपूर्ण संकलन:</b> <code>{today}</code>\n"
+                        f"📰 <b>कवरेज:</b> The Hindu | PIB | Indian Express\n"
+                        f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
+                        f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                    ),
                     parse_mode=ParseMode.HTML
                 )
             if os.path.exists(filename):
@@ -898,25 +966,21 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # 2. नंबर या कॉमा-सेपरेटेड नंबर भेजने पर (उदा. 1, 2 या 3)
     if re.match(r'^(\d+)(\s*,\s*\d+)*$', user_input):
-        raw_trend = TRENDING_TOPICS_CACHE.get(user_id, "")
-        if not raw_trend:
-            await msg.reply_text("⚠️ कृपया पहले <code>/trending</code> चलाएं, फिर नंबर चुनें।", parse_mode=ParseMode.HTML)
-            return
-
+        raw_trend = get_or_create_trending_cache(today, generate_fresh_trending)
         nums = [n.strip() for n in user_input.split(',')]
-        wait_m = await msg.reply_text(f"⏳ चुने गए मुद्दे ({', '.join(nums)}) का 360° विश्लेषण तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await msg.reply_text(f"⏳ चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विश्लेषण तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         
         prompt = f"""
-संदर्भित ट्रेंडिंग सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC के लिए गहन 360° विश्लेषण तैयार करें।
+सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC सिविल सेवा परीक्षा हेतु गहन 360° विश्लेषण तैयार करें।
 सूची:
 "{raw_trend}"
-नियम: 2-कॉलम HTML सारणी, मैपिंग, मेन्स फ्रेमवर्क और 2 MCQs अवश्य दें। मार्कडाउन स्टार्स वर्जित हैं।
+नियम: संदर्भ, चर्चा में क्यों, 2-कॉलम HTML सारणी, मैपिंग आरेख, मेन्स फ्रेमवर्क और 2 MCQs अवश्य दें। मार्कडाउन स्टार्स वर्जित हैं।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-            topic = f"UPSC Trending Topics — {', '.join(nums)}"
-            filename = f"UPSC_Trending_Selected_{int(time.time())}.html"
-            html_content = build_standalone_master_html(topic, ai_text)
+            topic = f"UPSC Trending Topics {', '.join(nums)} — {today}"
+            filename = f"UPSC_Trending_Selected_{today.replace('-', '')}_{'_'.join(nums)}.html"
+            html_content = build_standalone_master_html(topic, ai_text, date_str=today, is_trending=True)
             
             with open(filename, "w", encoding="utf-8") as f:
                 f.write(html_content)
@@ -924,7 +988,11 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
                 await msg.reply_document(
                     document=send_doc,
                     filename=filename,
-                    caption=f"📄 <b>ट्रेंडिंग चयनित मुद्दे:</b> {', '.join(nums)}\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                    caption=(
+                        f"📄 <b>ट्रेंडिंग चयनित मुद्दे:</b> {', '.join(nums)} ({today})\n"
+                        f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
+                        f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                    ),
                     parse_mode=ParseMode.HTML
                 )
             if os.path.exists(filename):
@@ -934,7 +1002,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
             await wait_m.edit_text(f"❌ त्रुटि: {e}")
         return
 
-# ================= DIRECT PDF TO HTML ENGINE =================
+# ================= DIRECT PDF TO HTML ENGINE (SIZE GUARDED) =================
 async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     doc = msg.document
@@ -1079,11 +1147,11 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
         ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_topic = f"दैनिक समसामयिक महा-संकलन — {query}"[:40]
-        html_output = build_standalone_master_html(clean_topic, ai_text)
+        html_output = build_standalone_master_html(clean_topic, ai_text, date_str=query)
 
         safe_fname = re.sub(r'[^a-zA-Z0-9\u0900-\u097F]', '_', query)[:25]
         filename = f"Current_Affairs_{safe_fname}.html"
-        save_to_archive("daily", clean_topic, filename, html_output)
+        save_to_archive("daily", clean_topic, filename, html_output, date_str=query)
 
         with open(filename, "w", encoding="utf-8") as f:
             f.write(html_output)
@@ -1272,7 +1340,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ================= RENDER KEEP-ALIVE SERVER =================
 async def run_server():
     app = web.Application()
-    app.router.add_get("/", lambda r: web.Response(text="UPSC Smart Bot Active 24/7 with Central Archive & 3.8 Flash"))
+    app.router.add_get("/", lambda r: web.Response(text="UPSC Smart Bot Active 24/7 with Dynamic Tabs & Clean UI"))
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.environ.get("PORT", 8080))
@@ -1303,7 +1371,7 @@ async def main():
     bot_app.add_handler(CallbackQueryHandler(handle_trending_pagination, pattern=r"^trend_(next|prev)$"))
     bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click))
 
-    # डायरेक्ट PDF अपलोड (20 MB सुरक्षा गार्ड)
+    # डायरेक्ट PDF अपलोड
     bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_direct_pdf_upload))
 
     # टेक्स्ट व ट्रेंडिंग नंबर / 'all' हैंडलर
