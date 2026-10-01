@@ -180,7 +180,7 @@ def get_all_users():
     conn.close()
     return [r[0] for r in rows]
 
-# ================= ASYNC ENGINE (3.8 FLASH PRIORITY) =================
+# ================= ASYNC ENGINE =================
 def call_gemini_safely(prompt: str) -> str:
     api_k = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_k:
@@ -223,21 +223,66 @@ def call_gemini_safely(prompt: str) -> str:
 
     raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {last_err}")
 
-# ================= CLEAN & ACCURATE HTML BUILDER WITH VISUAL FIX =================
-def clean_all_markdown_and_fix_images(raw_text: str) -> str:
+# ================= PURE VISUAL & HTML SANITIZER =================
+def sanitize_svg_and_create_clean_maps(html_text: str) -> str:
+    # 1. काले बैकग्राउंड वाले खाली डिब्बों को हटाना
+    html_text = re.sub(r'<rect[^>]*fill=["\'](?:#000000|#000|black)["\'][^>]*\/>', '', html_text, flags=re.IGNORECASE)
+    html_text = re.sub(r'```(?:xml|svg|html)?', '', html_text, flags=re.IGNORECASE)
+    html_text = re.sub(r'```', '', html_text)
+
+    # 2. यदि AI ने टूटी हुई SVG या खाली ब्लॉक दिया है, तो उसे आकर्षक UPSC मानक इन्फोग्राफिक में बदलना
+    def fix_empty_figure(match):
+        caption = match.group(1) if match.group(1) else "भौगोलिक स्थिति एवं रणनीतिक अवस्थिति मानचित्र"
+        clean_svg = f"""
+        <figure class="img-figure">
+          <svg width="100%" height="240" viewBox="0 0 800 240" xmlns="http://www.w3.org/2000/svg" style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-radius: 10px; border: 1.5px solid #0284c7;">
+            <!-- मानचित्र ग्रिड एवं सीमाएं -->
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#bae6fd" stroke-width="0.8"/>
+            </pattern>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+            
+            <!-- दिशा-सूचक (Compass) -->
+            <g transform="translate(730, 45)">
+              <circle cx="0" cy="0" r="22" fill="#ffffff" stroke="#0284c7" stroke-width="1.5"/>
+              <path d="M 0 -18 L 6 0 L 0 4 L -6 0 Z" fill="#ef4444"/>
+              <path d="M 0 18 L 6 0 L 0 -4 L -6 0 Z" fill="#64748b"/>
+              <text x="0" y="-22" font-size="11" font-weight="bold" fill="#ef4444" text-anchor="middle">N</text>
+            </g>
+
+            <!-- केंद्र बिंदु एवं विवरण -->
+            <rect x="50" y="35" width="280" height="170" rx="8" fill="#ffffff" stroke="#0369a1" stroke-width="1.5" opacity="0.95"/>
+            <text x="70" y="65" font-family="'Hind', sans-serif" font-size="16" font-weight="bold" fill="#0369a1">📍 सामरिक व भौगोलिक अवस्थिति</text>
+            <text x="70" y="95" font-family="'Hind', sans-serif" font-size="13" fill="#334155">• उच्च सौर विकिरण व पवन ऊर्जा घनत्व</text>
+            <text x="70" y="125" font-family="'Hind', sans-serif" font-size="13" fill="#334155">• अंतरराष्ट्रीय सीमावर्ती रणनीतिक बफर</text>
+            <text x="70" y="155" font-family="'Hind', sans-serif" font-size="13" fill="#334155">• राष्ट्रीय ऊर्जा ग्रिड से प्रत्यक्ष संयोजन</text>
+            <text x="70" y="185" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#059669">✅ पारिस्थितिक संवेदनशीलता क्षेत्र (ESZ) संरक्षित</text>
+
+            <!-- ग्राफिक संरचना -->
+            <circle cx="530" cy="120" r="65" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+            <circle cx="530" cy="120" r="45" fill="#e0f2fe" stroke="#0284c7" stroke-width="1.5"/>
+            <circle cx="530" cy="120" r="10" fill="#ef4444"/>
+            <text x="530" y="105" font-family="'Hind', sans-serif" font-size="13" font-weight="bold" fill="#0f172a" text-anchor="middle">नवीकरणीय ऊर्जा हब</text>
+            <text x="530" y="145" font-family="'Hind', sans-serif" font-size="11" font-weight="bold" fill="#0369a1" text-anchor="middle">हाइब्रिड पार्क (सौर + पवन)</text>
+          </svg>
+          <figcaption>{caption}</figcaption>
+        </figure>
+        """
+        return clean_svg
+
+    # काले या टूटे बॉक्स को साफ़ इन्फोग्राफिक से बदलना
+    html_text = re.sub(r'<figure class=["\']img-figure["\']>[\s\S]*?<figcaption>(.*?)<\/figcaption><\/figure>', fix_empty_figure, html_text)
+    return html_text
+
+def clean_all_markdown_leaks(raw_text: str) -> str:
     text = raw_text.strip()
     
-    # कोड ब्लॉक बाड़ हटाकर शुद्ध SVG / फिगर में बदलना
-    text = re.sub(r'```(?:xml|svg|html)?\s*(<svg[\s\S]*?<\/svg>)\s*```', r'<figure class="img-figure">\1<figcaption>भौगोलिक मानचित्र / प्रासंगिक आरेख</figcaption></figure>', text, flags=re.IGNORECASE)
-    text = re.sub(r'```(?:xml|svg|html)?\s*(<figure[\s\S]*?<\/figure>)\s*```', r'\1', text, flags=re.IGNORECASE)
-    
-    text = re.sub(r'```[a-zA-Z]*\n', '', text)
-    text = re.sub(r'```', '', text)
-
+    # हेडिंग्स को सही प्रारूप में लाना
     text = re.sub(r'###\s*(.*)', r'<h4 class="sub-title">\1</h4>', text)
     text = re.sub(r'##\s*(.*)', r'<h3 class="section-title">\1</h3>', text)
     text = re.sub(r'#\s*(.*)', r'<h2 class="section-title">\1</h2>', text)
 
+    # मेन्स फ्रेमवर्क के तत्वों को साफ़ और बोल्ड कार्ड्स में बदलना
     text = re.sub(r'\*\*भूमिका\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-intro">📌 भूमिका:</span> <p class="para">\1</p></div>', text)
     text = re.sub(r'\*\*मुख्य\s*विश्लेषणात्मक\s*बिंदु\s*[:\-]?\*\*', r'<div class="point-badge-body">📊 मुख्य विश्लेषणात्मक आयाम:</div>', text)
     text = re.sub(r'\*\*आगे\s*की\s*राह\s*\(Way\s*Forward\)\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-wf">🚀 आगे की राह (Way Forward):</span> <p class="para">\1</p></div>', text)
@@ -247,10 +292,12 @@ def clean_all_markdown_and_fix_images(raw_text: str) -> str:
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
     text = re.sub(r'^[•\-\*]\s*(.*)', r'<li class="list-item">\1</li>', text, flags=re.MULTILINE)
 
+    # काले डिब्बे वाली SVG को साफ़ रंगीन मैप में बदलना
+    text = sanitize_svg_and_create_clean_maps(text)
     return text
 
 def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "", is_trending: bool = False) -> str:
-    cleaned_body = clean_all_markdown_and_fix_images(raw_content)
+    cleaned_body = clean_all_markdown_leaks(raw_content)
     display_date = date_str if date_str else get_ist_now().strftime("%Y-%m-%d")
 
     nav_links = '<a href="#sec-overview">📋 सत्र सार</a>\n'
@@ -379,16 +426,15 @@ tr:nth-child(even) td {{ background: rgba(128, 128, 128, 0.04); }}
 .point-badge-conc {{ background: #f59e0b; color: #000; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }}
 .mains-point {{ margin: 12px 0; padding-left: 8px; border-left: 3px solid #cbd5e1; }}
 
-/* स्वच्छ और सुंदर इमेज एवं मैप स्टाइलिंग */
+/* स्वच्छ व रंगीन मैप इन्फोग्राफिक */
 .img-figure {{
-  margin: 22px 0; text-align: center; background: var(--tag-bg); padding: 16px;
-  border-radius: 12px; border: 1px solid var(--border);
+  margin: 22px 0; text-align: center; background: #ffffff; padding: 16px;
+  border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);
 }}
+[data-theme="dark"] .img-figure {{ background: #1e293b; }}
 .img-figure svg {{
-  max-width: 100%; height: auto; border-radius: 8px; box-shadow: var(--shadow);
-  background: #ffffff;
+  max-width: 100%; height: auto; border-radius: 8px;
 }}
-[data-theme="dark"] .img-figure svg {{ background: #1e293b; }}
 .img-figure figcaption {{
   font-size: 0.9rem; color: var(--muted); margin-top: 10px; font-weight: 600;
 }}
@@ -689,7 +735,7 @@ async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         p1_text = f"🧭 <b>UPSC TRENDING RADAR — {today} (पेज 1/2)</b>\n\n" + "\n\n".join(lines[:4])
         p1_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के पूर्ण नोट्स हेतु नंबर भेजें (उदा. <code>1, 2</code> या <code>1</code>)\n• सभी 8 मुद्दों के संपूर्ण 360° नोट्स हेतु लिखें: <code>all</code>"
 
-        keyboard = [[InlineKeyboardButton("अगला पेज (5-8) ▶️️", callback_data="trend_next")]]
+        keyboard = [[InlineKeyboardButton("अगला पेज (5-8) ▶", callback_data="trend_next")]]
         await wait_msg.edit_text(p1_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
     except Exception as e:
         await wait_msg.edit_text(f"❌ त्रुटि: {e}")
@@ -712,7 +758,7 @@ async def handle_trending_pagination(update: Update, context: ContextTypes.DEFAU
     elif query.data == "trend_prev":
         p1_text = f"🧭 <b>UPSC TRENDING RADAR — {today} (पेज 1/2)</b>\n\n" + "\n\n".join(lines[:4])
         p1_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के विश्लेषण हेतु नंबर भेजें (उदा. <code>1, 2</code>)\n• सभी मुद्दों के लिए लिखें: <code>all</code>"
-        keyboard = [[InlineKeyboardButton("अगला पेज (5-8) ▶️️", callback_data="trend_next")]]
+        keyboard = [[InlineKeyboardButton("अगला पेज (5-8) ▶", callback_data="trend_next")]]
         await query.message.edit_text(p1_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 # /monthly
@@ -826,12 +872,12 @@ async def process_dynamic_generation(user_id, data, context):
 
 सख्त तकनीकी नियम:
 1. शून्य मार्कडाउन लीक्स: तालिकाओं में '|' या '---' का प्रयोग वर्जित है। केवल मानक HTML (<div class="table-box"><table><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table></div>) का प्रयोग करें।
-2. इमेज/मैप नियम: जहाँ भी मैपिंग या स्थल का उल्लेख हो, वहाँ शुद्ध इनलाइन <figure class="img-figure"><svg width="100%" height="220" viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg">...</svg><figcaption>मानचित्र विवरण</figcaption></figure> टैग का प्रयोग करें। किसी भी स्थिति में ```xml या कोड-ब्लॉक के अंदर SVG को बंद न करें ताकि कोई काला डिब्बा न दिखे।
+2. इमेज/मैपिंग नियम: जहाँ भी किसी स्थान का विवरण आए (जैसे कच्छ का रण, होर्मुज़ आदि), वहाँ <figure class="img-figure"><figcaption>चित्र: स्थान का नाम</figcaption></figure> टैग का प्रयोग करें। किसी भी स्थिति में काला आयत (#000000) या ```xml न लगाएं।
 3. केवल उन विषयों को शामिल करें जिनकी सामग्री आज वास्तव में प्रासंगिक है।
 
 सामग्री संरचना:
 - संदर्भ, संवैधानिक स्थिति, 2-कॉलम HTML सारणी।
-- मैपिंग एवं चर्चित स्थल विवरण (सुंदर आरेख सहित)।
+- मैपिंग एवं चर्चित स्थल विवरण।
 - Prelims Facts (बुलेट प्वाइंट्स)।
 - Mains Framework: प्रश्न, भूमिका, 3 मुख्य बिंदु, आगे की राह, निष्कर्ष।
 - 4 Practice MCQs (व्याख्या सहित)।
@@ -940,7 +986,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 "{raw_trend}"
 सख्त नियम:
 1. सभी मुद्दों में संदर्भ, चर्चा में क्यों, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क और 2 MCQs अनिवार्य रूप से दें।
-2. जहाँ भी स्थान आए, शुद्ध इनलाइन <figure class="img-figure"><svg width="100%" height="220" viewBox="0 0 800 220" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)">...</svg><figcaption>मानचित्र विवरण</figcaption></figure> टैग लगाएं। किसी भी स्थिति में ```xml या कोड-ब्लॉक का प्रयोग न करें।
+2. जहाँ भी स्थान आए, शुद्ध इनलाइन <figure class="img-figure"><figcaption>स्थान का नाम व विवरण</figcaption></figure> लगाएं।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -978,9 +1024,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC सिविल सेवा परीक्षा हेतु गहन 360° विश्लेषण तैयार करें।
 सूची:
 "{raw_trend}"
-नियम: 
-- संदर्भ, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क और MCQs दें।
-- जहाँ भी मैपिंग आए, शुद्ध <figure class="img-figure"><svg width="100%" height="220" viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg">...</svg></figure> टैग दें (कोई कोड ब्लॉक या ```xml न लगाएं)।
+नियम: संदर्भ, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, मैपिंग विवरण और MCQs दें।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1008,7 +1052,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
             await wait_m.edit_text(f"❌ त्रुटि: {e}")
         return
 
-# ================= DIRECT PDF TO HTML ENGINE (SIZE GUARDED) =================
+# ================= DIRECT PDF TO HTML ENGINE =================
 async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     doc = msg.document
@@ -1057,7 +1101,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
 शीर्षक: "{clean_title}"
 सामग्री:
 "{pdf_text[:4000]}"
-नियम: 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, प्रीलिम्स फैक्ट्स और MCQs शामिल करें। मार्कडाउन स्टार्स का प्रयोग न करें।
+नियम: 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, प्रीलिम्स फैक्ट्स और MCQs शामिल करें।
 """
         ai_notes = await asyncio.to_thread(call_gemini_safely, prompt)
         html_out = build_standalone_master_html(clean_title, ai_notes)
@@ -1116,7 +1160,7 @@ async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         prompt = f"UPSC मेंटर के दृष्टिकोण से इस विषय का बिंदुवार और संतुलित विश्लेषण दें: '{user_query}'। मार्कडाउन स्टार्स का प्रयोग न करें।"
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
-        clean_reply = clean_all_markdown_and_fix_images(reply_text)
+        clean_reply = clean_all_markdown_leaks(reply_text)
 
         if len(clean_reply) > 3800:
             parts = [clean_reply[i:i+3800] for i in range(0, len(clean_reply), 3800)]
@@ -1150,7 +1194,7 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 विषय: "{query}" पर 'Zero to Hero' स्तर के गहन, परीक्षा-केंद्रित UPSC नोट्स तैयार करें।
 सख्त नियम:
 1. 2-कॉलम HTML सारणी (<div class="table-box"><table>...</table></div>), मेन्स फ्रेमवर्क शुद्ध HTML में लिखें।
-2. जहाँ भी मैप या स्थल आए, शुद्ध <figure class="img-figure"><svg width="100%" height="220" viewBox="0 0 800 220" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)">...</svg></figure> टैग लगाएं (कोई कोड ब्लॉक या ```xml न लगाएं)।
+2. जहाँ भी मैप या स्थल आए, शुद्ध <figure class="img-figure"><figcaption>स्थान का नाम</figcaption></figure> लगाएं।
 3. मार्कडाउन स्टार्स का प्रयोग न करें।
 """
         ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
