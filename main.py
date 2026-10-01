@@ -158,7 +158,7 @@ def get_all_users():
     conn.close()
     return [r[0] for r in rows]
 
-# ================= ASYNC ENGINE (MAX OUTPUT TOKENS) =================
+# ================= ASYNC ENGINE (3.8 FLASH PRIORITY - NO 404) =================
 def call_gemini_safely(prompt: str) -> str:
     api_k = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_k:
@@ -170,9 +170,12 @@ def call_gemini_safely(prompt: str) -> str:
         "max_output_tokens": 8192,
     }
 
+    # प्राथमिक मॉडल 3.8-flash, उसके बाद fallback मॉडल्स
     models_to_try = [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-pro",
         "gemini-2.5-flash",
-        "gemini-2.5-pro",
         "gemini-1.5-flash"
     ]
 
@@ -187,6 +190,7 @@ def call_gemini_safely(prompt: str) -> str:
             last_err = e
             continue
 
+    # यदि पूर्व-निर्धारित नाम विफल हों, तो सक्रिय मॉडल्स को डायनामिक रूप से खोजें
     try:
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
@@ -199,7 +203,7 @@ def call_gemini_safely(prompt: str) -> str:
 
     raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {last_err}")
 
-# ================= CLEAN & ACCURATE HTML BUILDER =================
+# ================= PURE HTML BUILDER & SANITIZER =================
 def clean_stars_and_markdown(text: str) -> str:
     text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
@@ -508,10 +512,11 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user.id, user.username, user.first_name)
     is_admin = user.id in ADMIN_IDS
 
+    user_link = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
     admin_badge = f"👑 <b>एडमिन कंट्रोल सक्रिय ({AUTHOR_NAME})</b>\n\n" if is_admin else "📚 <b>UPSC CSE स्मार्ट अध्ययन पोर्टल</b>\n\n"
 
     msg = (
-        f"👋 <b>नमस्ते {user.first_name}!</b>\n\n"
+        f"👋 <b>नमस्ते {user_link}!</b>\n\n"
         f"{admin_badge}"
         "नीचे सभी मुख्य कमांड्स उपलब्ध हैं:\n\n"
         "📖 <b>अध्ययन एवं नोट्स:</b>\n"
@@ -743,7 +748,6 @@ async def process_dynamic_generation(user_id, data, context):
 
             future_note = "यह अग्रिम तिथि है। इसमें उस दिन के ऐतिहासिक महत्व, आगामी अंतरराष्ट्रीय शिखर सम्मेलनों, विधायी एजेंडा और संबंधित PYQs का विश्लेषण शामिल करें।" if is_future else ""
 
-            # आपका उच्चतम स्तर का 10-स्तंभीय गोल्ड स्टैंडर्ड प्रॉम्प्ट
             prompt = f"""
 आप संघ लोक सेवा आयोग (UPSC Civil Services Examination) के शीर्ष विषय विशेषज्ञ, पूर्व सिविल सेवक मेंटर और एक कुशल वेब डेवलपर हैं।
 तारीख: "{target_date}" के लिए 'Zero to Hero' स्तर का, संपूर्ण, 360° आत्मनिर्भर और अत्यंत समृद्ध UPSC करंट अफेयर्स संकलन तैयार करें।
@@ -1193,8 +1197,9 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = "👥 <b>अधिकृत मेंबर्स की सूची:</b>\n\n"
     for uid, un, fn, exp in rows:
+        user_link = f'<a href="tg://user?id={uid}">{fn}</a>'
         un_str = f"@{un}" if un else "कोई यूज़रनेम नहीं"
-        text += f"• <b>{fn}</b> (<code>{uid}</code>) | {un_str}\n  वैधता: <code>{exp}</code>\n\n"
+        text += f"• <b>{user_link}</b> (<code>{uid}</code>) | {un_str}\n  वैधता: <code>{exp}</code>\n\n"
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 # ================= CONTACT / OWNER FEEDBACK =================
@@ -1224,10 +1229,11 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
     msg = update.message
     content_text = msg.text or msg.caption or "[फ़ाइल / मीडिया]"
     username_str = f"@{user.username}" if user.username else "कोई यूज़रनेम नहीं"
+    user_link = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
 
     owner_alert = (
         "📩 <b>नया छात्र संदेश!</b>\n\n"
-        f"👤 <b>नाम:</b> {user.first_name}\n"
+        f"👤 <b>नाम:</b> {user_link}\n"
         f"🆔 <b>यूज़र ID:</b> <code>{user.id}</code>\n"
         f"🔗 <b>यूज़रनेम:</b> {username_str}\n\n"
         f"💬 <b>संदेश:</b>\n{content_text}\n\n"
@@ -1306,7 +1312,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 # ================= RENDER KEEP-ALIVE SERVER =================
 async def run_server():
     app = web.Application()
-    app.router.add_get("/", lambda r: web.Response(text="UPSC Smart Bot Active 24/7 with Zero-Truncation Engine"))
+    app.router.add_get("/", lambda r: web.Response(text="UPSC Smart Bot Active 24/7 with 10-Pillar Gold Engine"))
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.environ.get("PORT", 8080))
