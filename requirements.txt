@@ -1,5 +1,5 @@
-python-telegram-bot>=20.0
-beautifulsoup4
-aiohttp
+python-telegram-bot
 google-generativeai
+aiohttp
+beautifulsoup4
 pypdf
