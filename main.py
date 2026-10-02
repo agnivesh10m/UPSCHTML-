@@ -265,7 +265,7 @@ def call_gemini_safely(prompt: str) -> str:
 
     raise Exception(f"सभी API Keys और मॉडल्स का कोटा समाप्त है: {last_err}")
 
-# ================= SPEECH-TO-TEXT & AUDIO ENGINE =================
+# ================= AUDIO / MULTIMODAL ENGINE =================
 MODELS_AUDIO = ["gemini-2.0-flash", "gemini-1.5-flash"]
 
 def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str) -> str:
@@ -542,7 +542,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
   <div class="controls">
     <input type="text" id="searchBox" placeholder="🔍 खोजें: GS विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()" class="theme-btn">🌗 डार्क / लाइट</button>
-    <button onclick="window.print()" class="print-btn">🖨️️ प्रिंट / सेव PDF</button>
+    <button onclick="window.print()" class="print-btn">🖨️ प्रिंट / सेव PDF</button>
   </div>
 </header>
 
@@ -734,7 +734,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         await wait_m.edit_text(f"❌ टेस्ट बनाने में त्रुटि: {e}")
 
-# ================= UPSC MAINS SPECIAL WITH COMPLETE ARCHIVE (2013-2026) =================
+# ================= UPSC MAINS SPECIAL WITH COMPLETE ARCHIVE =================
 async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -1029,7 +1029,7 @@ async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYP
     if not daf:
         await update.message.reply_text(
             f"🏛 <b>UPSC साक्षात्कार बोर्ड (Personality Test)</b>\n\n"
-            f"नमस्ते <b>{user.first_name}</b>! बोर्ड रूम में प्रवेश से पहले हमें आपकी पृष्ठभूमि की संक्षिप्त जानकारी चाहिए।\n\n"
+            f"नमस्ते <b>{user.first_name}</b>! बोर्ड रूम में प्रवेश से पहले हमें आपकी पृष्ठभूमि की संक्षिप्त जानकारी चाहिए。\n\n"
             "👉 <b>चरण 1/5:</b> कृपया अपना <b>पूरा नाम</b> लिखकर भेजें:",
             parse_mode=ParseMode.HTML,
             reply_markup=ReplyKeyboardRemove()
@@ -1075,7 +1075,7 @@ async def handle_daf_name_step(update: Update, context: ContextTypes.DEFAULT_TYP
 
     context.user_data["daf_name"] = txt
     await update.message.reply_text(
-        f"धन्यवाद <b>{txt} जी</b>।\n\n"
+        f"धन्यवाद <b>{txt} जी</b>。\n\n"
         "👉 <b>चरण 2/5:</b> अब अपना <b>गृह राज्य</b> लिखकर भेजें (उदा. राजस्थान, उत्तर प्रदेश आदि):",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode=ParseMode.HTML
@@ -1218,7 +1218,6 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
     wait_m = await update.message.reply_text("🎧 <b>बोर्ड आपके मौखिक उत्तर का विश्लेषण कर रहा है...</b>", parse_mode=ParseMode.HTML)
 
     try:
-        # शून्य डिस्क निर्भरता: सीधे रैम से ऑडियो बाइट्स लेना
         v_bytes = await download_file_to_bytes(update.message, context)
 
         is_last = (curr >= tot)
@@ -1447,7 +1446,7 @@ async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user.id, user.username, user.first_name)
     years = ["2026", "2025", "2024"]
     keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक महा-संकलन (PT-365)", callback_data=f"genyear_{y}")] for y in years]
-    await update.message.reply_text("🏛️️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("🏛️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 # /weekly
 async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1655,7 +1654,7 @@ async def handle_admin_reply_or_direct_send(update: Update, context: ContextType
                     await asyncio.sleep(0.05)
                 except Exception:
                     pass
-            await status_m.edit_text(f"✅ सफल ब्रॉडकास्ट: <b>{succ} / {len(all_uids)}</b> छात्रों को संदेश प्राप्त हुआ!", parse_mode=ParseMode.HTML)
+            await status_m.edit_text(f"✅ सफल ब्रॉडकास्ट: <b>{succ} / {len(all_uids)}</b> छात्रों को मीडिया प्राप्त हुआ!", parse_mode=ParseMode.HTML)
             return
 
         reply_to_text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
@@ -1798,7 +1797,7 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = " ".join(context.args).replace("[", "").replace("]", "").strip()
     status_msg = await update.message.reply_text(
-        f"╔════════════════════════╗\n   🏛 <b>UPSC NOTE BUILDER</b>\n╚════════════════════════╝\n\n📌 <b>विषय:</b> <code>{query}</code>\n⚙️ <b>स्थिति:</b> The Hindu, PIB, Vision, Sanskriti व Drishti IAS समन्वय चालू...",
+        f"╔════════════════════════╗\n   🏛 <b>UPSC NOTE BUILDER</b>\n╚════════════════════════╝\n\n📌 <b>विषय:</b> <code>{query}</code>\n⚙️️ <b>स्थिति:</b> The Hindu, PIB, Vision, Sanskriti व Drishti IAS समन्वय चालू...",
         parse_mode=ParseMode.HTML
     )
 
@@ -1895,7 +1894,7 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     rows = get_all_users_detailed()
     if not rows:
-        await update.message.reply_text("ℹ️️ अभी कोई पंजीकृत सदस्य नहीं हैं।")
+        await update.message.reply_text("ℹ️ अभी कोई पंजीकृत सदस्य नहीं हैं।")
         return
 
     text = f"👥 <b>पंजीकृत छात्रों की संपूर्ण सूची (कुल: {len(rows)})</b>\n\n"
@@ -2155,7 +2154,7 @@ async def main():
     bot_app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & (filters.REPLY | filters.Regex(r'^[0-9]{8,11}')), handle_admin_reply_or_direct_send))
 
     # सामान्य डॉक्यूमेंट (PDF से 360° UPSC HTML नोट्स निर्माण)
-    bot_app.add_handler(filters.Document.PDF, handle_direct_pdf_upload)
+    bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_direct_pdf_upload))
 
     # सामान्य टेक्स्ट हैंडलर
     bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_messages))
