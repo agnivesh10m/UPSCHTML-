@@ -263,9 +263,9 @@ def call_gemini_safely(prompt: str) -> str:
                 last_err = e
                 continue
 
-    raise Exception(f"सभी API Keys और मॉडल्स का कोटा समाप्त है या समस्या आई: {last_err}")
+    raise Exception(f"सभी API Keys और मॉडल्स का कोटा समाप्त है: {last_err}")
 
-# ================= AUDIO / MULTIMODAL ENGINE (ONLY FLASH 2.0/1.5) =================
+# ================= SPEECH-TO-TEXT & AUDIO ENGINE =================
 MODELS_AUDIO = ["gemini-2.0-flash", "gemini-1.5-flash"]
 
 def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str) -> str:
@@ -295,7 +295,7 @@ def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str
 
     raise Exception(f"वॉयस ऑडियो विश्लेषण में समस्या आई: {last_err}")
 
-# ================= EDGE-TTS AUDIO GENERATOR (NO CUTOFF / 100% CLEAR) =================
+# ================= EDGE-TTS AUDIO GENERATOR =================
 async def download_audio_stream(text: str) -> bytes:
     clean_text = re.sub(r'[\*\_#`]', '', text).strip()
     clean_text = clean_text.replace("\n", " ")
@@ -420,7 +420,7 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
             
             clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|\d+|[:\.\-\s])+', '', title_text).strip()
             clean_tab_name = re.sub(r'^[0-9]+\s*[:\.\-]?\s*', '', clean_tab_name).strip()
-            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️❄️🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
+            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️❄🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
             
             if not clean_tab_name:
                 clean_tab_name = f"विषय {sec_idx}"
@@ -542,7 +542,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
   <div class="controls">
     <input type="text" id="searchBox" placeholder="🔍 खोजें: GS विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()" class="theme-btn">🌗 डार्क / लाइट</button>
-    <button onclick="window.print()" class="print-btn">🖨️ प्रिंट / सेव PDF</button>
+    <button onclick="window.print()" class="print-btn">🖨️️ प्रिंट / सेव PDF</button>
   </div>
 </header>
 
@@ -633,7 +633,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
         "1️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF भरने के बाद बॉट आपकी पृष्ठभूमि के आधार पर प्रशासनिक स्थितिजन्य प्रश्न ऑडियो में पूछेगा। आप बोलकर उत्तर रिकॉर्ड करें, बॉट सुनकर मूल्यांकन व रिपोर्ट देगा।\n\n"
         "2️⃣ <b>कॉपी चेकिंग (`/checkanswer`):</b> पहले प्रश्न टाइप/बोलें, फिर अपनी उत्तर पुस्तिका की फोटो या PDF भेजें।\n\n"
-        "3️⃣ <b>मुख्य परीक्षा (`/mains`):</b> PYQs या नए संभावित प्रश्नों के चयन के साथ उत्तर-लेखन मॉडल प्राप्त करें। बैक बटन की सुविधा भी उपलब्ध है।\n\n"
+        "3️⃣ <b>मुख्य परीक्षा (`/mains`):</b> PYQs (2013-2026 संपूर्ण आर्काइव) या नए संभावित प्रश्नों के चयन के साथ विस्तृत उत्तर-लेखन मॉडल प्राप्त करें।\n\n"
         "4️⃣ <b>क्विज़ (`/quiz`):</b> विषयवार 5, 10, 15 या 20 प्रश्नों की स्वच्छ स्टैंडअलोन HTML टेस्ट फाइल प्राप्त करें।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
@@ -740,7 +740,7 @@ async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user.id, user.username, user.first_name)
     
     keyboard = [
-        [InlineKeyboardButton("📜 विगत वर्षों के प्रश्न (PYQs Complete Archive)", callback_data="mq_type_pyq")],
+        [InlineKeyboardButton("📜 विगत वर्षों के सभी प्रश्न (Complete Archive 2013-2026)", callback_data="mq_type_pyq")],
         [InlineKeyboardButton("✨ नए संभावित मॉडल प्रश्न (New Expected)", callback_data="mq_type_new")]
     ]
     await update.message.reply_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) उत्तर-लेखन:</b>\nआप पुराने सभी प्रश्न देखना चाहते हैं या नए संभावित प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -753,13 +753,13 @@ async def handle_mains_type_choice(update: Update, context: ContextTypes.DEFAULT
     MAINS_SELECTIONS[user_id] = {"q_type": q_type}
 
     keyboard = [
-        [InlineKeyboardButton("🏛 GS 1 (इतिहास, भूगोल, समाज - सभी PYQs)", callback_data="mq_gs_1")],
-        [InlineKeyboardButton("⚖️ GS 2 (राजव्यवस्था, शासन, IR - सभी PYQs)", callback_data="mq_gs_2")],
-        [InlineKeyboardButton("💰 GS 3 (अर्थव्यवस्था, पर्यावरण - सभी PYQs)", callback_data="mq_gs_3")],
-        [InlineKeyboardButton("🧭 GS 4 (नीतिशास्त्र, केस स्टडी - सभी PYQs)", callback_data="mq_gs_4")],
+        [InlineKeyboardButton("🏛 GS 1 (इतिहास, भूगोल, समाज)", callback_data="mq_gs_1")],
+        [InlineKeyboardButton("⚖️ GS 2 (राजव्यवस्था, शासन, IR)", callback_data="mq_gs_2")],
+        [InlineKeyboardButton("💰 GS 3 (अर्थव्यवस्था, पर्यावरण)", callback_data="mq_gs_3")],
+        [InlineKeyboardButton("🧭 GS 4 (नीतिशास्त्र, केस स्टडी)", callback_data="mq_gs_4")],
         [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="mq_back_root")]
     ]
-    await query.message.edit_text("🎯 <b>विषय / GS पेपर का चयन करें (2013 से वर्तमान तक के सभी प्रश्न):</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await query.message.edit_text("🎯 <b>विषय / GS पेपर का चयन करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def handle_mains_gs_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -768,7 +768,7 @@ async def handle_mains_gs_choice(update: Update, context: ContextTypes.DEFAULT_T
 
     if data == "mq_back_root":
         keyboard = [
-            [InlineKeyboardButton("📜 विगत वर्षों के प्रश्न (PYQs Complete Archive)", callback_data="mq_type_pyq")],
+            [InlineKeyboardButton("📜 विगत वर्षों के सभी प्रश्न (Complete Archive)", callback_data="mq_type_pyq")],
             [InlineKeyboardButton("✨ नए संभावित मॉडल प्रश्न (New Expected)", callback_data="mq_type_new")]
         ]
         await query.message.edit_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) उत्तर-लेखन:</b>\nआप पुराने सभी प्रश्न देखना चाहते हैं या नए संभावित प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -779,35 +779,68 @@ async def handle_mains_gs_choice(update: Update, context: ContextTypes.DEFAULT_T
     MAINS_SELECTIONS[user_id]["gs"] = gs_num
     is_pyq = (MAINS_SELECTIONS[user_id].get("q_type") == "pyq")
 
-    # सीधा सम्पूर्ण संग्रह जनरेट करना ताकि एक-एक प्रश्न अलग शीर्षक, भूमिका और निष्कर्ष के साथ मिले
-    wait_m = await query.message.reply_text(f"⏳ <b>सामान्य अध्ययन - {gs_num}</b> के 2013 से 2026 तक के सभी मुख्य परीक्षा प्रश्न, वर्ष-वार टैग और संपूर्ण उत्तर-लेखन फ्रेमवर्क तैयार हो रहे हैं...\n\n<i>(इसमें कुछ समय लग सकता है, कृपया प्रतीक्षा करें)</i>", parse_mode=ParseMode.HTML)
+    keyboard = [
+        [InlineKeyboardButton("⚡ 1 प्रश्न", callback_data="mq_cnt_1")],
+        [InlineKeyboardButton("🎯 3 प्रश्न", callback_data="mq_cnt_3")],
+        [InlineKeyboardButton("🏆 5 प्रश्न", callback_data="mq_cnt_5")]
+    ]
+    if is_pyq:
+        keyboard.append([InlineKeyboardButton("📚 2013 से 2026 तक के सभी मुख्य PYQs (Complete Archive Set)", callback_data="mq_cnt_all")])
+    else:
+        keyboard.append([InlineKeyboardButton("📚 10 प्रश्नों का संभावित मेगा सेट", callback_data="mq_cnt_10")])
 
-    tag_instruction = "2013 से 2026 तक इस विषय में UPSC मुख्य परीक्षा में पूछे गए सभी प्रमुख और ट्रेंडिंग प्रश्नों को शामिल करें। प्रत्येक प्रश्न के साथ उसका वर्ष और पेपर स्पष्ट रूप से टैग करें (उदा. [UPSC CSE 2023 / GS Paper " + gs_num + "])." if is_pyq else "आगामी परीक्षा के लिए 10 अत्यंत महत्वपूर्ण संभावित मॉडल प्रश्न तैयार करें। प्रत्येक पर लिखें: [सचिन शर्मा द्वारा अनुशंसित मॉडल प्रश्न / GS Paper " + gs_num + "]."
+    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data=f"mq_type_{MAINS_SELECTIONS[user_id].get('q_type', 'new')}")] )
+    await query.message.edit_text(f"📝 <b>GS {gs_num} के कितने प्रश्नों का अभ्यास करना चाहते हैं?</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = query.from_user.id
+
+    if data.startswith("mq_type_"):
+        await handle_mains_type_choice(update, context)
+        return
+
+    cnt_raw = data.replace("mq_cnt_", "")
+    is_all_archive = (cnt_raw == "all")
+    cnt_desc = "2013 से 2026 तक के सभी मुख्य PYQs" if is_all_archive else f"{cnt_raw} प्रश्न"
+    
+    sel = MAINS_SELECTIONS.get(user_id, {"q_type": "new", "gs": "2"})
+    is_pyq = (sel.get("q_type") == "pyq")
+    q_type_str = "विगत वर्षों के प्रश्न (PYQs Complete Archive)" if is_pyq else "नए संभावित मॉडल प्रश्न"
+    gs_paper = f"सामान्य अध्ययन - {sel.get('gs')}"
+
+    wait_m = await query.message.reply_text(f"⏳ <b>{gs_paper}</b> के {cnt_desc} उत्तर-लेखन मॉड्यूल तैयार हो रहे हैं...", parse_mode=ParseMode.HTML)
+
+    tag_instruction = "2013 से वर्तमान (2026) तक इस विषय में पूछे गए सभी प्रमुख प्रश्नों को शामिल करें। प्रत्येक प्रश्न पर उसका वर्ष, पेपर और अंक स्पष्ट रूप से लिखें (उदा. [UPSC CSE 2023 / GS Paper " + sel.get('gs') + " / 15 अंक])." if is_pyq else "प्रत्येक प्रश्न पर स्पष्ट लिखें: [सचिन शर्मा द्वारा अनुशंसित मॉडल प्रश्न / GS Paper " + sel.get('gs') + " / 15 अंक]."
 
     prompt = f"""
 आप UPSC मुख्य परीक्षा के शीर्ष विशेषज्ञ हैं।
-विषय: सामान्य अध्ययन - {gs_num} ({q_type_str if 'q_type_str' in locals() else 'विगत वर्ष के प्रश्न'})
+विषय: {gs_paper} के {cnt_desc} ({q_type_str}) तैयार करें।
 {tag_instruction}
 
-महत्वपूर्ण नियम:
+सख्त नियम:
 1. सभी प्रश्नों को एक-दूसरे में न मिलाएँ। प्रत्येक प्रश्न को एक अलग और स्पष्ट शीर्षक (Heading) के साथ रखें।
 2. प्रत्येक प्रश्न के लिए विस्तृत उत्तर-लेखन ढांचा दें:
    - प्रश्न का पूरा विवरण व [वर्ष / पेपर टैग]
-   - 📌 भूमिका (Introduction): संवैधानिक अनुच्छेद, डेटा या हालिया संदर्भ
-   - 📊 मुख्य विश्लेषणात्मक आयाम (Body): 3 से 4 उप-शीर्षक और तथ्य
+   - 📌 भूमिका (Introduction)
+   - 📊 मुख्य विश्लेषणात्मक आयाम (Body): कम से कम 3 स्पष्ट उप-शीर्षक और उदाहरण
    - 🚀 आगे की राह (Way Forward)
    - ⚖️ संतुलित प्रशासनिक निष्कर्ष
-3. तालिकाओं को शुद्ध HTML में लिखें। भाषा केवल और केवल शुद्ध हिंदी रखें।
+
+तालिकाओं में मानक HTML का प्रयोग करें। भाषा केवल और केवल शुद्ध हिंदी रखें।
 """
     try:
         resp = await asyncio.to_thread(call_gemini_safely, prompt)
         today_str = get_ist_now().strftime("%d %B %Y")
-        topic = f"UPSC Complete Mains Archive — GS {gs_num} (2013-2026)"
-        filename = f"UPSC_Mains_Complete_GS{gs_num}.html"
+        topic = f"UPSC Mains Module — GS {sel.get('gs')} ({cnt_desc})"
+        filename = f"UPSC_Mains_GS{sel.get('gs')}_{cnt_raw}.html"
         html_out = build_standalone_master_html(topic, resp, date_str=today_str)
         
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(html_out)
+        with open(filename, "wb") as f:
+            f.write(html_out.encode("utf-8"))
+
         with open(filename, "rb") as send_doc:
             await context.bot.send_document(
                 chat_id=user_id,
@@ -969,8 +1002,8 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
         html_out = build_standalone_master_html(clean_title, ai_notes)
 
         out_fname = f"UPSC_{re.sub(r'[^a-zA-Z0-9]', '_', clean_title)[:20]}.html"
-        with open(out_fname, "w", encoding="utf-8") as f:
-            f.write(html_out)
+        with open(out_fname, "wb") as f:
+            f.write(html_out.encode("utf-8"))
 
         with open(out_fname, "rb") as send_doc:
             await msg.reply_document(
@@ -1622,7 +1655,7 @@ async def handle_admin_reply_or_direct_send(update: Update, context: ContextType
                     await asyncio.sleep(0.05)
                 except Exception:
                     pass
-            await status_m.edit_text(f"✅ सफल ब्रॉडकास्ट: <b>{succ} / {len(all_uids)}</b> छात्रों को मीडिया प्राप्त हुआ!", parse_mode=ParseMode.HTML)
+            await status_m.edit_text(f"✅ सफल ब्रॉडकास्ट: <b>{succ} / {len(all_uids)}</b> छात्रों को संदेश प्राप्त हुआ!", parse_mode=ParseMode.HTML)
             return
 
         reply_to_text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
@@ -1862,7 +1895,7 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     rows = get_all_users_detailed()
     if not rows:
-        await update.message.reply_text("ℹ️ अभी कोई पंजीकृत सदस्य नहीं हैं।")
+        await update.message.reply_text("ℹ️️ अभी कोई पंजीकृत सदस्य नहीं हैं।")
         return
 
     text = f"👥 <b>पंजीकृत छात्रों की संपूर्ण सूची (कुल: {len(rows)})</b>\n\n"
@@ -1956,7 +1989,7 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         succ = 0
         for uid in all_uids:
             try:
-                await context.bot.copy_message(chat_id=uid, from_chat_id=update.message.chat_id, message_id=target_msg.message_id)
+                await context.bot.copy_message(chat_id=uid, from_chat_id=msg.chat_id, message_id=target_msg.message_id)
                 succ += 1
                 await asyncio.sleep(0.05)
             except Exception:
@@ -2121,7 +2154,7 @@ async def main():
     # एडमिन रिप्लाई हैंडलर
     bot_app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & (filters.REPLY | filters.Regex(r'^[0-9]{8,11}')), handle_admin_reply_or_direct_send))
 
-    # सामान्य डॉक्यूमेंट (PDF से 360° HTML नोट्स निर्माण)
+    # सामान्य डॉक्यूमेंट (PDF से 360° UPSC HTML नोट्स निर्माण)
     bot_app.add_handler(filters.Document.PDF, handle_direct_pdf_upload)
 
     # सामान्य टेक्स्ट हैंडलर
