@@ -241,15 +241,15 @@ def get_all_user_ids():
 
 # ================= MULTI-KEY & MULTI-MODEL FAILOVER ENGINE =================
 MODELS_PRIORITY = [
+    "gemini-2.5-flash",
     "gemini-3.8-flash",
     "gemini-3.5-flash-lite",
-    "gemini-3.1-pro",
-    "gemini-2.5-flash"
+    "gemini-3.1-pro"
 ]
 
 def call_gemini_safely(prompt: str) -> str:
     if not API_KEYS:
-        raise Exception("API Key सर्वर पर सेट नहीं है।")
+        raise Exception("API Key सर्वर पर सेट नहीं है। कृपया Render पर GEMINI_API_KEY सेट करें।")
 
     last_err = None
     for api_k in API_KEYS:
@@ -266,14 +266,13 @@ def call_gemini_safely(prompt: str) -> str:
                     return clean_res.strip()
             except Exception as e:
                 last_err = e
-                # यदि 429 quota error या मॉडल अनुपलब्ध हो तो अगले मॉडल/की पर जाएं
                 continue
 
     raise Exception(f"सभी API Keys और मॉडल्स का कोटा समाप्त है या समस्या आई: {last_err}")
 
 def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str) -> str:
     if not API_KEYS:
-        raise Exception("API Key सर्वर पर सेट नहीं है।")
+        raise Exception("API Key सर्वर पर सेट नहीं है। कृपया Render पर GEMINI_API_KEY सेट करें।")
 
     if "ogg" in mime_type.lower() or "opus" in mime_type.lower():
         mime_type = "audio/ogg"
@@ -541,7 +540,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 
 <header class="top-header">
   <h1>🇮🇳 {topic}</h1>
-  <div class="author-pill">✍️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
+  <div class="author-pill">✍️️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
   <div class="controls">
     <input type="text" id="searchBox" placeholder="🔍 खोजें: GS विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()" class="theme-btn">🌗 डार्क / लाइट</button>
@@ -737,7 +736,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         await wait_m.edit_text(f"❌ टेस्ट बनाने में त्रुटि: {e}")
 
-# ================= UPSC MAINS SPECIAL WITH COMPLETE ARCHIVE =================
+# ================= UPSC MAINS SPECIAL WITH COMPLETE ARCHIVE (2013-2026) =================
 async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -806,27 +805,29 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
         return
 
     cnt_raw = data.replace("mq_cnt_", "")
-    cnt_desc = "सभी प्रमुख विगत वर्ष" if cnt_raw == "all" else f"{cnt_raw} प्रश्न"
+    cnt_desc = "विगत वर्षों के सभी प्रमुख प्रश्न (Complete Archive 2013-2026)" if cnt_raw == "all" else f"{cnt_raw} प्रश्न"
     
     sel = MAINS_SELECTIONS.get(user_id, {"q_type": "new", "gs": "2"})
     is_pyq = (sel.get("q_type") == "pyq")
-    q_type_str = "विगत वर्षों के प्रश्न (PYQs)" if is_pyq else "नए संभावित प्रश्न"
+    q_type_str = "विगत वर्षों के प्रश्न (PYQs)" if is_pyq else "नए संभावित मॉडल प्रश्न"
     gs_paper = f"सामान्य अध्ययन - {sel.get('gs')}"
 
-    wait_m = await query.message.reply_text(f"⏳ <b>{gs_paper}</b> के {cnt_desc} {q_type_str} उत्तर-लेखन मॉड्यूल तैयार हो रहे हैं...", parse_mode=ParseMode.HTML)
+    wait_m = await query.message.reply_text(f"⏳ <b>{gs_paper}</b> के {cnt_desc} उत्तर-लेखन मॉड्यूल तैयार हो रहे हैं...", parse_mode=ParseMode.HTML)
 
-    tag_instruction = "प्रत्येक प्रश्न पर उसका वर्ष और पेपर स्पष्ट लिखें (उदा. [UPSC CSE 2023 / GS Paper 2]). जब से यूपीएससी में यह विषय पूछा जा रहा है तब से अब तक के प्रमुख प्रश्नों को शामिल करें।" if is_pyq else "प्रत्येक प्रश्न पर स्पष्ट लिखें: [सचिन शर्मा द्वारा अनुशंसित मॉडल प्रश्न / GS Paper 2]."
+    tag_instruction = "प्रत्येक प्रश्न पर उसका वर्ष, पेपर व अंक स्पष्ट रूप से लिखें (उदा. [UPSC CSE 2023 / GS Paper 2 / 15 अंक]). जब से यूपीएससी में नया पाठ्यक्रम लागू हुआ है (2013 से वर्तमान तक) तब से अब तक के सभी प्रमुख विषयों को शामिल करें।" if is_pyq else "प्रत्येक प्रश्न पर स्पष्ट लिखें: [सचिन शर्मा द्वारा अनुशंसित मॉडल प्रश्न / GS Paper 2 / 15 अंक]."
 
     prompt = f"""
 आप UPSC मुख्य परीक्षा के शीर्ष विशेषज्ञ हैं।
 विषय: {gs_paper} के {cnt_desc} {q_type_str} तैयार करें।
 {tag_instruction}
-संरचना:
-1. प्रश्न (15 अंक, 250 शब्द) एवं संदर्भ टैग
-2. भूमिका (संवैधानिक अनुच्छेद / हालिया रिपोर्ट / ऐतिहासिक संदर्भ)
-3. मुख्य भाग (3 स्पष्ट विश्लेषणात्मक बिंदु, उप-शीर्षक और उदाहरण)
-4. आगे की राह (Way Forward)
-5. संतुलित प्रशासनिक निष्कर्ष
+
+प्रत्येक प्रश्न को अलग-अलग संरचित रूप में लिखें:
+1. प्रश्न शीर्षक एवं संदर्भ टैग (Year & Paper)
+2. 📌 भूमिका (संवैधानिक अनुच्छेद / हालिया रिपोर्ट / ऐतिहासिक संदर्भ)
+3. 📊 मुख्य विश्लेषणात्मक आयाम (कम से कम 3 स्पष्ट उप-शीर्षक और उदाहरण)
+4. 🚀 आगे की राह (Way Forward)
+5. ⚖️ संतुलित प्रशासनिक निष्कर्ष
+
 तालिकाओं में मानक HTML का प्रयोग करें। भाषा केवल और केवल शुद्ध हिंदी रखें।
 """
     try:
@@ -852,19 +853,19 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}")
 
-# ================= 20MB+ SECURE DOWNLOAD HELPER =================
-async def download_file_to_disk(msg, context: ContextTypes.DEFAULT_TYPE, target_path: str):
+# ================= ZERO-DISK IN-MEMORY DOWNLOAD HELPER =================
+async def download_file_to_bytes(msg, context: ContextTypes.DEFAULT_TYPE) -> bytearray:
     if TELETHON_AVAILABLE and TELEGRAM_API_ID and TELEGRAM_API_HASH and telethon_client:
         try:
-            await telethon_client.download_media(msg.message_id, target_path)
-            return True
+            out_buf = io.BytesIO()
+            await telethon_client.download_media(msg.message_id, out_buf)
+            return bytearray(out_buf.getvalue())
         except Exception:
             pass
 
     doc = msg.document or (msg.photo[-1] if msg.photo else (msg.voice or msg.audio))
     f_obj = await doc.get_file()
-    await f_obj.download_to_drive(target_path)
-    return True
+    return await f_obj.download_as_bytearray()
 
 # ================= UPSC 2-STEP ANSWER COPY CHECKING (/checkanswer) =================
 async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -894,35 +895,21 @@ async def handle_question_text_step(update: Update, context: ContextTypes.DEFAUL
         q_content = msg.text.strip()
     elif msg.voice or msg.audio:
         wait_m = await msg.reply_text("🎧 प्रश्न का ऑडियो सुना जा रहा है...")
-        tmp_voice = f"tmp_q_{user_id}_{int(time.time())}.ogg"
         try:
-            await download_file_to_disk(msg, context, tmp_voice)
-            with open(tmp_voice, "rb") as f:
-                f_bytes = f.read()
-            q_content = await asyncio.to_thread(call_gemini_multimodal_inline, "इस ऑडियो में बोले गए UPSC मुख्य परीक्षा के प्रश्न को शुद्ध हिंदी में निकालें।", f_bytes, "audio/ogg")
+            v_bytes = await download_file_to_bytes(msg, context)
+            q_content = await asyncio.to_thread(call_gemini_multimodal_inline, "इस ऑडियो में बोले गए UPSC मुख्य परीक्षा के प्रश्न को शुद्ध हिंदी में निकालें।", bytes(v_bytes), "audio/ogg")
             await wait_m.delete()
         except Exception as e:
             await wait_m.edit_text(f"❌ ऑडियो पढ़ने में त्रुटि: {e}। कृपया टेक्स्ट में लिखें।")
-            if os.path.exists(tmp_voice):
-                os.remove(tmp_voice)
             return WAITING_QUESTION_TEXT
-        finally:
-            if os.path.exists(tmp_voice):
-                os.remove(tmp_voice)
     elif msg.photo:
         wait_m = await msg.reply_text("🖼️ प्रश्न की फ़ोटो पढ़ी जा रही है...")
-        tmp_img = f"tmp_q_{user_id}_{int(time.time())}.jpg"
         try:
-            await download_file_to_disk(msg, context, tmp_img)
-            with open(tmp_img, "rb") as f:
-                f_bytes = f.read()
-            q_content = await asyncio.to_thread(call_gemini_multimodal_inline, "इस फ़ोटो में लिखे UPSC प्रश्न को निकालें।", f_bytes, "image/jpeg")
+            img_bytes = await download_file_to_bytes(msg, context)
+            q_content = await asyncio.to_thread(call_gemini_multimodal_inline, "इस फ़ोटो में लिखे UPSC प्रश्न को निकालें।", bytes(img_bytes), "image/jpeg")
             await wait_m.delete()
         except Exception:
             q_content = "संलग्न फ़ोटो में दिया गया प्रश्न"
-        finally:
-            if os.path.exists(tmp_img):
-                os.remove(tmp_img)
 
     CHECK_ANSWER_CACHE[user_id] = q_content
 
@@ -951,20 +938,11 @@ async def handle_answer_copy_submission(update: Update, context: ContextTypes.DE
 4. 🚀 परीक्षक की मूल्य संवर्धन सलाह (Value Addition): (आगे की राह व निष्कर्ष को बेहतर बनाने के सुझाव)
 केवल और केवल शुद्ध एवं गरिमापूर्ण हिंदी में उत्तर दें।
 """
-    tmp_file = f"tmp_ans_{user_id}_{int(time.time())}"
-    m_type = "image/jpeg"
-    if msg.document and msg.document.file_name.lower().endswith('.pdf'):
-        tmp_file += ".pdf"
-        m_type = "application/pdf"
-    else:
-        tmp_file += ".jpg"
+    m_type = "application/pdf" if (msg.document and msg.document.file_name.lower().endswith('.pdf')) else "image/jpeg"
 
     try:
-        await download_file_to_disk(msg, context, tmp_file)
-        with open(tmp_file, "rb") as f:
-            f_bytes = f.read()
-
-        eval_result = await asyncio.to_thread(call_gemini_multimodal_inline, prompt, f_bytes, m_type)
+        f_bytes = await download_file_to_bytes(msg, context)
+        eval_result = await asyncio.to_thread(call_gemini_multimodal_inline, prompt, bytes(f_bytes), m_type)
 
         clean_eval = clean_all_markdown_and_fix_content(eval_result)
         await wait_m.delete()
@@ -978,9 +956,6 @@ async def handle_answer_copy_submission(update: Update, context: ContextTypes.DE
 
     except Exception as e:
         await wait_m.edit_text(f"❌ मूल्यांकन में त्रुटि: {e}। कृपया साफ़ फ़ोटो या PDF भेजें।")
-    finally:
-        if os.path.exists(tmp_file):
-            os.remove(tmp_file)
 
     CHECK_ANSWER_CACHE.pop(user_id, None)
     return ConversationHandler.END
@@ -996,12 +971,11 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
         return
 
     wait_m = await msg.reply_text("📥 <b>PDF प्राप्त हुआ!</b>\nसामग्री निकाली जा रही है व UPSC 360° HTML नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
-    temp_pdf = f"temp_{user_id}_{int(time.time())}.pdf"
     
     try:
-        await download_file_to_disk(msg, context, temp_pdf)
-
-        reader = PdfReader(temp_pdf)
+        pdf_bytes = await download_file_to_bytes(msg, context)
+        pdf_io = io.BytesIO(pdf_bytes)
+        reader = PdfReader(pdf_io)
         pdf_text = ""
         for page in reader.pages[:18]:
             t = page.extract_text()
@@ -1009,10 +983,8 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
                 pdf_text += t + "\n"
 
         if not pdf_text.strip():
-            with open(temp_pdf, "rb") as f:
-                f_bytes = f.read()
             prompt = "इस PDF सामग्री का UPSC सिविल सेवा परीक्षा के स्तर पर संपूर्ण 360° अध्ययन नोट्स शुद्ध 2-कॉलम HTML सारणी व मेन्स फ्रेमवर्क सहित तैयार करें।"
-            ai_notes = await asyncio.to_thread(call_gemini_multimodal_inline, prompt, f_bytes, "application/pdf")
+            ai_notes = await asyncio.to_thread(call_gemini_multimodal_inline, prompt, bytes(pdf_bytes), "application/pdf")
         else:
             clean_title = doc.file_name.replace(".pdf", "")[:35]
             prompt = f"""
@@ -1044,11 +1016,8 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
 
     except Exception as e:
         await wait_m.edit_text(f"❌ PDF प्रोसेसिंग में त्रुटि आई: {e}")
-    finally:
-        if os.path.exists(temp_pdf):
-            os.remove(temp_pdf)
 
-# ================= 1-on-1 UPSC INTERVIEW WITH ROBUST STEP-BY-STEP DAF =================
+# ================= 1-on-1 UPSC INTERVIEW WITH IN-MEMORY VOICE =================
 async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -1246,12 +1215,9 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 
     wait_m = await update.message.reply_text("🎧 <b>बोर्ड आपके मौखिक उत्तर का विश्लेषण कर रहा है...</b>", parse_mode=ParseMode.HTML)
 
-    tmp_voice_path = f"cand_voice_{user_id}_{int(time.time())}.ogg"
-
     try:
-        await download_file_to_disk(update.message, context, tmp_voice_path)
-        with open(tmp_voice_path, "rb") as f:
-            v_bytes = f.read()
+        # शून्य डिस्क निर्भरता: सीधे रैम (Memory) से ऑडियो बाइट्स लेना
+        v_bytes = await download_file_to_bytes(update.message, context)
 
         is_last = (curr >= tot)
         last_inst = "यह अंतिम उत्तर था, अतः 275 में से प्राप्तांक, प्रशासनिक मानसिकता, संतुलन व कमियों की अंतिम रिपोर्ट दें।" if is_last else "2 पंक्तियों में मूल्यांकन करें और अगले प्रश्न के लिए तैयार रहने को कहें।"
@@ -1262,7 +1228,7 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 {last_inst}
 {c_name} जी कहकर संबोधित करें। भाषा प्रेरणादायी व गरिमापूर्ण रखें।
 """
-        eval_resp = await asyncio.to_thread(call_gemini_multimodal_inline, eval_prompt, v_bytes, "audio/ogg")
+        eval_resp = await asyncio.to_thread(call_gemini_multimodal_inline, eval_prompt, bytes(v_bytes), "audio/ogg")
         clean_resp = eval_resp.strip()
 
         audio_bytes = await download_audio_stream(clean_resp[:300])
@@ -1293,9 +1259,6 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
     except Exception as e:
         await wait_m.edit_text(f"❌ वॉयस प्रोसेसिंग में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
         return WAITING_INTERVIEW_VOICE
-    finally:
-        if os.path.exists(tmp_voice_path):
-            os.remove(tmp_voice_path)
 
 # ================= CONTINUOUS ASK MENTORSHIP SESSION =================
 async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1459,7 +1422,7 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
 
     nav_btns = []
     if target_page > 0:
-        nav_btns.append(InlineKeyboardButton(f"◀️️ पेज {target_page}/3", callback_data=f"trpage_{target_page - 1}"))
+        nav_btns.append(InlineKeyboardButton(f"◀️ पेज {target_page}/3", callback_data=f"trpage_{target_page - 1}"))
     if end_idx < len(lines):
         nav_btns.append(InlineKeyboardButton(f"पेज {target_page + 2}/3 ▶️", callback_data=f"trpage_{target_page + 1}"))
 
@@ -1975,7 +1938,7 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
             return ConversationHandler.END
         else:
             CONTACT_SESSIONS.pop(user_id, None)
-            await msg.reply_text("⚠️️ <b>सत्र रद्द:</b> आपने कमांड भेज दी थी। ओनर से संपर्क करने हेतु कृपया पुनः <code>/owner</code> चलाएं।", parse_mode=ParseMode.HTML)
+            await msg.reply_text("⚠️ <b>सत्र रद्द:</b> आपने कमांड भेज दी थी। ओनर से संपर्क करने हेतु कृपया पुनः <code>/owner</code> चलाएं।", parse_mode=ParseMode.HTML)
             return ConversationHandler.END
 
     start_time = CONTACT_SESSIONS.get(user_id, 0)
