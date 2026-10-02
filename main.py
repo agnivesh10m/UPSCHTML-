@@ -42,7 +42,8 @@ WAITING_BROADCAST_MSG = 2
 
 CONTACT_SESSIONS = {}
 USER_QUIZ_SELECTIONS = {}
-TRENDING_PAGES = {}
+TRENDING_CACHE = {}
+TRENDING_PAGE_INDEX = {}
 DB_PATH = "upsc_bot.db"
 
 # ================= DATABASE SETUP =================
@@ -69,12 +70,6 @@ def init_db():
             topic TEXT,
             filename TEXT,
             html_content TEXT
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS trending_cache (
-            date_str TEXT PRIMARY KEY,
-            raw_text TEXT
         )
     """)
     conn.commit()
@@ -159,21 +154,15 @@ def get_archive_by_period_name(period, p_name):
     except Exception:
         return None
 
-def get_or_create_trending_cache(date_str, generate_func):
+def get_all_users_detailed():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT raw_text FROM trending_cache WHERE date_str = ?", (date_str,))
-    row = c.fetchone()
-    if row:
-        conn.close()
-        return row[0]
-    raw_data = generate_func(date_str)
-    c.execute("INSERT OR REPLACE INTO trending_cache (date_str, raw_text) VALUES (?, ?)", (date_str, raw_data))
-    conn.commit()
+    c.execute("SELECT user_id, username, first_name, is_vip, vip_expiry FROM users ORDER BY joined_at DESC")
+    rows = c.fetchall()
     conn.close()
-    return raw_data
+    return rows
 
-def get_all_users():
+def get_all_user_ids():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT user_id FROM users")
@@ -224,7 +213,7 @@ def call_gemini_safely(prompt: str) -> str:
 
     raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {last_err}")
 
-# ================= IMAGE ENGINE (SINGLE MAP INJECTION) =================
+# ================= ROBUST MARKDOWN TABLE CONVERTER & IMAGE ENGINE =================
 KNOWN_MAPS = {
     "मन्नार": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/Gulf_of_Mannar_map.png/640px-Gulf_of_Mannar_map.png",
     "कच्छ": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Rann_of_Kutch_map.svg/640px-Rann_of_Kutch_map.svg.png",
@@ -233,31 +222,66 @@ KNOWN_MAPS = {
     "अंडमान": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b2/Andaman_and_Nicobar_Islands_map.svg/640px-Andaman_and_Nicobar_Islands_map.svg.png",
     "पश्चिमी घाट": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Western_Ghats_locator_map.svg/640px-Western_Ghats_locator_map.svg.png",
     "लद्दाख": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Ladakh_locator_map.svg/640px-Ladakh_locator_map.svg.png",
+    "कूनो": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/India_Madhya_Pradesh_location_map.svg/640px-India_Madhya_Pradesh_location_map.svg.png",
     "ताइवान": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Taiwan_Strait_map.png/640px-Taiwan_Strait_map.png",
     "यूक्रेन": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Ukraine_in_Europe_%28relief%29.svg/640px-Ukraine_in_Europe_%28relief%29.svg.png",
     "गाजा": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Gaza_Strip_map.svg/640px-Gaza_Strip_map.svg.png",
 }
 
-def resolve_real_image_or_map(place_name: str) -> str:
-    for key, url in KNOWN_MAPS.items():
-        if key in place_name:
-            return url
-    return "https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/World_map_-_low_resolution.svg/800px-World_map_-_low_resolution.svg.png"
+def markdown_tables_to_html(text: str) -> str:
+    lines = text.split("\n")
+    in_table = False
+    html_lines = []
+    headers = []
+    
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            # यदि यह विभाजक पंक्ति है (| :--- | :--- |)
+            if all(re.match(r'^:?-+:?$', c) for c in cells):
+                continue
+            
+            if not in_table:
+                in_table = True
+                headers = cells
+                html_lines.append('<div class="table-box"><table><thead><tr>')
+                for h in headers:
+                    html_lines.append(f'<th>{h}</th>')
+                html_lines.append('</tr></thead><tbody>')
+            else:
+                html_lines.append('<tr>')
+                for c in cells:
+                    html_lines.append(f'<td>{c}</td>')
+                html_lines.append('</tr>')
+        else:
+            if in_table:
+                html_lines.append('</tbody></table></div>')
+                in_table = False
+            html_lines.append(line)
+            
+    if in_table:
+        html_lines.append('</tbody></table></div>')
+        
+    return "\n".join(html_lines)
 
 def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = raw_text.strip()
     
-    # 1. सभी पुराने कच्चे कोड्स और खाली बॉक्सेज को मिटाना
+    # 1. सभी मार्कडाउन पाइप टेबल्स को शुद्ध HTML में बदलना
+    text = markdown_tables_to_html(text)
+
+    # 2. सभी कोड ब्लॉक व फालतू बाड़ हटाना
     text = re.sub(r'```(?:xml|svg|html)?[\s\S]*?```', '', text, flags=re.IGNORECASE)
     text = re.sub(r'```', '', text)
     text = re.sub(r'<figure[^>]*>[\s\S]*?<\/figure>', '', text, flags=re.IGNORECASE)
 
-    # 2. हेडिंग्स सुधारना
+    # 3. हेडिंग्स सुधारना
     text = re.sub(r'###\s*(.*)', r'<h4 class="sub-title">\1</h4>', text)
     text = re.sub(r'##\s*(.*)', r'<h3 class="section-title">\1</h3>', text)
     text = re.sub(r'#\s*(.*)', r'<h2 class="section-title">\1</h2>', text)
 
-    # 3. मेन्स फ्रेमवर्क के तत्वों को साफ़ और बोल्ड कार्ड्स में बदलना
+    # 4. मेन्स फ्रेमवर्क के तत्वों को साफ़ और बोल्ड कार्ड्स में बदलना
     text = re.sub(r'\*\*भूमिका\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-intro">📌 भूमिका:</span> <p class="para">\1</p></div>', text)
     text = re.sub(r'\*\*मुख्य\s*विश्लेषणात्मक\s*बिंदु\s*[:\-]?\*\*', r'<div class="point-badge-body">📊 मुख्य विश्लेषणात्मक आयाम:</div>', text)
     text = re.sub(r'\*\*आगे\s*की\s*राह\s*\(Way\s*Forward\)\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-wf">🚀 आगे की राह (Way Forward):</span> <p class="para">\1</p></div>', text)
@@ -267,18 +291,17 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
     text = re.sub(r'^[•\-\*]\s*(.*)', r'<li class="list-item">\1</li>', text, flags=re.MULTILINE)
 
-    # 4. मैपिंग सेक्शन में केवल 1 साफ़ इमेज लगाना (कोई डुप्लीकेशन नहीं)
+    # 5. मैपिंग सेक्शन में केवल 1 साफ़ इमेज लगाना (कोई डुप्लीकेशन नहीं)
     placed_image = False
-    for key in KNOWN_MAPS.keys():
+    for key, img_url in KNOWN_MAPS.items():
         if key in text and not placed_image:
-            img_url = KNOWN_MAPS[key]
             img_html = f"""
             <figure class="img-figure">
               <img src="{img_url}" alt="{key} मानचित्र" loading="lazy">
               <figcaption>🗺️ भौगोलिक एवं रणनीतिक मानचित्र: {key}</figcaption>
             </figure>
             """
-            text = re.sub(r'(मन्नार की खाड़ी|कच्छ का रण|होर्मुज़|लाल सागर|अंडमान|पश्चिमी घाट|लद्दाख|ताइवान)', r'\1' + img_html, text, count=1)
+            text = re.sub(rf'({key}[^<\n]*)', r'\1' + img_html, text, count=1)
             placed_image = True
             break
 
@@ -302,7 +325,7 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
             # 'खंड 1', 'खंड 2', 'खण्ड', 'भाग' हटाकर सीधे मुख्य विषय का नाम लगाना
             clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|\d+|[:\.\-\s])+', '', title_text).strip()
             clean_tab_name = re.sub(r'^[0-9]+\s*[:\.\-]?\s*', '', clean_tab_name).strip()
-            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳️⚖️🔍📝🛣️❄️🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
+            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳️️⚖️🔍📝🛣️❄️🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
             
             if not clean_tab_name:
                 clean_tab_name = f"विषय {sec_idx}"
@@ -643,14 +666,15 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/daily</code> — दैनिक नोट्स (IST लाइव कैलेंडर)\n"
         "• <code>/trending</code> — समसामयिक स्थान, व्यक्ति व ट्रेंडिंग मुद्दे\n"
         "• <code>/quiz</code> — विषयवार लाइव टेस्ट शुरू करें\n"
-        "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन\n"
+        "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन (केवल आज तक)\n"
         "• <code>/monthly</code> — सम्पूर्ण मासिक संकलन\n"
-        "• <code>/yearly</code> — वार्षिक कंपाइलेशन\n"
+        "• <code>/yearly</code> — वार्षिक कंपाइलेशन (PT-365 Style)\n"
         "• <code>/ask &lt;सवाल&gt;</code> — डाउट पूछें\n\n"
         "🛠 <b>प्रशासनिक व निर्माण कमांड्स:</b>\n"
         "• <code>/generate &lt;तारीख/विषय&gt;</code> — नोट्स निर्माण\n"
-        "• <code>/broadcast</code> — सभी पंजीकृत छात्रों को संदेश भेजें\n"
-        "• <code>/adduser</code> | <code>/removeuser</code> | <code>/listusers</code> — मेंबर्स संभालें\n\n"
+        "• <code>/broadcast</code> — सभी छात्रों को वीडियो/फ़ोटो/टेक्स्ट संदेश भेजें\n"
+        "• <code>/listusers</code> — सभी पंजीकृत छात्रों की प्रीमियम सूची देखें\n"
+        "• <code>/adduser</code> | <code>/removeuser</code> — मेंबरशिप संभालें\n\n"
         "💬 <b>सहायता व संपर्क:</b>\n"
         "• <code>/owner</code> — सचिन शर्मा से सीधे संपर्क करें\n"
         "• <code>/help</code> — संपूर्ण उपयोग मार्गदर्शिका\n\n"
@@ -663,14 +687,14 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user.id, user.username, user.first_name)
     help_text = (
         f"📖 <b>UPSC SMART DESK — सहायता केंद्र ({AUTHOR_NAME})</b>\n\n"
-        "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> भारतीय समय (IST) के अनुसार तारीख चुनें। केवल मौजूद विषयों के ही टैब्स बनेंगे।\n\n"
-        "2️⃣ <b>ट्रेंडिंग रडार (`/trending`):</b> लाइव राष्ट्रीय व अंतरराष्ट्रीय स्थान और मुद्दे देखें। किसी का नंबर (उदा. <code>1, 2</code>) या <code>all</code> भेजकर सीधे पूर्ण नोट्स पाएं।\n\n"
-        "3️⃣ <b>मासिक व साप्ताहिक पत्रिकाएं:</b> <code>/monthly</code> व <code>/weekly</code> से सम्पूर्ण विषयवार कंपाइलेशन प्राप्त करें।\n\n"
+        "1️⃣ <b>दैनिक, मासिक व वार्षिक नोट्स:</b> The Hindu, PIB, Vision IAS, Sanskriti IAS व Drishti IAS के समन्वय से तैयार संपूर्ण 360° नोट्स।\n\n"
+        "2️⃣ <b>ट्रेंडिंग रडार (`/trending`):</b> दैनिक, मासिक व वार्षिक ट्रेंडिंग मुद्दों का चुनाव करें और संपूर्ण 360° नोट्स पाएं।\n\n"
+        "3️⃣ <b>ब्रॉडकास्ट:</b> एडमिन किसी भी वीडियो, फोटो या टेक्स्ट का रिप्लाई देकर सभी छात्रों को तुरंत भेज सकते हैं।\n\n"
         "4️⃣ <b>प्रिंट व वॉटरमार्क:</b> सभी फाइलों पर <b>SACHIN SHARMA</b> का 50% विजिबिलिटी वाला वॉटरमार्क प्रिंट होगा।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
-# /daily
+# /daily: IST कैलेंडर
 async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -697,99 +721,112 @@ async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🎯 <b>चरण 1/2:</b> किस विषय का टेस्ट लगाना चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= TRENDING RADAR =================
-def generate_fresh_trending(date_str):
-    prompt = f"""
-तारीख {date_str} के संदर्भ में UPSC सिविल सेवा परीक्षा हेतु 8 मुख्य ज्वलंत मुद्दे तैयार करें।
-प्रारूप:
-1. मुद्दा 1 (स्थान/योजना/विमर्श का सटीक नाम) - 2 पंक्ति सारांश (स्रोत: The Hindu/PIB)
-2. मुद्दा 2 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-3. मुद्दा 3 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-4. मुद्दा 4 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-5. मुद्दा 5 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-6. मुद्दा 6 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-7. मुद्दा 7 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-8. मुद्दा 8 (स्थान/योजना/विमर्श का नाम) - 2 पंक्ति सारांश
-भाषा शुद्ध व उच्च-स्तरीय हिंदी रखें।
-"""
-    return call_gemini_safely(prompt)
-
+# ================= ADVANCED TRENDING RADAR (DAILY, MONTHLY, YEARLY) =================
 async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
-    today = get_ist_now().strftime("%Y-%m-%d")
     
-    wait_msg = await update.message.reply_text("🛰 <b>UPSC रडार:</b> समसामयिक स्थानों, व्यक्तियों व ट्रेंडिंग मुद्दों का संकलन हो रहा है...", parse_mode=ParseMode.HTML)
-    
-    try:
-        trend_text = await asyncio.to_thread(get_or_create_trending_cache, today, generate_fresh_trending)
-        lines = [l.strip() for l in trend_text.split('\n') if l.strip()]
-        
-        TRENDING_PAGES[user.id] = 1
+    keyboard = [
+        [InlineKeyboardButton("⚡ आज के मुख्य ट्रेंडिंग मुद्दे (Daily)", callback_data="trtype_daily")],
+        [InlineKeyboardButton("📁 इस महीने के शीर्ष ट्रेंडिंग मुद्दे (Monthly)", callback_data="trtype_monthly")],
+        [InlineKeyboardButton("📚 वर्ष भर के सबसे बड़े ट्रेंडिंग मुद्दे (Yearly)", callback_data="trtype_yearly")]
+    ]
+    await update.message.reply_text("🧭 <b>UPSC TRENDING RADAR: आप किस समयावधि के ट्रेंडिंग मुद्दे देखना चाहते हैं?</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-        p1_text = f"🧭 <b>UPSC TRENDING RADAR — {today} (पेज 1/2)</b>\n\n" + "\n\n".join(lines[:4])
-        p1_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के पूर्ण नोट्स हेतु नंबर भेजें (उदा. <code>1, 2</code> या <code>1</code>)\n• सभी 8 मुद्दों के संपूर्ण 360° नोट्स हेतु लिखें: <code>all</code>"
-
-        keyboard = [[InlineKeyboardButton("अगला पेज (5-8) ▶", callback_data="trend_next")]]
-        await wait_msg.edit_text(p1_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-    except Exception as e:
-        await wait_msg.edit_text(f"❌ त्रुटि: {e}")
-
-async def handle_trending_pagination(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_trending_type_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
+    tr_type = query.data.replace("trtype_", "")
+    
     today = get_ist_now().strftime("%Y-%m-%d")
-    
-    raw_data = get_or_create_trending_cache(today, generate_fresh_trending)
-    lines = [l.strip() for l in raw_data.split('\n') if l.strip()]
-    
-    if query.data == "trend_next":
-        p2_text = f"🧭 <b>UPSC TRENDING RADAR — {today} (पेज 2/2)</b>\n\n" + "\n\n".join(lines[4:8])
-        p2_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के विश्लेषण हेतु नंबर भेजें (उदा. <code>5, 6</code>)\n• सभी मुद्दों के लिए लिखें: <code>all</code>"
-        keyboard = [[InlineKeyboardButton("◀️ पिछला पेज (1-4)", callback_data="trend_prev")]]
-        await query.message.edit_text(p2_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    current_month = get_ist_now().strftime("%B %Y")
+    current_year = get_ist_now().strftime("%Y")
+
+    if tr_type == "daily":
+        scope_str = f"आज ({today})"
+        prompt = f"आज {today} के संदर्भ में UPSC CSE परीक्षा हेतु 9 सबसे महत्वपूर्ण ट्रेंडिंग मुद्दे 1 से 9 तक बिंदुवार (2 पंक्ति सारांश व स्रोत सहित) लिखें। भाषा शुद्ध हिंदी रखें।"
+    elif tr_type == "monthly":
+        scope_str = f"माह ({current_month})"
+        prompt = f"माह {current_month} के 9 सबसे महत्वपूर्ण नीतिगत, अंतर्राष्ट्रीय एवं पर्यावरणीय ट्रेंडिंग मुद्दे 1 से 9 तक बिंदुवार (2 पंक्ति सारांश सहित) लिखें। भाषा शुद्ध हिंदी रखें।"
+    else:
+        scope_str = f"वर्ष {current_year}"
+        prompt = f"वर्ष {current_year} के 9 सबसे बड़े राष्ट्रीय व वैश्विक ट्रेंडिंग मुद्दे 1 से 9 तक बिंदुवार (2 पंक्ति सारांश सहित) लिखें। भाषा शुद्ध हिंदी रखें।"
+
+    wait_m = await query.message.reply_text(f"🛰 <b>{scope_str}</b> के ट्रेंडिंग मुद्दों का रडार संकलन हो रहा है...", parse_mode=ParseMode.HTML)
+    try:
+        raw_text = await asyncio.to_thread(call_gemini_safely, prompt)
+        lines = [l.strip() for l in raw_text.split('\n') if l.strip() and re.match(r'^\d+[\.\)]', l.strip())]
         
-    elif query.data == "trend_prev":
-        p1_text = f"🧭 <b>UPSC TRENDING RADAR — {today} (पेज 1/2)</b>\n\n" + "\n\n".join(lines[:4])
-        p1_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के विश्लेषण हेतु नंबर भेजें (उदा. <code>1, 2</code>)\n• सभी मुद्दों के लिए लिखें: <code>all</code>"
-        keyboard = [[InlineKeyboardButton("अगला पेज (5-8) ▶", callback_data="trend_next")]]
-        await query.message.edit_text(p1_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        TRENDING_CACHE[user_id] = lines
+        TRENDING_PAGE_INDEX[user_id] = 0
+
+        p_text = f"🧭 <b>UPSC TRENDING RADAR — {scope_str} (पेज 1/3)</b>\n\n" + "\n\n".join(lines[:3])
+        p_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के पूर्ण नोट्स हेतु नंबर भेजें (उदा. <code>1, 2</code>)\n• सभी मुद्दों के 360° नोट्स हेतु लिखें: <code>all</code>"
+
+        keyboard = [[InlineKeyboardButton("अगला पेज (4-6) ▶️️", callback_data="trpage_1")]]
+        await wait_m.edit_text(p_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    except Exception as e:
+        await wait_m.edit_text(f"❌ त्रुटि: {e}")
+
+async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    target_page = int(query.data.replace("trpage_", ""))
+    
+    lines = TRENDING_CACHE.get(user_id, [])
+    if not lines:
+        await query.message.reply_text("⚠️ सत्र समाप्त हो गया है। पुनः <code>/trending</code> चलाएं।", parse_mode=ParseMode.HTML)
+        return
+
+    start_idx = target_page * 3
+    end_idx = start_idx + 3
+    sub_lines = lines[start_idx:end_idx]
+
+    p_text = f"🧭 <b>UPSC TRENDING RADAR (पेज {target_page + 1}/3)</b>\n\n" + "\n\n".join(sub_lines)
+    p_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के पूर्ण नोट्स हेतु नंबर भेजें (उदा. <code>1, 2</code>)\n• सभी मुद्दों के 360° नोट्स हेतु लिखें: <code>all</code>"
+
+    nav_btns = []
+    if target_page > 0:
+        nav_btns.append(InlineKeyboardButton("◀️ पिछला पेज", callback_data=f"trpage_{target_page - 1}"))
+    if end_idx < len(lines):
+        nav_btns.append(InlineKeyboardButton("अगला पेज ▶️", callback_data=f"trpage_{target_page + 1}"))
+
+    await query.message.edit_text(p_text, reply_markup=InlineKeyboardMarkup([nav_btns]), parse_mode=ParseMode.HTML)
 
 # /monthly
 async def monthly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
     months = ["October 2026", "September 2026", "August 2026", "July 2026", "June 2026", "May 2026"]
-    keyboard = [[InlineKeyboardButton(f"📁 {m} पत्रिका", callback_data=f"genmonth_{m}")] for m in months]
-    await update.message.reply_text("📁 <b>जिस महीने का UPSC कंपाइलेशन चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    keyboard = [[InlineKeyboardButton(f"📁 {m} संपूर्ण मासिक डाइजेस्ट", callback_data=f"genmonth_{m}")] for m in months]
+    await update.message.reply_text("📁 <b>जिस महीने का संपूर्ण UPSC मंथली कंपाइलेशन चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 # /yearly
 async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
     years = ["2026", "2025", "2024"]
-    keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक संकलन", callback_data=f"genyear_{y}")] for y in years]
-    await update.message.reply_text("🏛️ <b>जिस वर्ष का वार्षिक कंपाइलेशन चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक महा-संकलन (PT-365)", callback_data=f"genyear_{y}")] for y in years]
+    await update.message.reply_text("🏛️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# /weekly (केवल वर्तमान दिन तक का रिवीजन - कोई काल्पनिक तारीख नहीं)
+# /weekly (केवल चालू दिन तक का सटीक कवरेज)
 async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
     today = get_ist_now()
     
-    # इस सप्ताह के सोमवार से आज तक के दिन की गणना
     days_since_monday = today.weekday()
     start_of_current_week = today - timedelta(days=days_since_monday)
     current_week_str = f"{start_of_current_week.strftime('%d %b')} से {today.strftime('%d %b %Y')}"
 
-    # पिछला पूर्ण सप्ताह
     last_week_end = start_of_current_week - timedelta(days=1)
     last_week_start = last_week_end - timedelta(days=6)
     last_week_str = f"{last_week_start.strftime('%d %b')} से {last_week_end.strftime('%d %b %Y')}"
 
     keyboard = [
-        [InlineKeyboardButton(f"🗓️ चालू सप्ताह ({current_week_str})", callback_data=f"genweek_current_{today.strftime('%Y-%m-%d')}")],
+        [InlineKeyboardButton(f"🗓️ चालू सप्ताह ({current_week_str}) - आज तक", callback_data=f"genweek_current_{today.strftime('%Y-%m-%d')}")],
         [InlineKeyboardButton(f"🗓️ पिछला पूर्ण सप्ताह ({last_week_str})", callback_data=f"genweek_last_{last_week_end.strftime('%Y-%m-%d')}")]
     ]
     await update.message.reply_text("🗓️ <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें (केवल आज तक का वास्तविक कवरेज):</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -869,20 +906,21 @@ async def process_dynamic_generation(user_id, data, context):
 
             prompt = f"""
 आप UPSC सिविल सेवा परीक्षा के शीर्ष विषय विशेषज्ञ हैं।
-तारीख: "{target_date}" के लिए 'Zero to Hero' स्तर का, संपूर्ण, 360° आत्मनिर्भर UPSC करेंट अफेयर्स संकलन तैयार करें।
+तारीख: "{target_date}" के लिए 'Zero to Hero' स्तर का, संपूर्ण, 360° आत्मनिर्भर और अत्यंत विस्तृत UPSC करेंट अफेयर्स संकलन तैयार करें।
 शीर्षक: "दैनिक समसामयिक महा-संकलन — {target_date}"
 {future_note}
 
 अनिवार्य स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Sanskriti IAS, Drishti IAS.
 
 सख्त तकनीकी नियम:
-1. शून्य मार्कडाउन लीक्स: तालिकाओं में '|' या '---' का प्रयोग वर्जित है। केवल मानक HTML (<div class="table-box"><table><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table></div>) का प्रयोग करें।
-2. कोई भी कच्चा SVG या ```xml कोड न लिखें।
-3. केवल उन विषयों को शामिल करें जिनकी सामग्री आज वास्तव में प्रासंगिक है।
+1. किसी भी स्थिति में संक्षिप्त या अधूरा उत्तर न छोड़ें। सभी GS-1, GS-2, GS-3, GS-4 के मुख्य घटनाक्रमों का संपूर्ण विश्लेषण दें।
+2. सभी तालिकाओं को केवल शुद्ध HTML (<div class="table-box"><table><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table></div>) में लिखें।
+3. मैपिंग सेक्शन में स्थान का नाम स्पष्ट लिखें (जैसे मन्नार की खाड़ी, कच्छ का रण, होर्मुज़ आदि)।
+4. मेन्स फ्रेमवर्क के प्रत्येक बिंदु को पूरा लिखें।
 
 सामग्री संरचना:
 - संदर्भ, संवैधानिक स्थिति, 2-कॉलम HTML सारणी।
-- मैपिंग एवं चर्चित स्थल विवरण (स्थान का नाम स्पष्ट लिखें)।
+- मैपिंग एवं चर्चित स्थल विवरण।
 - Prelims Facts (बुलेट प्वाइंट्स)।
 - Mains Framework: प्रश्न, भूमिका, 3 मुख्य बिंदु, आगे की राह, निष्कर्ष।
 - 4 Practice MCQs (व्याख्या सहित)।
@@ -904,8 +942,19 @@ async def process_dynamic_generation(user_id, data, context):
         if arch_data:
             topic, filename, html_content = arch_data
         else:
-            wait_m = await context.bot.send_message(chat_id=user_id, text=f"📁 <b>{m_name}</b> का मासिक कंपाइलेशन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
-            prompt = f"माह: '{m_name}' का सम्पूर्ण UPSC Monthly Current Affairs Digest स्रोत (The Hindu, Vision, Drishti, Sanskriti IAS), शुद्ध HTML टेबल्स और 10 MCQs बैंक के साथ हिंदी में तैयार करें।"
+            wait_m = await context.bot.send_message(chat_id=user_id, text=f"📁 <b>{m_name}</b> का संपूर्ण विस्तृत मासिक कंपाइलेशन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+            prompt = f"""
+माह: '{m_name}' का सम्पूर्ण और अत्यंत विस्तृत UPSC Monthly Current Affairs Digest तैयार करें।
+यह किसी दैनिक नोट्स से कई गुना बड़ा, गहन और सभी मुख्य विषयों को समेटे हुए होना चाहिए।
+शामिल करें:
+1. राजव्यवस्था एवं संविधान (GS-2): 4-5 मुख्य सुप्रीम कोर्ट निर्णय, विधायी अधिनियम, 2-कॉलम योजना मैट्रिक्स।
+2. अर्थव्यवस्था एवं बजट (GS-3): मौद्रिक नीतियां, व्यापार डेटा, अवसंरचना, औद्योगिक सुधार।
+3. पर्यावरण, पारिस्थितिकी एवं जैव विविधता (GS-3): वन्यजीव संरक्षण, रामसर स्थल, जलवायु शिखर सम्मेलन।
+4. विज्ञान एवं प्रौद्योगिकी (GS-3): अंतरिक्ष मिशन, रक्षा सौदे, क्वांटम व AI।
+5. अंतरराष्ट्रीय संबंध (GS-2): द्विपक्षीय संधियाँ, शिखर सम्मेलन, भू-रणनीतिक स्थल।
+6. 10 उच्च-स्तरीय MCQs व्याख्या सहित।
+सभी तालिकाओं को शुद्ध HTML में लिखें।
+"""
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
                 topic = f"UPSC Monthly Digest — {m_name}"
@@ -923,8 +972,19 @@ async def process_dynamic_generation(user_id, data, context):
         if arch_data:
             topic, filename, html_content = arch_data
         else:
-            wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ वर्ष <b>{y_name}</b> का वार्षिक संकलन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
-            prompt = f"वर्ष {y_name} का UPSC Annual Compendium (PT-365 Style) HTML टेबल्स के साथ हिंदी में तैयार करें।"
+            wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ वर्ष <b>{y_name}</b> का संपूर्ण वार्षिक महा-संकलन (PT-365 Style) तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+            prompt = f"""
+वर्ष {y_name} का UPSC Civil Services Examination हेतु अत्यंत विस्तृत और संपूर्ण Annual Compendium (PT-365 Style) तैयार करें।
+यह पूरे वर्ष की सबसे प्रामाणिक अध्ययन सामग्री होनी चाहिए। इसे संक्षिप्त न करें।
+अनिवार्य खंड:
+1. संपूर्ण राजव्यवस्था एवं शासन (Polity & Governance): सभी ऐतिहासिक निर्णय, संवैधानिक संशोधन, केंद्र-राज्य संबंध, चुनाव सुधार।
+2. आर्थिक विकास (Economic Development): जीडीपी, बैंकिंग सुधार, डिजिटल मुद्रा, उत्पादन से जुड़े प्रोत्साहन (PLI), व्यापार समझौते।
+3. पर्यावरण एवं जलवायु परिवर्तन (Environment & Ecology): चीता प्रोजेक्ट, राष्ट्रीय उद्यान, रामसर स्थलों का संपूर्ण मैट्रिक्स, COP बैठकें।
+4. विज्ञान, अंतरिक्ष एवं रक्षा (Sci & Tech, Defense): गगनयान, चंद्र अन्वेषण, स्वदेशी मिसाइल प्रणालियाँ, क्वांटम मिशन।
+5. चर्चित स्थल एवं मैपिंग (Places in News): पूरे वर्ष चर्चा में रहे 5-6 राष्ट्रीय व वैश्विक स्थल।
+6. परीक्षा रणनीति एवं 10 मानक प्रीलिम्स MCQs।
+सभी तालिकाओं को मानक HTML (<div class="table-box"><table>...</table></div>) में ही लिखें।
+"""
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
                 topic = f"UPSC Annual Compendium — {y_name}"
@@ -946,12 +1006,12 @@ async def process_dynamic_generation(user_id, data, context):
             days_since_mon = today.weekday()
             mon_dt = today - timedelta(days=days_since_mon)
             period_label = f"{mon_dt.strftime('%d %B')} से {today.strftime('%d %B %Y')} (चालू सप्ताह, आज तक)"
-            prompt = f"सप्ताह की शुरुआत ({mon_dt.strftime('%Y-%m-%d')}) से लेकर आज ({today.strftime('%Y-%m-%d')}) तक के {days_since_mon + 1} दिनों के महत्वपूर्ण UPSC घटनाक्रमों का संपूर्ण रिवीजन तैयार करें। आगे की किसी भी तारीख का उल्लेख न करें।"
+            prompt = f"सप्ताह की शुरुआत ({mon_dt.strftime('%Y-%m-%d')}) से लेकर आज ({today.strftime('%Y-%m-%d')}) तक के {days_since_mon + 1} दिनों के महत्वपूर्ण UPSC घटनाक्रमों का संपूर्ण विस्तृत रिवीजन तैयार करें। आगे की किसी भी काल्पनिक तारीख का उल्लेख न करें।"
         else:
             period_label = f"विगत पूर्ण सप्ताह (7 दिवसीय रिवीजन)"
-            prompt = f"विगत पूर्ण सप्ताह के मुख्य UPSC घटनाक्रमों का 7-दिवसीय रिवीजन डाइजेस्ट HTML टेबल्स के साथ हिंदी में तैयार करें।"
+            prompt = f"विगत पूर्ण सप्ताह के मुख्य UPSC घटनाक्रमों का संपूर्ण 7-दिवसीय रिवीजन डाइजेस्ट HTML टेबल्स के साथ विस्तृत रूप में तैयार करें।"
 
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ <b>{period_label}</b> का सटीक रिवीजन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ <b>{period_label}</b> का संपूर्ण रिवीजन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
             topic = f"UPSC Weekly Revision — {period_label}"
@@ -991,15 +1051,21 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
     user_input = msg.text.strip().lower()
     today = get_ist_now().strftime("%Y-%m-%d")
 
+    cached_list = TRENDING_CACHE.get(user_id, [])
+
     if user_input == "all":
-        raw_trend = get_or_create_trending_cache(today, generate_fresh_trending)
-        wait_m = await msg.reply_text("⏳ <b>सभी 8 ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+        if not cached_list:
+            await msg.reply_text("⚠️ पहले <code>/trending</code> चलाकर मुद्दे देखें, फिर 'all' भेजें।", parse_mode=ParseMode.HTML)
+            return
+
+        raw_trend = "\n".join(cached_list)
+        wait_m = await msg.reply_text("⏳ <b>सभी ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स (चित्रों व सारणी सहित) तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
         prompt = f"""
-नीचे दिए गए सभी 8 समसामयिक ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स तैयार करें:
+नीचे दिए गए सभी समसामयिक ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स तैयार करें:
 "{raw_trend}"
 सख्त नियम:
 1. सभी मुद्दों में संदर्भ, चर्चा में क्यों, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क और 2 MCQs अनिवार्य रूप से दें।
-2. कोई भी कच्चा कोड या SVG न लिखें।
+2. कोई भी कच्चा कोड या पाइप टेबल न लिखें।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1029,12 +1095,16 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if re.match(r'^(\d+)(\s*,\s*\d+)*$', user_input):
-        raw_trend = get_or_create_trending_cache(today, generate_fresh_trending)
+        if not cached_list:
+            await msg.reply_text("⚠️ कृपया पहले <code>/trending</code> चलाएं, फिर नंबर चुनें।", parse_mode=ParseMode.HTML)
+            return
+
         nums = [n.strip() for n in user_input.split(',')]
-        wait_m = await msg.reply_text(f"⏳ चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विश्लेषण तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await msg.reply_text(f"⏳ चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विस्तृत विश्लेषण तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         
+        raw_trend = "\n".join(cached_list)
         prompt = f"""
-सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC सिविल सेवा परीक्षा हेतु गहन 360° विश्लेषण तैयार करें।
+सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC सिविल सेवा परीक्षा हेतु अत्यंत विस्तृत 360° विश्लेषण तैयार करें।
 सूची:
 "{raw_trend}"
 नियम: संदर्भ, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, और MCQs दें। कोई भी कच्चा कोड न लिखें।
@@ -1276,24 +1346,31 @@ async def remove_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ त्रुटि: {e}")
 
+# संपूर्ण पंजीकृत छात्रों की विस्तृत सूची (प्रीमियम बैज सहित)
 async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
         return
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT user_id, username, first_name, vip_expiry FROM users WHERE is_vip = 1")
-    rows = c.fetchall()
-    conn.close()
+    
+    rows = get_all_users_detailed()
     if not rows:
-        await update.message.reply_text("ℹ️️ अभी कोई अतिरिक्त अधिकृत सदस्य नहीं हैं।")
+        await update.message.reply_text("ℹ️ अभी कोई पंजीकृत सदस्य नहीं हैं।")
         return
-    text = "👥 <b>अधिकृत मेंबर्स की सूची:</b>\n\n"
-    for uid, un, fn, exp in rows:
+
+    text = f"👥 <b>पंजीकृत छात्रों की संपूर्ण सूची (कुल: {len(rows)})</b>\n\n"
+    for uid, un, fn, is_vip, exp in rows:
         user_link = f'<a href="tg://user?id={uid}">{fn}</a>'
-        un_str = f"@{un}" if un else "कोई यूज़रनेम नहीं"
-        text += f"• <b>{user_link}</b> (<code>{uid}</code>) | {un_str}\n  वैधता: <code>{exp}</code>\n\n"
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        un_str = f"@{un}" if un else "बिना यूज़रनेम"
+        vip_tag = "👑 <b>[PREMIUM]</b>" if is_vip == 1 else "👤 [निःशुल्क]"
+        exp_str = f" | वैधता: <code>{exp}</code>" if (is_vip == 1 and exp) else ""
+        text += f"• {vip_tag} <b>{user_link}</b> (<code>{uid}</code>)\n   {un_str}{exp_str}\n\n"
+
+    if len(text) > 4000:
+        parts = [text[i:i+4000] for i in range(0, len(text), 4000)]
+        for p in parts:
+            await update.message.reply_text(p, parse_mode=ParseMode.HTML)
+    else:
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 # ================= CONTACT / OWNER FEEDBACK =================
 async def contact_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1351,6 +1428,22 @@ async def handle_admin_reply_to_user(update: Update, context: ContextTypes.DEFAU
     if admin_id not in ADMIN_IDS:
         return
 
+    # यदि एडमिन किसी वीडियो/मीडिया पर रिप्लाई करके /broadcast लिख रहा है तो सीधे ब्रॉडकास्ट करें
+    if msg.text and msg.text.strip().lower() == "/broadcast":
+        all_uids = get_all_user_ids()
+        target_msg = msg.reply_to_message
+        status_m = await msg.reply_text(f"⏳ मीडिया ब्रॉडकास्ट प्रारंभ हो रहा है (कुल: {len(all_uids)} छात्र)...")
+        succ = 0
+        for uid in all_uids:
+            try:
+                await context.bot.copy_message(chat_id=uid, from_chat_id=msg.chat_id, message_id=target_msg.message_id)
+                succ += 1
+                await asyncio.sleep(0.05)
+            except Exception:
+                pass
+        await status_m.edit_text(f"✅ सफल ब्रॉडकास्ट: <b>{succ} / {len(all_uids)}</b> छात्रों को मीडिया प्राप्त हुआ!", parse_mode=ParseMode.HTML)
+        return
+
     reply_to_text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
     match = re.search(r"यूज़र ID:\s*(\d+)", reply_to_text) or re.search(r"<code>(\d+)</code>", reply_to_text)
     if match:
@@ -1363,13 +1456,35 @@ async def handle_admin_reply_to_user(update: Update, context: ContextTypes.DEFAU
         except Exception as e:
             await msg.reply_text(f"❌ त्रुटि: {e}")
 
-# ================= UNIVERSAL BROADCAST SYSTEM =================
+# ================= UNIVERSAL BROADCAST SYSTEM (TEXT / VIDEO / PHOTO) =================
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
         return ConversationHandler.END
-    all_users = get_all_users()
-    await update.message.reply_text(f"📢 <b>सार्वजनिक ब्रॉडकास्ट प्रणाली:</b>\n\nकुल पंजीकृत छात्र: <b>{len(all_users)}</b>\n\nसभी को भेजा जाने वाला संदेश लिखें:\n<i>(रद्द करने हेतु <code>/cancel</code> भेजें)</i>", parse_mode=ParseMode.HTML)
+
+    # यदि किसी वीडियो/फोटो पर रिप्लाई करके /broadcast किया गया हो
+    if update.message.reply_to_message:
+        target_msg = update.message.reply_to_message
+        all_uids = get_all_user_ids()
+        status_m = await update.message.reply_text(f"⏳ चयनित मीडिया ब्रॉडकास्ट हो रहा है (कुल: {len(all_uids)} छात्र)...")
+        succ = 0
+        for uid in all_uids:
+            try:
+                await context.bot.copy_message(chat_id=uid, from_chat_id=update.message.chat_id, message_id=target_msg.message_id)
+                succ += 1
+                await asyncio.sleep(0.05)
+            except Exception:
+                pass
+        await status_m.edit_text(f"✅ सफल ब्रॉडकास्ट: <b>{succ} / {len(all_uids)}</b> छात्रों को संदेश प्राप्त हुआ!", parse_mode=ParseMode.HTML)
+        return ConversationHandler.END
+
+    all_uids = get_all_user_ids()
+    await update.message.reply_text(
+        f"📢 <b>सार्वजनिक ब्रॉडकास्ट प्रणाली:</b>\n\nकुल पंजीकृत छात्र: <b>{len(all_uids)}</b>\n\n"
+        "सभी को भेजा जाने वाला संदेश भेजें (टेक्स्ट, वीडियो, फ़ोटो या दस्तावेज़):\n"
+        "<i>(रद्द करने हेतु <code>/cancel</code> भेजें)</i>", 
+        parse_mode=ParseMode.HTML
+    )
     return WAITING_BROADCAST_MSG
 
 async def execute_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1377,23 +1492,20 @@ async def execute_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if admin_id not in ADMIN_IDS:
         return ConversationHandler.END
     b_msg = update.message
-    all_users = get_all_users()
-    status_msg = await update.message.reply_text(f"⏳ ब्रॉडकास्ट जारी है... (कुल: {len(all_users)})")
+    all_uids = get_all_user_ids()
+    status_msg = await update.message.reply_text(f"⏳ ब्रॉडकास्ट जारी है... (कुल: {len(all_uids)})")
     success_count = 0
     fail_count = 0
 
-    for uid in all_users:
+    for uid in all_uids:
         try:
-            if b_msg.text:
-                await context.bot.send_message(chat_id=uid, text=f"📢 <b>UPSC HTML सूचना:</b>\n\n{b_msg.text}", parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-            else:
-                await context.bot.copy_message(chat_id=uid, from_chat_id=admin_id, message_id=b_msg.message_id)
+            await context.bot.copy_message(chat_id=uid, from_chat_id=admin_id, message_id=b_msg.message_id)
             success_count += 1
             await asyncio.sleep(0.05)
         except Exception:
             fail_count += 1
 
-    await status_msg.edit_text(f"✅ सफल: {success_count} छात्र | ❌ असफल: {fail_count}", parse_mode=ParseMode.HTML)
+    await status_msg.edit_text(f"✅ सफल ब्रॉडकास्ट: <b>{success_count}</b> छात्र | ❌ असफल: {fail_count}", parse_mode=ParseMode.HTML)
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1432,7 +1544,8 @@ async def main():
     bot_app.add_handler(CommandHandler("removeuser", remove_user_cmd))
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd))
 
-    bot_app.add_handler(CallbackQueryHandler(handle_trending_pagination, pattern=r"^trend_(next|prev)$"))
+    bot_app.add_handler(CallbackQueryHandler(handle_trending_type_selection, pattern=r"^trtype_"))
+    bot_app.add_handler(CallbackQueryHandler(handle_trending_pages, pattern=r"^trpage_"))
     bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click))
 
     bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_direct_pdf_upload))
@@ -1447,12 +1560,12 @@ async def main():
 
     broadcast_conv = ConversationHandler(
         entry_points=[CommandHandler("broadcast", broadcast_cmd)],
-        states={WAITING_BROADCAST_MSG: [MessageHandler((filters.TEXT | filters.PHOTO | filters.Document.ALL) & (~filters.COMMAND), execute_broadcast)]},
+        states={WAITING_BROADCAST_MSG: [MessageHandler(filters.ALL & (~filters.COMMAND), execute_broadcast)]},
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     bot_app.add_handler(broadcast_conv)
 
-    bot_app.add_handler(MessageHandler(filters.REPLY & filters.TEXT, handle_admin_reply_to_user))
+    bot_app.add_handler(MessageHandler(filters.REPLY, handle_admin_reply_to_user))
 
     await bot_app.initialize()
     await bot_app.start()
