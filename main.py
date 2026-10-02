@@ -3,7 +3,7 @@ import re
 import time
 import asyncio
 import sqlite3
-import json
+import urllib.parse
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
@@ -294,7 +294,7 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'\*\*भूमिका\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-intro">📌 भूमिका:</span> <p class="para">\1</p></div>', text)
     text = re.sub(r'\*\*मुख्य\s*विश्लेषणात्मक\s*बिंदु\s*[:\-]?\*\*', r'<div class="point-badge-body">📊 मुख्य विश्लेषणात्मक आयाम:</div>', text)
     text = re.sub(r'\*\*आगे\s*की\s*राह\s*\(Way\s*Forward\)\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-wf">🚀 आगे की राह (Way Forward):</span> <p class="para">\1</p></div>', text)
-    text = re.sub(r'\*\*संतुलित\s*निष्कर्ष\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-conc">⚖️ संतुलित प्रशासनिक निष्कर्ष:</span> <p class="para">\1</p></div>', text)
+    text = re.sub(r'\*\*संतुलित\s*निष्कर्ष\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-conc">⚖️️ संतुलित प्रशासनिक निष्कर्ष:</span> <p class="para">\1</p></div>', text)
 
     text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
@@ -421,6 +421,11 @@ nav.dashboard a:hover {{ background: var(--accent); color: #fff; }}
   border-radius: 6px; font-size: 0.82rem; font-weight: 700; display: inline-block; margin-bottom: 12px;
 }}
 [data-theme="dark"] .badge-src {{ background: #451a03; color: #fde68a; border-color: #78350f; }}
+.badge-art {{
+  background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; padding: 3px 8px;
+  border-radius: 6px; font-size: 0.84rem; font-weight: 700; display: inline-block; margin-right: 6px;
+}}
+[data-theme="dark"] .badge-art {{ background: #064e3b; color: #6ee7b7; border-color: #047857; }}
 .table-box {{ overflow-x: auto; margin: 18px 0; width: 100%; border-radius: 8px; border: 1px solid var(--border); }}
 table {{ width: 100%; border-collapse: collapse; text-align: left; }}
 th {{ background: var(--accent); color: #fff; padding: 12px 14px; font-size: 0.95rem; font-weight: 600; }}
@@ -462,7 +467,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 
 <header class="top-header">
   <h1>🇮🇳 {topic}</h1>
-  <div class="author-pill">✍️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
+  <div class="author-pill">✍️️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
   <div class="controls">
     <input type="text" id="searchBox" placeholder="🔍 खोजें: GS विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()" class="theme-btn">🌗 डार्क / लाइट</button>
@@ -1142,8 +1147,11 @@ async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= ADMIN GENERATE COMMAND =================
 async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if not is_authorized(user_id):
-        await update.message.reply_text(f"⛔ यह निर्माणकारी सुविधा केवल एडमिन ({AUTHOR_NAME}) के लिए आरक्षित है।")
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text(
+            f"⛔ <b>अनुमति नहीं है:</b> यह निर्माणकारी सुविधा केवल एडमिन ({AUTHOR_NAME}) के लिए आरक्षित है।",
+            parse_mode=ParseMode.HTML
+        )
         return
 
     if not context.args:
@@ -1192,6 +1200,10 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
+        await update.message.reply_text(
+            f"⛔ <b>अनुमति नहीं है:</b> यह सुविधा केवल एडमिन ({AUTHOR_NAME}) के लिए आरक्षित है।",
+            parse_mode=ParseMode.HTML
+        )
         return
     if len(context.args) < 2:
         await update.message.reply_text("💡 उपयोग: <code>/adduser &lt;user_id&gt; &lt;days&gt;</code>", parse_mode=ParseMode.HTML)
@@ -1216,6 +1228,10 @@ async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def remove_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
+        await update.message.reply_text(
+            f"⛔ <b>अनुमति नहीं है:</b> यह सुविधा केवल एडमिन ({AUTHOR_NAME}) के लिए आरक्षित है।",
+            parse_mode=ParseMode.HTML
+        )
         return
     if not context.args:
         return
@@ -1230,10 +1246,13 @@ async def remove_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ त्रुटि: {e}")
 
-# संपूर्ण पंजीकृत छात्रों की विस्तृत सूची (प्रीमियम बैज सहित)
 async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
+        await update.message.reply_text(
+            f"⛔ <b>अनुमति नहीं है:</b> यह सुविधा केवल एडमिन ({AUTHOR_NAME}) के लिए आरक्षित है।",
+            parse_mode=ParseMode.HTML
+        )
         return
     
     rows = get_all_users_detailed()
@@ -1256,7 +1275,7 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
-# ================= CONTACT / OWNER FEEDBACK =================
+# ================= CONTACT / OWNER FEEDBACK (FULLY SECURED) =================
 async def contact_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -1274,13 +1293,25 @@ async def contact_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     user_id = user.id
+    msg = update.message
+
+    # यदि यूज़र ने कोई कमांड डाल दी हो
+    if msg.text and msg.text.startswith("/"):
+        if msg.text.strip().lower() == "/cancel":
+            CONTACT_SESSIONS.pop(user_id, None)
+            await msg.reply_text("प्रक्रिया रद्द कर दी गई।")
+            return ConversationHandler.END
+        else:
+            CONTACT_SESSIONS.pop(user_id, None)
+            await msg.reply_text("⚠️ <b>सत्र रद्द:</b> आपने कमांड भेज दी थी। ओनर से संपर्क करने हेतु कृपया पुनः <code>/owner</code> चलाएं।", parse_mode=ParseMode.HTML)
+            return ConversationHandler.END
+
     start_time = CONTACT_SESSIONS.get(user_id, 0)
     if time.time() - start_time > 120:
         CONTACT_SESSIONS.pop(user_id, None)
-        await update.message.reply_text("⚠️ <b>समय समाप्त!</b> पुनः प्रयास हेतु <code>/owner</code> भेजें।", parse_mode=ParseMode.HTML)
+        await msg.reply_text("⚠️ <b>समय समाप्त!</b> पुनः प्रयास हेतु <code>/owner</code> भेजें।", parse_mode=ParseMode.HTML)
         return ConversationHandler.END
 
-    msg = update.message
     content_text = msg.text or msg.caption or "[फ़ाइल / मीडिया]"
     username_str = f"@{user.username}" if user.username else "कोई यूज़रनेम नहीं"
     user_link = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
@@ -1300,7 +1331,7 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception as e:
             print(f"Error notifying admin {admin_id}: {e}")
 
-    await update.message.reply_text("✅ <b>आपका संदेश ओनर को भेज दिया गया है!</b>", parse_mode=ParseMode.HTML)
+    await msg.reply_text("✅ <b>आपका संदेश ओनर को भेज दिया गया है!</b>", parse_mode=ParseMode.HTML)
     CONTACT_SESSIONS.pop(user_id, None)
     return ConversationHandler.END
 
@@ -1312,6 +1343,7 @@ async def handle_admin_reply_to_user(update: Update, context: ContextTypes.DEFAU
     if admin_id not in ADMIN_IDS:
         return
 
+    # यदि एडमिन किसी वीडियो/मीडिया पर रिप्लाई करके /broadcast लिख रहा है तो सीधे ब्रॉडकास्ट करें
     if msg.text and msg.text.strip().lower() == "/broadcast":
         all_uids = get_all_user_ids()
         target_msg = msg.reply_to_message
@@ -1343,6 +1375,10 @@ async def handle_admin_reply_to_user(update: Update, context: ContextTypes.DEFAU
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
+        await update.message.reply_text(
+            f"⛔ <b>अनुमति नहीं है:</b> यह सुविधा केवल एडमिन ({AUTHOR_NAME}) के लिए आरक्षित है।",
+            parse_mode=ParseMode.HTML
+        )
         return ConversationHandler.END
 
     if update.message.reply_to_message:
@@ -1431,15 +1467,16 @@ async def main():
     bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click))
 
     bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_direct_pdf_upload))
-    bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_messages))
 
+    # ओनर संपर्क सिस्टम
     contact_conv = ConversationHandler(
         entry_points=[CommandHandler("owner", contact_cmd), CommandHandler("contact", contact_cmd)],
-        states={WAITING_CONTACT_MSG: [MessageHandler(filters.TEXT & (~filters.COMMAND), forward_contact_msg)]},
+        states={WAITING_CONTACT_MSG: [MessageHandler(filters.ALL & (~filters.COMMAND), forward_contact_msg)]},
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     bot_app.add_handler(contact_conv)
 
+    # यूनिवर्सल ब्रॉडकास्ट सिस्टम
     broadcast_conv = ConversationHandler(
         entry_points=[CommandHandler("broadcast", broadcast_cmd)],
         states={WAITING_BROADCAST_MSG: [MessageHandler(filters.ALL & (~filters.COMMAND), execute_broadcast)]},
@@ -1447,6 +1484,7 @@ async def main():
     )
     bot_app.add_handler(broadcast_conv)
 
+    bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_messages))
     bot_app.add_handler(MessageHandler(filters.REPLY, handle_admin_reply_to_user))
 
     await bot_app.initialize()
