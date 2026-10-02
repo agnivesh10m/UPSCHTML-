@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
 import aiohttp
+import edge_tts
 import google.generativeai as genai
 from pypdf import PdfReader
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -54,7 +55,7 @@ WAITING_CONTACT_MSG = 1
 WAITING_BROADCAST_MSG = 2
 WAITING_ASK_SESSION = 3
 
-# DAF स्टेप-बाय-स्टेप स्टेट्स (सरल एवं फुलप्रूफ)
+# DAF स्टेप-बाय-स्टेप स्टेट्स
 DAF_NAME = 4
 DAF_STATE = 5
 DAF_COLLEGE = 6
@@ -234,7 +235,7 @@ def get_all_user_ids():
     conn.close()
     return [r[0] for r in rows]
 
-# ================= DYNAMIC GEMINI ENGINE (AUDIO & MULTIMODAL GUARANTEED) =================
+# ================= 100% RELIABLE TEXT GEMINI ENGINE =================
 def call_gemini_safely(prompt: str) -> str:
     api_k = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_k:
@@ -246,7 +247,6 @@ def call_gemini_safely(prompt: str) -> str:
     models_to_try = [
         "models/gemini-2.0-flash",
         "models/gemini-1.5-flash-latest",
-        "models/gemini-1.5-pro-latest",
         "gemini-2.0-flash",
         "gemini-1.5-flash",
         "gemini-2.5-flash"
@@ -276,32 +276,37 @@ def call_gemini_safely(prompt: str) -> str:
 
     raise Exception("कोई भी उपयुक्त AI मॉडल प्रतिक्रिया नहीं दे रहा है।")
 
-def call_gemini_multimodal(prompt: str, file_bytes: bytes, mime_type: str) -> str:
+# ================= BULLETPROOF AUDIO & IMAGE ENGINE (FILES API) =================
+def call_gemini_multimodal(prompt: str, file_path: str, mime_type: str) -> str:
     api_k = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_k:
         raise Exception("API Key सर्वर पर सेट नहीं है।")
 
     genai.configure(api_key=api_k)
 
-    # वॉयस मैसेज (.ogg) के लिए सुरक्षित MIME टाइप
-    if "ogg" in mime_type.lower() or "opus" in mime_type.lower():
-        mime_type = "audio/ogg"
+    # 1. Google Files API के ज़रिए ऑडियो/इमेज सीधे अपलोड करें
+    uploaded_file = None
+    try:
+        uploaded_file = genai.upload_file(path=file_path, mime_type=mime_type)
+    except Exception as e:
+        raise Exception(f"फ़ाइल अपलोड विफल: {e}")
 
     preferred_models = [
         "models/gemini-2.0-flash",
         "models/gemini-1.5-flash-latest",
         "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-2.5-flash"
+        "gemini-1.5-flash"
     ]
-
-    parts = [{"mime_type": mime_type, "data": file_bytes}, prompt]
 
     for m_name in preferred_models:
         try:
             model = genai.GenerativeModel(m_name)
-            resp = model.generate_content(parts)
+            resp = model.generate_content([uploaded_file, prompt])
             if resp and resp.text:
+                try:
+                    uploaded_file.delete()
+                except Exception:
+                    pass
                 return resp.text
         except Exception:
             continue
@@ -311,48 +316,37 @@ def call_gemini_multimodal(prompt: str, file_bytes: bytes, mime_type: str) -> st
             if 'generateContent' in m.supported_generation_methods:
                 try:
                     model = genai.GenerativeModel(m.name)
-                    resp = model.generate_content(parts)
+                    resp = model.generate_content([uploaded_file, prompt])
                     if resp and resp.text:
+                        try:
+                            uploaded_file.delete()
+                        except Exception:
+                            pass
                         return resp.text
                 except Exception:
                     continue
     except Exception as e:
-        raise Exception(f"मल्टीमॉडल विश्लेषण त्रुटि: {e}")
+        pass
 
-    raise Exception("ऑडियो पढ़ने वाला मॉडल वर्तमान में उपलब्ध नहीं है।")
+    try:
+        uploaded_file.delete()
+    except Exception:
+        pass
 
-# ================= AUDIO ENGINE (FULL COMPLETE AUDIO STREAM) =================
+    raise Exception("ऑडियो का विश्लेषण करने में असमर्थ।")
+
+# ================= EDGE-TTS AUDIO GENERATOR (NO CUTOFF / 100% CLEAR) =================
 async def download_audio_stream(text: str) -> bytes:
     clean_text = re.sub(r'[\*\_#`]', '', text).strip()
-    sentences = re.split(r'([।\.\?!;\n]+)', clean_text)
-    chunks = []
-    curr = ""
-    for s in sentences:
-        if len(curr) + len(s) < 170:
-            curr += s
-        else:
-            if curr.strip():
-                chunks.append(curr.strip())
-            curr = s
-    if curr.strip():
-        chunks.append(curr.strip())
-
-    if not chunks:
-        chunks = [clean_text[:170]]
-
-    combined_audio = bytearray()
-    async with aiohttp.ClientSession() as session:
-        for chunk in chunks:
-            encoded = urllib.parse.quote(chunk)
-            tts_url = f"https://all-api-free-text-to-speech-v1-five.vercel.app/api/tts?text={encoded}&lang=hi"
-            try:
-                async with session.get(tts_url, timeout=15) as r:
-                    if r.status == 200:
-                        data = await r.read()
-                        combined_audio.extend(data)
-            except Exception:
-                pass
-    return bytes(combined_audio)
+    clean_text = clean_text.replace("\n", " ")
+    
+    # edge-tts से शुद्ध भारतीय हिंदी आवाज़ (Swara)
+    communicate = edge_tts.Communicate(clean_text, "hi-IN-SwaraNeural")
+    audio_stream = bytearray()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_stream.extend(chunk["data"])
+    return bytes(audio_stream)
 
 # ================= ROBUST TABLE & VISUAL BUILDER =================
 def create_standalone_vector_map(place_name: str) -> str:
@@ -467,7 +461,7 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
             
             clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|\d+|[:\.\-\s])+', '', title_text).strip()
             clean_tab_name = re.sub(r'^[0-9]+\s*[:\.\-]?\s*', '', clean_tab_name).strip()
-            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️️🔍📝🛣️❄️🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
+            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️❄️️🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
             
             if not clean_tab_name:
                 clean_tab_name = f"विषय {sec_idx}"
@@ -585,7 +579,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 
 <header class="top-header">
   <h1>🇮🇳 {topic}</h1>
-  <div class="author-pill">✍️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
+  <div class="author-pill">✍️️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
   <div class="controls">
     <input type="text" id="searchBox" placeholder="🔍 खोजें: GS विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()" class="theme-btn">🌗 डार्क / लाइट</button>
@@ -897,18 +891,18 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
         await wait_m.edit_text(f"❌ त्रुटि: {e}")
 
 # ================= 20MB+ SECURE DOWNLOAD HELPER =================
-async def download_file_safely(msg, context: ContextTypes.DEFAULT_TYPE) -> bytearray:
+async def download_file_to_disk(msg, context: ContextTypes.DEFAULT_TYPE, target_path: str):
     if TELETHON_AVAILABLE and TELEGRAM_API_ID and TELEGRAM_API_HASH and telethon_client:
         try:
-            out_buf = io.BytesIO()
-            await telethon_client.download_media(msg.message_id, out_buf)
-            return bytearray(out_buf.getvalue())
+            await telethon_client.download_media(msg.message_id, target_path)
+            return True
         except Exception:
             pass
 
     doc = msg.document or (msg.photo[-1] if msg.photo else (msg.voice or msg.audio))
     f_obj = await doc.get_file()
-    return await f_obj.download_as_bytearray()
+    await f_obj.download_to_drive(target_path)
+    return True
 
 # ================= UPSC 2-STEP ANSWER COPY CHECKING (/checkanswer) =================
 async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -938,22 +932,31 @@ async def handle_question_text_step(update: Update, context: ContextTypes.DEFAUL
         q_content = msg.text.strip()
     elif msg.voice or msg.audio:
         wait_m = await msg.reply_text("🎧 प्रश्न का ऑडियो सुना जा रहा है...")
+        tmp_voice = f"tmp_q_{user_id}_{int(time.time())}.ogg"
         try:
-            f_bytes = await download_file_safely(msg, context)
-            m_type = "audio/ogg" if msg.voice else "audio/mpeg"
-            q_content = await asyncio.to_thread(call_gemini_multimodal, "इस ऑडियो में बोले गए UPSC मुख्य परीक्षा के प्रश्न को निकालें।", bytes(f_bytes), m_type)
+            await download_file_to_disk(msg, context, tmp_voice)
+            q_content = await asyncio.to_thread(call_gemini_multimodal, "इस ऑडियो में बोले गए UPSC मुख्य परीक्षा के प्रश्न को टेक्स्ट में निकालें।", tmp_voice, "audio/ogg")
             await wait_m.delete()
         except Exception as e:
             await wait_m.edit_text(f"❌ ऑडियो पढ़ने में त्रुटि: {e}। कृपया टेक्स्ट में लिखें।")
+            if os.path.exists(tmp_voice):
+                os.remove(tmp_voice)
             return WAITING_QUESTION_TEXT
+        finally:
+            if os.path.exists(tmp_voice):
+                os.remove(tmp_voice)
     elif msg.photo:
         wait_m = await msg.reply_text("🖼️ प्रश्न की फ़ोटो पढ़ी जा रही है...")
+        tmp_img = f"tmp_q_{user_id}_{int(time.time())}.jpg"
         try:
-            f_bytes = await download_file_safely(msg, context)
-            q_content = await asyncio.to_thread(call_gemini_multimodal, "इस फ़ोटो में लिखे UPSC प्रश्न को निकालें।", bytes(f_bytes), "image/jpeg")
+            await download_file_to_disk(msg, context, tmp_img)
+            q_content = await asyncio.to_thread(call_gemini_multimodal, "इस फ़ोटो में लिखे UPSC प्रश्न को निकालें।", tmp_img, "image/jpeg")
             await wait_m.delete()
         except Exception:
             q_content = "संलग्न फ़ोटो में दिया गया प्रश्न"
+        finally:
+            if os.path.exists(tmp_img):
+                os.remove(tmp_img)
 
     CHECK_ANSWER_CACHE[user_id] = q_content
 
@@ -982,10 +985,17 @@ async def handle_answer_copy_submission(update: Update, context: ContextTypes.DE
 4. 🚀 परीक्षक की मूल्य संवर्धन सलाह (Value Addition): (आगे की राह व निष्कर्ष को बेहतर बनाने के सुझाव)
 सहानुभूतिपूर्ण, प्रेरक एवं गंभीर हिंदी में उत्तर दें।
 """
+    tmp_file = f"tmp_ans_{user_id}_{int(time.time())}"
+    m_type = "image/jpeg"
+    if msg.document and msg.document.file_name.lower().endswith('.pdf'):
+        tmp_file += ".pdf"
+        m_type = "application/pdf"
+    else:
+        tmp_file += ".jpg"
+
     try:
-        f_bytes = await download_file_safely(msg, context)
-        m_type = "application/pdf" if (msg.document and msg.document.file_name.lower().endswith('.pdf')) else "image/jpeg"
-        eval_result = await asyncio.to_thread(call_gemini_multimodal, prompt, bytes(f_bytes), m_type)
+        await download_file_to_disk(msg, context, tmp_file)
+        eval_result = await asyncio.to_thread(call_gemini_multimodal, prompt, tmp_file, m_type)
 
         clean_eval = clean_all_markdown_and_fix_content(eval_result)
         await wait_m.delete()
@@ -999,6 +1009,9 @@ async def handle_answer_copy_submission(update: Update, context: ContextTypes.DE
 
     except Exception as e:
         await wait_m.edit_text(f"❌ मूल्यांकन में त्रुटि: {e}। कृपया साफ़ फ़ोटो या PDF भेजें।")
+    finally:
+        if os.path.exists(tmp_file):
+            os.remove(tmp_file)
 
     CHECK_ANSWER_CACHE.pop(user_id, None)
     return ConversationHandler.END
@@ -1017,9 +1030,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
     temp_pdf = f"temp_{user_id}_{int(time.time())}.pdf"
     
     try:
-        f_bytes = await download_file_safely(msg, context)
-        with open(temp_pdf, "wb") as f:
-            f.write(f_bytes)
+        await download_file_to_disk(msg, context, temp_pdf)
 
         reader = PdfReader(temp_pdf)
         pdf_text = ""
@@ -1030,7 +1041,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
 
         if not pdf_text.strip():
             prompt = "इस PDF सामग्री का UPSC सिविल सेवा परीक्षा के स्तर पर संपूर्ण 360° अध्ययन नोट्स शुद्ध 2-कॉलम HTML सारणी व मेन्स फ्रेमवर्क सहित तैयार करें।"
-            ai_notes = await asyncio.to_thread(call_gemini_multimodal, prompt, bytes(f_bytes), "application/pdf")
+            ai_notes = await asyncio.to_thread(call_gemini_multimodal, prompt, temp_pdf, "application/pdf")
         else:
             clean_title = doc.file_name.replace(".pdf", "")[:35]
             prompt = f"""
@@ -1235,7 +1246,7 @@ async def ask_interview_situational_question(update: Update, context: ContextTyp
             audio_io.name = f"UPSC_Interview_Question_{curr_round}.mp3"
             await update.effective_message.reply_voice(
                 voice=audio_io,
-                caption=f"🎙️️ साक्षात्कार प्रश्न {curr_round}/{total_rounds} | {AUTHOR_NAME}"
+                caption=f"🎙 साक्षात्कार प्रश्न {curr_round}/{total_rounds} | {AUTHOR_NAME}"
             )
 
     except Exception as e:
@@ -1261,9 +1272,10 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 
     wait_m = await update.message.reply_text("🎧 <b>बोर्ड आपके मौखिक उत्तर का विश्लेषण कर रहा है...</b>", parse_mode=ParseMode.HTML)
 
+    tmp_voice_path = f"cand_voice_{user_id}_{int(time.time())}.ogg"
+
     try:
-        f_bytes = await download_file_safely(update.message, context)
-        mime_type = "audio/ogg" if update.message.voice else "audio/mpeg"
+        await download_file_to_disk(update.message, context, tmp_voice_path)
 
         is_last = (curr >= tot)
         last_inst = "यह अंतिम उत्तर था, अतः 275 में से प्राप्तांक, प्रशासनिक मानसिकता, संतुलन व कमियों की अंतिम रिपोर्ट दें।" if is_last else "2 पंक्तियों में मूल्यांकन करें और अगले प्रश्न के लिए तैयार रहने को कहें।"
@@ -1273,7 +1285,7 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 {last_inst}
 {c_name} जी कहकर संबोधित करें। भाषा प्रेरणादायी व गरिमापूर्ण रखें।
 """
-        eval_resp = await asyncio.to_thread(call_gemini_multimodal, eval_prompt, bytes(f_bytes), mime_type)
+        eval_resp = await asyncio.to_thread(call_gemini_multimodal, eval_prompt, tmp_voice_path, "audio/ogg")
         clean_resp = eval_resp.strip()
 
         audio_bytes = await download_audio_stream(clean_resp[:300])
@@ -1304,6 +1316,9 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
     except Exception as e:
         await wait_m.edit_text(f"❌ वॉयस प्रोसेसिंग में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
         return WAITING_INTERVIEW_VOICE
+    finally:
+        if os.path.exists(tmp_voice_path):
+            os.remove(tmp_voice_path)
 
 # ================= CONTINUOUS ASK MENTORSHIP SESSION =================
 async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
