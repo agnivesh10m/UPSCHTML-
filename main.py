@@ -5,6 +5,7 @@ import asyncio
 import sqlite3
 import json
 import io
+import base64
 import urllib.parse
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -245,11 +246,9 @@ def call_gemini_safely(prompt: str) -> str:
     generation_config = {"temperature": 0.25, "max_output_tokens": 8192}
 
     models_to_try = [
-        "models/gemini-2.0-flash",
-        "models/gemini-1.5-flash-latest",
         "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-2.5-flash"
+        "gemini-2.5-flash",
+        "gemini-1.5-flash"
     ]
 
     for m_name in models_to_try:
@@ -257,81 +256,44 @@ def call_gemini_safely(prompt: str) -> str:
             model = genai.GenerativeModel(m_name, generation_config=generation_config)
             resp = model.generate_content(prompt)
             if resp and resp.text:
-                return resp.text
+                clean_res = resp.text.strip()
+                clean_res = re.sub(r'^(?:\*|\-|\#)?\s*(?:Role|Candidate|Home State|Requirement|Specific Constraint|Draft|Language)[\s\S]*?(?=सचिन|नमस्कार|मान लीजिए|प्रश्न|\n\n)', '', clean_res, flags=re.IGNORECASE)
+                return clean_res.strip()
         except Exception:
             continue
 
-    try:
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                try:
-                    model = genai.GenerativeModel(m.name, generation_config=generation_config)
-                    resp = model.generate_content(prompt)
-                    if resp and resp.text:
-                        return resp.text
-                except Exception:
-                    continue
-    except Exception as e:
-        raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {e}")
+    raise Exception("AI सर्वर कनेक्ट नहीं हो सका। कृपया API Key जांचें।")
 
-    raise Exception("कोई भी उपयुक्त AI मॉडल प्रतिक्रिया नहीं दे रहा है।")
-
-# ================= BULLETPROOF AUDIO & IMAGE ENGINE (FILES API) =================
-def call_gemini_multimodal(prompt: str, file_path: str, mime_type: str) -> str:
+# ================= INLINE AUDIO / MULTIMODAL (ZERO UPLOAD ERROR) =================
+def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str) -> str:
     api_k = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_k:
         raise Exception("API Key सर्वर पर सेट नहीं है।")
 
     genai.configure(api_key=api_k)
 
-    # 1. Google Files API के ज़रिए ऑडियो/इमेज सीधे अपलोड करें
-    uploaded_file = None
-    try:
-        uploaded_file = genai.upload_file(path=file_path, mime_type=mime_type)
-    except Exception as e:
-        raise Exception(f"फ़ाइल अपलोड विफल: {e}")
+    if "ogg" in mime_type.lower() or "opus" in mime_type.lower():
+        mime_type = "audio/ogg"
 
-    preferred_models = [
-        "models/gemini-2.0-flash",
-        "models/gemini-1.5-flash-latest",
+    part = {
+        "mime_type": mime_type,
+        "data": file_bytes
+    }
+
+    models_to_try = [
         "gemini-2.0-flash",
+        "gemini-2.5-flash",
         "gemini-1.5-flash"
     ]
 
-    for m_name in preferred_models:
+    for m_name in models_to_try:
         try:
             model = genai.GenerativeModel(m_name)
-            resp = model.generate_content([uploaded_file, prompt])
+            resp = model.generate_content([part, prompt])
             if resp and resp.text:
-                try:
-                    uploaded_file.delete()
-                except Exception:
-                    pass
-                return resp.text
+                return resp.text.strip()
         except Exception:
             continue
-
-    try:
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                try:
-                    model = genai.GenerativeModel(m.name)
-                    resp = model.generate_content([uploaded_file, prompt])
-                    if resp and resp.text:
-                        try:
-                            uploaded_file.delete()
-                        except Exception:
-                            pass
-                        return resp.text
-                except Exception:
-                    continue
-    except Exception as e:
-        pass
-
-    try:
-        uploaded_file.delete()
-    except Exception:
-        pass
 
     raise Exception("ऑडियो का विश्लेषण करने में असमर्थ।")
 
@@ -340,7 +302,6 @@ async def download_audio_stream(text: str) -> bytes:
     clean_text = re.sub(r'[\*\_#`]', '', text).strip()
     clean_text = clean_text.replace("\n", " ")
     
-    # edge-tts से शुद्ध भारतीय हिंदी आवाज़ (Swara)
     communicate = edge_tts.Communicate(clean_text, "hi-IN-SwaraNeural")
     audio_stream = bytearray()
     async for chunk in communicate.stream():
@@ -579,7 +540,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 
 <header class="top-header">
   <h1>🇮🇳 {topic}</h1>
-  <div class="author-pill">✍️️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
+  <div class="author-pill">✍️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
   <div class="controls">
     <input type="text" id="searchBox" placeholder="🔍 खोजें: GS विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()" class="theme-btn">🌗 डार्क / लाइट</button>
@@ -673,7 +634,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
         "1️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF भरने के बाद बॉट आपकी पृष्ठभूमि के आधार पर प्रशासनिक स्थितिजन्य प्रश्न ऑडियो में पूछेगा। आप बोलकर उत्तर रिकॉर्ड करें, बॉट सुनकर मूल्यांकन व रिपोर्ट देगा।\n\n"
-        "2️⃣ <b>कॉपी चेकिंग (`/checkanswer`):</b> पहले प्रश्न टाइप/बोलें, फिर अपनी उत्तर पुस्तिका की फोटो या PDF (20MB+ समर्थित) भेजें।\n\n"
+        "2️⃣ <b>कॉपी चेकिंग (`/checkanswer`):</b> पहले प्रश्न टाइप/बोलें, फिर अपनी उत्तर पुस्तिका की फोटो या PDF भेजें।\n\n"
         "3️⃣ <b>मुख्य परीक्षा (`/mains`):</b> PYQs या नए संभावित प्रश्नों के चयन के साथ उत्तर-लेखन मॉडल प्राप्त करें। बैक बटन की सुविधा भी उपलब्ध है।\n\n"
         "4️⃣ <b>क्विज़ (`/quiz`):</b> विषयवार 5, 10, 15 या 20 प्रश्नों की स्वच्छ स्टैंडअलोन HTML टेस्ट फाइल प्राप्त करें।"
     )
@@ -751,7 +712,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     prompt = f"""
 विषय: '{subj}' पर UPSC Prelims स्तर के {cnt} प्रश्न कथन आधारित तैयार करें।
 प्रत्येक प्रश्न में स्पष्ट क्रमांक (जैसे प्रश्न 1:, प्रश्न 2:...), 4 विकल्प (a, b, c, d), सही उत्तर और आधिकारिक 2-पंक्ति व्याख्या अवश्य लिखें।
-मार्कडाउन स्टार्स का प्रयोग न करें।
+मार्कडाउन स्टार्स का प्रयोग न करें। भाषा केवल और केवल शुद्ध हिंदी रखें।
 """
     try:
         ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -865,7 +826,7 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
 3. मुख्य भाग (3 स्पष्ट विश्लेषणात्मक बिंदु, उप-शीर्षक और उदाहरण)
 4. आगे की राह (Way Forward)
 5. संतुलित प्रशासनिक निष्कर्ष
-तालिकाओं में मानक HTML का प्रयोग करें।
+तालिकाओं में मानक HTML का प्रयोग करें। भाषा केवल और केवल शुद्ध हिंदी रखें।
 """
     try:
         resp = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -935,7 +896,9 @@ async def handle_question_text_step(update: Update, context: ContextTypes.DEFAUL
         tmp_voice = f"tmp_q_{user_id}_{int(time.time())}.ogg"
         try:
             await download_file_to_disk(msg, context, tmp_voice)
-            q_content = await asyncio.to_thread(call_gemini_multimodal, "इस ऑडियो में बोले गए UPSC मुख्य परीक्षा के प्रश्न को टेक्स्ट में निकालें।", tmp_voice, "audio/ogg")
+            with open(tmp_voice, "rb") as f:
+                f_bytes = f.read()
+            q_content = await asyncio.to_thread(call_gemini_multimodal_inline, "इस ऑडियो में बोले गए UPSC मुख्य परीक्षा के प्रश्न को शुद्ध हिंदी में निकालें।", f_bytes, "audio/ogg")
             await wait_m.delete()
         except Exception as e:
             await wait_m.edit_text(f"❌ ऑडियो पढ़ने में त्रुटि: {e}। कृपया टेक्स्ट में लिखें।")
@@ -950,7 +913,9 @@ async def handle_question_text_step(update: Update, context: ContextTypes.DEFAUL
         tmp_img = f"tmp_q_{user_id}_{int(time.time())}.jpg"
         try:
             await download_file_to_disk(msg, context, tmp_img)
-            q_content = await asyncio.to_thread(call_gemini_multimodal, "इस फ़ोटो में लिखे UPSC प्रश्न को निकालें।", tmp_img, "image/jpeg")
+            with open(tmp_img, "rb") as f:
+                f_bytes = f.read()
+            q_content = await asyncio.to_thread(call_gemini_multimodal_inline, "इस फ़ोटो में लिखे UPSC प्रश्न को निकालें।", f_bytes, "image/jpeg")
             await wait_m.delete()
         except Exception:
             q_content = "संलग्न फ़ोटो में दिया गया प्रश्न"
@@ -983,7 +948,7 @@ async def handle_answer_copy_submission(update: Update, context: ContextTypes.DE
 2. 🌟 सकारात्मक पक्ष (Strengths): (भूमिका, स्पष्टता, मुख्य बिंदु)
 3. ⚠️ संरचनात्मक कमियाँ (Areas of Improvement): (प्रमाणिक डेटा, आरेख, अनुच्छेदों की कमी)
 4. 🚀 परीक्षक की मूल्य संवर्धन सलाह (Value Addition): (आगे की राह व निष्कर्ष को बेहतर बनाने के सुझाव)
-सहानुभूतिपूर्ण, प्रेरक एवं गंभीर हिंदी में उत्तर दें।
+केवल और केवल शुद्ध एवं गरिमापूर्ण हिंदी में उत्तर दें।
 """
     tmp_file = f"tmp_ans_{user_id}_{int(time.time())}"
     m_type = "image/jpeg"
@@ -995,7 +960,10 @@ async def handle_answer_copy_submission(update: Update, context: ContextTypes.DE
 
     try:
         await download_file_to_disk(msg, context, tmp_file)
-        eval_result = await asyncio.to_thread(call_gemini_multimodal, prompt, tmp_file, m_type)
+        with open(tmp_file, "rb") as f:
+            f_bytes = f.read()
+
+        eval_result = await asyncio.to_thread(call_gemini_multimodal_inline, prompt, f_bytes, m_type)
 
         clean_eval = clean_all_markdown_and_fix_content(eval_result)
         await wait_m.delete()
@@ -1040,8 +1008,10 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
                 pdf_text += t + "\n"
 
         if not pdf_text.strip():
+            with open(temp_pdf, "rb") as f:
+                f_bytes = f.read()
             prompt = "इस PDF सामग्री का UPSC सिविल सेवा परीक्षा के स्तर पर संपूर्ण 360° अध्ययन नोट्स शुद्ध 2-कॉलम HTML सारणी व मेन्स फ्रेमवर्क सहित तैयार करें।"
-            ai_notes = await asyncio.to_thread(call_gemini_multimodal, prompt, temp_pdf, "application/pdf")
+            ai_notes = await asyncio.to_thread(call_gemini_multimodal_inline, prompt, f_bytes, "application/pdf")
         else:
             clean_title = doc.file_name.replace(".pdf", "")[:35]
             prompt = f"""
@@ -1049,7 +1019,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
 शीर्षक: "{clean_title}"
 सामग्री:
 "{pdf_text[:4500]}"
-नियम: 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, प्रीलिम्स फैक्ट्स और अभ्यास प्रश्न शामिल करें।
+नियम: 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, प्रीलिम्स फैक्ट्स और अभ्यास प्रश्न शामिल करें। केवल हिंदी में लिखें।
 """
             ai_notes = await asyncio.to_thread(call_gemini_safely, prompt)
 
@@ -1225,13 +1195,16 @@ async def ask_interview_situational_question(update: Update, context: ContextTyp
 वैकल्पिक विषय व प्रयास: {optional_sub}
 वर्तमान प्रश्न संख्या: {curr_round} / {total_rounds}
 
-उम्मीदवार {name} जी का नाम लेकर एक संक्षिप्त (केवल 3-4 पंक्तियों का), विनम्र और सीधा प्रशासनिक स्थितिजन्य (Situational) प्रश्न पूछें।
-यदि वैकल्पिक विषय भूगोल/संबंधित है तो भौगोलिक या प्रशासनिक निर्णय-प्रक्रिया से जोड़ें।
+सख्त निर्देश:
+- आपको केवल और केवल शुद्ध हिंदी भाषा में ही बोलना और लिखना है। कोई भी अंग्रेजी शब्द, सिस्टम निर्देश (Role, Requirement, Draft) बाहर नहीं दिखना चाहिए।
+- सीधे उम्मीदवार {name} जी का नाम लेकर 3-4 पंक्तियों का विनम्र, व्यावहारिक एवं गंभीर प्रशासनिक स्थितिजन्य प्रश्न पूछें।
+- यदि वैकल्पिक विषय भूगोल/संबंधित है तो भौगोलिक या प्रशासनिक निर्णय-प्रक्रिया से जोड़ें।
 """
     try:
         q_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_q = q_text.strip()
-        
+        clean_q = re.sub(r'^(?:\*|\-|\#)?\s*(?:Role|Candidate|Home State|Requirement|Specific Constraint|Draft|Language)[\s\S]*?(?=सचिन|नमस्कार|मान लीजिए|प्रश्न|\n\n)', '', clean_q, flags=re.IGNORECASE).strip()
+
         audio_bytes = await download_audio_stream(clean_q)
         await wait_m.delete()
 
@@ -1246,7 +1219,7 @@ async def ask_interview_situational_question(update: Update, context: ContextTyp
             audio_io.name = f"UPSC_Interview_Question_{curr_round}.mp3"
             await update.effective_message.reply_voice(
                 voice=audio_io,
-                caption=f"🎙 साक्षात्कार प्रश्न {curr_round}/{total_rounds} | {AUTHOR_NAME}"
+                caption=f"🎙️ साक्षात्कार प्रश्न {curr_round}/{total_rounds} | {AUTHOR_NAME}"
             )
 
     except Exception as e:
@@ -1276,16 +1249,19 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 
     try:
         await download_file_to_disk(update.message, context, tmp_voice_path)
+        with open(tmp_voice_path, "rb") as f:
+            v_bytes = f.read()
 
         is_last = (curr >= tot)
         last_inst = "यह अंतिम उत्तर था, अतः 275 में से प्राप्तांक, प्रशासनिक मानसिकता, संतुलन व कमियों की अंतिम रिपोर्ट दें।" if is_last else "2 पंक्तियों में मूल्यांकन करें और अगले प्रश्न के लिए तैयार रहने को कहें।"
 
         eval_prompt = f"""
 उम्मीदवार {c_name} ने UPSC साक्षात्कार के प्रश्न {curr}/{tot} का मौखिक उत्तर दिया है।
+सख्त निर्देश: केवल और केवल शुद्ध हिंदी भाषा में ही उत्तर दें। कोई भी अंग्रेजी शब्द न लिखें।
 {last_inst}
 {c_name} जी कहकर संबोधित करें। भाषा प्रेरणादायी व गरिमापूर्ण रखें।
 """
-        eval_resp = await asyncio.to_thread(call_gemini_multimodal, eval_prompt, tmp_voice_path, "audio/ogg")
+        eval_resp = await asyncio.to_thread(call_gemini_multimodal_inline, eval_prompt, v_bytes, "audio/ogg")
         clean_resp = eval_resp.strip()
 
         audio_bytes = await download_audio_stream(clean_resp[:300])
@@ -1367,7 +1343,7 @@ async def handle_ask_continuous_message(update: Update, context: ContextTypes.DE
         prompt = f"""
 आप UPSC मेंटर हैं। निम्नलिखित विषय का बिंदुवार, सटीक एवं संतुलित प्रशासनिक विश्लेषण दें।
 विषय: '{user_query}'
-सख्त नियम: मार्कडाउन स्टार्स का प्रयोग न करें।
+सख्त नियम: मार्कडाउन स्टार्स का प्रयोग न करें। भाषा केवल और केवल शुद्ध हिंदी रखें।
 """
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_reply = clean_all_markdown_and_fix_content(reply_text)
@@ -1419,13 +1395,13 @@ async def handle_trending_type_selection(update: Update, context: ContextTypes.D
 
     if tr_type == "daily":
         scope_str = f"आज ({today})"
-        prompt = f"आज {today} के संदर्भ में UPSC CSE परीक्षा हेतु 9 सबसे महत्वपूर्ण ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें।"
+        prompt = f"आज {today} के संदर्भ में UPSC CSE परीक्षा हेतु 9 सबसे महत्वपूर्ण ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
     elif tr_type == "monthly":
         scope_str = f"माह ({current_month})"
-        prompt = f"माह {current_month} के 9 सबसे महत्वपूर्ण नीतिगत, अंतर्राष्ट्रीय एवं पर्यावरणीय ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें।"
+        prompt = f"माह {current_month} के 9 सबसे महत्वपूर्ण नीतिगत, अंतर्राष्ट्रीय एवं पर्यावरणीय ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
     else:
         scope_str = f"वर्ष {current_year}"
-        prompt = f"वर्ष {current_year} के 9 सबसे बड़े राष्ट्रीय व वैश्विक ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें।"
+        prompt = f"वर्ष {current_year} के 9 सबसे बड़े राष्ट्रीय व वैश्विक ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
 
     wait_m = await query.message.reply_text(f"🛰 <b>{scope_str}</b> के ट्रेंडिंग मुद्दों का रडार संकलन हो रहा है...", parse_mode=ParseMode.HTML)
     try:
@@ -1572,7 +1548,7 @@ async def process_dynamic_generation(user_id, data, context):
 2. सभी तालिकाओं को केवल शुद्ध HTML (<div class="table-box"><table><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table></div>) में लिखें।
 3. मैपिंग सेक्शन में स्थान का नाम स्पष्ट लिखें (जैसे मन्नार की खाड़ी, कच्छ का रण, होर्मुज़ आदि)।
 4. मेन्स फ्रेमवर्क के प्रत्येक बिंदु को पूरा लिखें।
-5. अंत में संकलन के मुख्य बिंदुओं पर आधारित 5 मानक अभ्यास MCQs जोड़ें (प्रश्न 1:, प्रश्न 2:... प्रारूप में)।
+5. अंत में संकलन के मुख्य बिंदुओं पर आधारित 5 मानक अभ्यास MCQs जोड़ें (प्रश्न 1:, प्रश्न 2:... प्रारूप में)। केवल हिंदी भाषा का प्रयोग करें।
 """
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1602,7 +1578,7 @@ async def process_dynamic_generation(user_id, data, context):
 4. विज्ञान एवं प्रौद्योगिकी (GS-3): अंतरिक्ष मिशन, रक्षा सौदे, क्वांटम व AI।
 5. चर्चित स्थल एवं मैपिंग (Places in News)।
 6. इस पूरे महीने पर आधारित अभ्यास MCQs (प्रश्न 1:, प्रश्न 2:... प्रारूप में व्याख्या सहित)।
-सभी तालिकाओं को शुद्ध HTML में लिखें।
+सभी तालिकाओं को शुद्ध HTML में लिखें। केवल हिंदी भाषा का प्रयोग करें।
 """
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1632,7 +1608,7 @@ async def process_dynamic_generation(user_id, data, context):
 4. विज्ञान, अंतरिक्ष एवं रक्षा (Sci & Tech, Defense): गगनयान, स्वदेशी रक्षा प्रणालियां, क्वांटम मिशन।
 5. चर्चित स्थल एवं मैपिंग (Places in News): पूरे वर्ष चर्चा में रहे 5-6 राष्ट्रीय व वैश्विक स्थल।
 6. पूरे वर्ष के घटनाक्रमों पर आधारित अभ्यास MCQs (प्रश्न 1:, प्रश्न 2:... प्रारूप में व्याख्या सहित)।
-सभी तालिकाओं को मानक HTML में ही लिखें।
+सभी तालिकाओं को मानक HTML में ही लिखें। केवल हिंदी भाषा का प्रयोग करें।
 """
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1655,10 +1631,10 @@ async def process_dynamic_generation(user_id, data, context):
             days_since_mon = today.weekday()
             mon_dt = today - timedelta(days=days_since_mon)
             period_label = f"{mon_dt.strftime('%d %B')} से {today.strftime('%d %B %Y')} (चालू सप्ताह, आज तक)"
-            prompt = f"सप्ताह की शुरुआत ({mon_dt.strftime('%Y-%m-%d')}) से लेकर आज ({today.strftime('%Y-%m-%d')}) तक के {days_since_mon + 1} दिनों के महत्वपूर्ण UPSC घटनाक्रमों का संपूर्ण विस्तृत रिवीजन तैयार करें। आगे की किसी भी काल्पनिक तारीख का उल्लेख न करें। अंत में अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) अवश्य दें।"
+            prompt = f"सप्ताह की शुरुआत ({mon_dt.strftime('%Y-%m-%d')}) से लेकर आज ({today.strftime('%Y-%m-%d')}) तक के {days_since_mon + 1} दिनों के महत्वपूर्ण UPSC घटनाक्रमों का संपूर्ण विस्तृत रिवीजन तैयार करें। आगे की किसी भी काल्पनिक तारीख का उल्लेख न करें। अंत में अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) अवश्य दें। केवल हिंदी भाषा का प्रयोग करें।"
         else:
             period_label = f"विगत पूर्ण सप्ताह (7 दिवसीय रिवीजन)"
-            prompt = f"विगत पूर्ण सप्ताह के मुख्य UPSC घटनाक्रमों का संपूर्ण 7-दिवसीय रिवीजन डाइजेस्ट HTML टेबल्स और अभ्यास प्रश्नों के साथ विस्तृत रूप में तैयार करें।"
+            prompt = f"विगत पूर्ण सप्ताह के मुख्य UPSC घटनाक्रमों का संपूर्ण 7-दिवसीय रिवीजन डाइजेस्ट HTML टेबल्स और अभ्यास प्रश्नों के साथ विस्तृत रूप में तैयार करें। केवल हिंदी भाषा का प्रयोग करें।"
 
         wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ <b>{period_label}</b> का संपूर्ण रिवीजन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         try:
@@ -1770,7 +1746,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 सख्त नियम:
 1. सभी मुद्दों में संदर्भ, चर्चा में क्यों, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क अनिवार्य रूप से दें।
 2. प्रत्येक विषय के अंत में अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) व्याख्या सहित दें।
-3. कोई भी कच्चा कोड या पाइप टेबल न लिखें।
+3. कोई भी कच्चा कोड या पाइप टेबल न लिखें। केवल हिंदी भाषा का प्रयोग करें।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1812,7 +1788,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC सिविल सेवा परीक्षा हेतु अत्यंत विस्तृत 360° विश्लेषण तैयार करें।
 सूची:
 "{raw_trend}"
-नियम: संदर्भ, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, और अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) दें। कोई भी कच्चा कोड न लिखें।
+नियम: संदर्भ, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, और अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) दें। कोई भी कच्चा कोड न लिखें। केवल हिंदी भाषा का प्रयोग करें।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1866,7 +1842,7 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 सख्त नियम:
 1. 2-कॉलम HTML सारणी (<div class="table-box"><table>...</table></div>), मेन्स फ्रेमवर्क शुद्ध HTML में लिखें।
 2. अंत में अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) व्याख्या सहित अवश्य दें।
-3. कोई कच्चा कोड न लिखें। मार्कडाउन स्टार्स का प्रयोग न करें।
+3. कोई कच्चा कोड न लिखें। मार्कडाउन स्टार्स का प्रयोग न करें। केवल हिंदी भाषा का प्रयोग करें।
 """
         ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_topic = f"दैनिक समसामयिक महा-संकलन — {query}"[:40]
