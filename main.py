@@ -467,7 +467,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 
 <header class="top-header">
   <h1>🇮🇳 {topic}</h1>
-  <div class="author-pill">✍️️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
+  <div class="author-pill">✍️ संकलन: {AUTHOR_NAME} | {CHANNEL_NAME}</div>
   <div class="controls">
     <input type="text" id="searchBox" placeholder="🔍 खोजें: GS विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()" class="theme-btn">🌗 डार्क / लाइट</button>
@@ -911,6 +911,65 @@ async def process_dynamic_generation(user_id, data, context):
     if os.path.exists(filename):
         os.remove(filename)
 
+# ================= ROBUST ADMIN REPLY & DIRECT ID HANDLER =================
+async def handle_admin_reply_or_direct_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    admin_id = update.effective_user.id
+
+    if admin_id not in ADMIN_IDS:
+        return
+
+    # 1. यदि एडमिन किसी मैसेज पर रिप्लाई कर रहा है
+    if msg.reply_to_message:
+        # ब्रॉडकास्ट शॉर्टकट
+        if msg.text and msg.text.strip().lower() == "/broadcast":
+            all_uids = get_all_user_ids()
+            target_msg = msg.reply_to_message
+            status_m = await msg.reply_text(f"⏳ मीडिया ब्रॉडकास्ट प्रारंभ हो रहा है (कुल: {len(all_uids)} छात्र)...")
+            succ = 0
+            for uid in all_uids:
+                try:
+                    await context.bot.copy_message(chat_id=uid, from_chat_id=msg.chat_id, message_id=target_msg.message_id)
+                    succ += 1
+                    await asyncio.sleep(0.05)
+                except Exception:
+                    pass
+            await status_m.edit_text(f"✅ सफल ब्रॉडकास्ट: <b>{succ} / {len(all_uids)}</b> छात्रों को मीडिया प्राप्त हुआ!", parse_mode=ParseMode.HTML)
+            return
+
+        reply_to_text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
+        # 8 से 11 अंकों वाली यूज़र आईडी को बिना चूके ढूँढना
+        match = re.search(r'(?:यूज़र\s*ID|ID)[:\s]*([0-9]{8,11})', reply_to_text) or re.search(r'([0-9]{8,11})', reply_to_text)
+        if match:
+            target_user_id = int(match.group(1))
+            reply_body = msg.text or msg.caption or ""
+            user_notification = f"🔔 <b>ओनर ({AUTHOR_NAME}) का जवाब:</b>\n\n{reply_body}\n\n📢 <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
+            try:
+                if msg.text:
+                    await context.bot.send_message(chat_id=target_user_id, text=user_notification, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                else:
+                    await context.bot.copy_message(chat_id=target_user_id, from_chat_id=msg.chat_id, message_id=msg.message_id)
+                await msg.reply_text(f"✅ जवाब छात्र (<code>{target_user_id}</code>) को सफलतापूर्वक भेज दिया गया!", parse_mode=ParseMode.HTML)
+                return
+            except Exception as e:
+                await msg.reply_text(f"❌ भेजने में त्रुटि: {e}")
+                return
+
+    # 2. यदि एडमिन सीधे 'आईडी संदेश' लिखकर भेजता है (जैसे: 6748003505 yes)
+    if msg.text:
+        direct_match = re.match(r'^([0-9]{8,11})\s+(.*)$', msg.text.strip(), flags=re.DOTALL)
+        if direct_match:
+            target_user_id = int(direct_match.group(1))
+            reply_body = direct_match.group(2).strip()
+            user_notification = f"🔔 <b>ओनर ({AUTHOR_NAME}) का जवाब:</b>\n\n{reply_body}\n\n📢 <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
+            try:
+                await context.bot.send_message(chat_id=target_user_id, text=user_notification, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+                await msg.reply_text(f"✅ जवाब छात्र (<code>{target_user_id}</code>) को सफलतापूर्वक भेज दिया गया!", parse_mode=ParseMode.HTML)
+                return
+            except Exception as e:
+                await msg.reply_text(f"❌ भेजने में त्रुटि: {e}")
+                return
+
 # ================= TEXT / NUMBER / 'ALL' TRENDING HANDLER =================
 async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -1275,7 +1334,7 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
-# ================= CONTACT / OWNER FEEDBACK (FULLY SECURED) =================
+# ================= CONTACT / OWNER FEEDBACK =================
 async def contact_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -1295,7 +1354,6 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = user.id
     msg = update.message
 
-    # यदि यूज़र ने कोई कमांड डाल दी हो
     if msg.text and msg.text.startswith("/"):
         if msg.text.strip().lower() == "/cancel":
             CONTACT_SESSIONS.pop(user_id, None)
@@ -1322,7 +1380,7 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"🆔 <b>यूज़र ID:</b> <code>{user.id}</code>\n"
         f"🔗 <b>यूज़रनेम:</b> {username_str}\n\n"
         f"💬 <b>संदेश:</b>\n{content_text}\n\n"
-        "👉 <i>(छात्र को उत्तर देने हेतु इस मैसेज पर सीधे <b>Reply</b> करें)</i>"
+        "👉 <i>(छात्र को उत्तर देने हेतु इस मैसेज पर सीधे <b>Reply</b> करें या 'ID संदेश' लिखकर भेजें)</i>"
     )
 
     for admin_id in ADMIN_IDS:
@@ -1334,42 +1392,6 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
     await msg.reply_text("✅ <b>आपका संदेश ओनर को भेज दिया गया है!</b>", parse_mode=ParseMode.HTML)
     CONTACT_SESSIONS.pop(user_id, None)
     return ConversationHandler.END
-
-async def handle_admin_reply_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if not msg.reply_to_message:
-        return
-    admin_id = update.effective_user.id
-    if admin_id not in ADMIN_IDS:
-        return
-
-    # यदि एडमिन किसी वीडियो/मीडिया पर रिप्लाई करके /broadcast लिख रहा है तो सीधे ब्रॉडकास्ट करें
-    if msg.text and msg.text.strip().lower() == "/broadcast":
-        all_uids = get_all_user_ids()
-        target_msg = msg.reply_to_message
-        status_m = await msg.reply_text(f"⏳ मीडिया ब्रॉडकास्ट प्रारंभ हो रहा है (कुल: {len(all_uids)} छात्र)...")
-        succ = 0
-        for uid in all_uids:
-            try:
-                await context.bot.copy_message(chat_id=uid, from_chat_id=msg.chat_id, message_id=target_msg.message_id)
-                succ += 1
-                await asyncio.sleep(0.05)
-            except Exception:
-                pass
-        await status_m.edit_text(f"✅ सफल ब्रॉडकास्ट: <b>{succ} / {len(all_uids)}</b> छात्रों को मीडिया प्राप्त हुआ!", parse_mode=ParseMode.HTML)
-        return
-
-    reply_to_text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
-    match = re.search(r"यूज़र ID:\s*(\d+)", reply_to_text) or re.search(r"<code>(\d+)</code>", reply_to_text)
-    if match:
-        target_user_id = int(match.group(1))
-        reply_body = msg.text or msg.caption or ""
-        user_notification = f"🔔 <b>ओनर ({AUTHOR_NAME}) का जवाब:</b>\n\n{reply_body}\n\n📢 <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
-        try:
-            await context.bot.send_message(chat_id=target_user_id, text=user_notification, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-            await msg.reply_text("✅ जवाब छात्र को सफलतापूर्वक भेज दिया गया!")
-        except Exception as e:
-            await msg.reply_text(f"❌ त्रुटि: {e}")
 
 # ================= UNIVERSAL BROADCAST SYSTEM =================
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1484,8 +1506,11 @@ async def main():
     )
     bot_app.add_handler(broadcast_conv)
 
+    # एडमिन रिप्लाई हैंडलर (प्राथमिकता पर ताकि रिप्लाई तुरंत काम करे)
+    bot_app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & (filters.REPLY | filters.Regex(r'^[0-9]{8,11}')), handle_admin_reply_or_direct_send))
+
+    # सामान्य टेक्स्ट हैंडलर
     bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_messages))
-    bot_app.add_handler(MessageHandler(filters.REPLY, handle_admin_reply_to_user))
 
     await bot_app.initialize()
     await bot_app.start()
