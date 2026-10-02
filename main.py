@@ -5,14 +5,14 @@ import asyncio
 import sqlite3
 import json
 import io
-import base64
 import urllib.parse
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
 import aiohttp
 import edge_tts
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from pypdf import PdfReader
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.constants import ParseMode
@@ -48,8 +48,8 @@ IST = ZoneInfo("Asia/Kolkata")
 def get_ist_now():
     return datetime.now(IST)
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# 2026 आधिकारिक Google GenAI Client
+ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # कन्वर्सेशन स्टेट्स
 WAITING_CONTACT_MSG = 1
@@ -236,66 +236,46 @@ def get_all_user_ids():
     conn.close()
     return [r[0] for r in rows]
 
-# ================= 100% RELIABLE TEXT GEMINI ENGINE =================
+# ================= 2026 GUARANTEED GEMINI 3.8 FLASH ENGINE =================
 def call_gemini_safely(prompt: str) -> str:
-    api_k = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not api_k:
+    if not ai_client:
         raise Exception("API Key सर्वर पर सेट नहीं है।")
 
-    genai.configure(api_key=api_k)
-    generation_config = {"temperature": 0.25, "max_output_tokens": 8192}
+    try:
+        response = ai_client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=prompt
+        )
+        if response and response.text:
+            clean_res = response.text.strip()
+            clean_res = re.sub(r'^(?:\*|\-|\#)?\s*(?:Role|Candidate|Home State|Requirement|Specific Constraint|Draft|Language)[\s\S]*?(?=सचिन|नमस्कार|मान लीजिए|प्रश्न|\n\n)', '', clean_res, flags=re.IGNORECASE)
+            return clean_res.strip()
+    except Exception as e:
+        raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {e}")
 
-    models_to_try = [
-        "gemini-2.0-flash",
-        "gemini-2.5-flash",
-        "gemini-1.5-flash"
-    ]
+    raise Exception("AI मॉडल प्रतिक्रिया देने में असमर्थ रहा।")
 
-    for m_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(m_name, generation_config=generation_config)
-            resp = model.generate_content(prompt)
-            if resp and resp.text:
-                clean_res = resp.text.strip()
-                clean_res = re.sub(r'^(?:\*|\-|\#)?\s*(?:Role|Candidate|Home State|Requirement|Specific Constraint|Draft|Language)[\s\S]*?(?=सचिन|नमस्कार|मान लीजिए|प्रश्न|\n\n)', '', clean_res, flags=re.IGNORECASE)
-                return clean_res.strip()
-        except Exception:
-            continue
-
-    raise Exception("AI सर्वर कनेक्ट नहीं हो सका। कृपया API Key जांचें।")
-
-# ================= INLINE AUDIO / MULTIMODAL (ZERO UPLOAD ERROR) =================
 def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str) -> str:
-    api_k = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not api_k:
+    if not ai_client:
         raise Exception("API Key सर्वर पर सेट नहीं है।")
-
-    genai.configure(api_key=api_k)
 
     if "ogg" in mime_type.lower() or "opus" in mime_type.lower():
         mime_type = "audio/ogg"
 
-    part = {
-        "mime_type": mime_type,
-        "data": file_bytes
-    }
+    try:
+        response = ai_client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
+            ]
+        )
+        if response and response.text:
+            return response.text.strip()
+    except Exception as e:
+        raise Exception(f"मल्टीमॉडल वॉयस विश्लेषण त्रुटि: {e}")
 
-    models_to_try = [
-        "gemini-2.0-flash",
-        "gemini-2.5-flash",
-        "gemini-1.5-flash"
-    ]
-
-    for m_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(m_name)
-            resp = model.generate_content([part, prompt])
-            if resp and resp.text:
-                return resp.text.strip()
-        except Exception:
-            continue
-
-    raise Exception("ऑडियो का विश्लेषण करने में असमर्थ।")
+    raise Exception("ऑडियो का विश्लेषण नहीं हो सका।")
 
 # ================= EDGE-TTS AUDIO GENERATOR (NO CUTOFF / 100% CLEAR) =================
 async def download_audio_stream(text: str) -> bytes:
@@ -1196,7 +1176,7 @@ async def ask_interview_situational_question(update: Update, context: ContextTyp
 वर्तमान प्रश्न संख्या: {curr_round} / {total_rounds}
 
 सख्त निर्देश:
-- आपको केवल और केवल शुद्ध हिंदी भाषा में ही बोलना और लिखना है। कोई भी अंग्रेजी शब्द, सिस्टम निर्देश (Role, Requirement, Draft) बाहर नहीं दिखना चाहिए।
+- आपको केवल और केवल शुद्ध हिंदी भाषा में ही बोलना और लिखना है। कोई भी अंग्रेजी शब्द या सिस्टम निर्देश (Role, Requirement, Draft) बाहर नहीं आने चाहिए।
 - सीधे उम्मीदवार {name} जी का नाम लेकर 3-4 पंक्तियों का विनम्र, व्यावहारिक एवं गंभीर प्रशासनिक स्थितिजन्य प्रश्न पूछें।
 - यदि वैकल्पिक विषय भूगोल/संबंधित है तो भौगोलिक या प्रशासनिक निर्णय-प्रक्रिया से जोड़ें।
 """
@@ -1446,7 +1426,7 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
     
     lines = TRENDING_CACHE.get(user_id, [])
     if not lines:
-        await query.message.reply_text("⚠️ सत्र समाप्त हो गया है। पुनः <code>/trending</code> चलाएं।", parse_mode=ParseMode.HTML)
+        await query.message.reply_text("⚠️️ सत्र समाप्त हो गया है। पुनः <code>/trending</code> चलाएं।", parse_mode=ParseMode.HTML)
         return
 
     start_idx = target_page * 3
