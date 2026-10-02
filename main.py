@@ -3,7 +3,7 @@ import re
 import time
 import asyncio
 import sqlite3
-import urllib.parse
+import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
@@ -213,40 +213,54 @@ def call_gemini_safely(prompt: str) -> str:
 
     raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {last_err}")
 
-# ================= ROBUST MARKDOWN TABLE CONVERTER & IMAGE ENGINE =================
-KNOWN_MAPS = {
-    "मन्नार": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/Gulf_of_Mannar_map.png/640px-Gulf_of_Mannar_map.png",
-    "कच्छ": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Rann_of_Kutch_map.svg/640px-Rann_of_Kutch_map.svg.png",
-    "होर्मुज़": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Strait_of_hormuz_full.jpg/640px-Strait_of_hormuz_full.jpg",
-    "लाल सागर": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Red_Sea_map.png/640px-Red_Sea_map.png",
-    "अंडमान": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b2/Andaman_and_Nicobar_Islands_map.svg/640px-Andaman_and_Nicobar_Islands_map.svg.png",
-    "पश्चिमी घाट": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Western_Ghats_locator_map.svg/640px-Western_Ghats_locator_map.svg.png",
-    "लद्दाख": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Ladakh_locator_map.svg/640px-Ladakh_locator_map.svg.png",
-    "कूनो": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/India_Madhya_Pradesh_location_map.svg/640px-India_Madhya_Pradesh_location_map.svg.png",
-    "ताइवान": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Taiwan_Strait_map.png/640px-Taiwan_Strait_map.png",
-    "यूक्रेन": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/27/Ukraine_in_Europe_%28relief%29.svg/640px-Ukraine_in_Europe_%28relief%29.svg.png",
-    "गाजा": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Gaza_Strip_map.svg/640px-Gaza_Strip_map.svg.png",
-}
+# ================= ROBUST TABLE & VISUAL BUILDER =================
+def create_standalone_vector_map(place_name: str) -> str:
+    return f"""
+    <figure class="img-figure">
+      <svg width="100%" height="220" viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg" style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border-radius: 8px;">
+        <rect width="100%" height="100%" fill="none" stroke="#0284c7" stroke-width="1.5" rx="8"/>
+        <g opacity="0.15">
+          <line x1="0" y1="55" x2="800" y2="55" stroke="#0284c7" stroke-width="1"/>
+          <line x1="0" y1="110" x2="800" y2="110" stroke="#0284c7" stroke-width="1"/>
+          <line x1="0" y1="165" x2="800" y2="165" stroke="#0284c7" stroke-width="1"/>
+          <line x1="200" y1="0" x2="200" y2="220" stroke="#0284c7" stroke-width="1"/>
+          <line x1="400" y1="0" x2="400" y2="220" stroke="#0284c7" stroke-width="1"/>
+          <line x1="600" y1="0" x2="600" y2="220" stroke="#0284c7" stroke-width="1"/>
+        </g>
+        <circle cx="740" cy="45" r="22" fill="#ffffff" stroke="#0284c7" stroke-width="1.5"/>
+        <path d="M 740 27 L 745 45 L 740 42 L 735 45 Z" fill="#ef4444"/>
+        <text x="740" y="24" font-size="10" font-weight="bold" fill="#ef4444" text-anchor="middle">N</text>
+        
+        <rect x="50" y="35" width="300" height="150" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+        <text x="70" y="70" font-family="'Hind', sans-serif" font-size="16" font-weight="bold" fill="#0369a1">📍 {place_name}</text>
+        <text x="70" y="102" font-family="'Hind', sans-serif" font-size="13" fill="#475569">• रणनीतिक अवस्थिति एवं जलग्रहण क्षेत्र</text>
+        <text x="70" y="128" font-family="'Hind', sans-serif" font-size="13" fill="#475569">• पारिस्थितिकी एवं संरक्षित हॉटस्पॉट</text>
+        <text x="70" y="154" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#059669">✓ UPSC मैपिंग एवं प्रीलिम्स संदर्भ</text>
+        
+        <circle cx="560" cy="110" r="50" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+        <circle cx="560" cy="110" r="8" fill="#ef4444"/>
+        <text x="560" y="175" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#0f172a" text-anchor="middle">प्रमुख स्थल नोड</text>
+      </svg>
+      <figcaption>🗺️ भौगोलिक एवं रणनीतिक मानचित्र: {place_name}</figcaption>
+    </figure>
+    """
 
 def markdown_tables_to_html(text: str) -> str:
     lines = text.split("\n")
     in_table = False
     html_lines = []
-    headers = []
     
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("|") and stripped.endswith("|"):
             cells = [c.strip() for c in stripped.strip("|").split("|")]
-            # यदि यह विभाजक पंक्ति है (| :--- | :--- |)
             if all(re.match(r'^:?-+:?$', c) for c in cells):
                 continue
             
             if not in_table:
                 in_table = True
-                headers = cells
                 html_lines.append('<div class="table-box"><table><thead><tr>')
-                for h in headers:
+                for h in cells:
                     html_lines.append(f'<th>{h}</th>')
                 html_lines.append('</tr></thead><tbody>')
             else:
@@ -267,21 +281,16 @@ def markdown_tables_to_html(text: str) -> str:
 
 def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = raw_text.strip()
-    
-    # 1. सभी मार्कडाउन पाइप टेबल्स को शुद्ध HTML में बदलना
     text = markdown_tables_to_html(text)
 
-    # 2. सभी कोड ब्लॉक व फालतू बाड़ हटाना
     text = re.sub(r'```(?:xml|svg|html)?[\s\S]*?```', '', text, flags=re.IGNORECASE)
     text = re.sub(r'```', '', text)
     text = re.sub(r'<figure[^>]*>[\s\S]*?<\/figure>', '', text, flags=re.IGNORECASE)
 
-    # 3. हेडिंग्स सुधारना
     text = re.sub(r'###\s*(.*)', r'<h4 class="sub-title">\1</h4>', text)
     text = re.sub(r'##\s*(.*)', r'<h3 class="section-title">\1</h3>', text)
     text = re.sub(r'#\s*(.*)', r'<h2 class="section-title">\1</h2>', text)
 
-    # 4. मेन्स फ्रेमवर्क के तत्वों को साफ़ और बोल्ड कार्ड्स में बदलना
     text = re.sub(r'\*\*भूमिका\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-intro">📌 भूमिका:</span> <p class="para">\1</p></div>', text)
     text = re.sub(r'\*\*मुख्य\s*विश्लेषणात्मक\s*बिंदु\s*[:\-]?\*\*', r'<div class="point-badge-body">📊 मुख्य विश्लेषणात्मक आयाम:</div>', text)
     text = re.sub(r'\*\*आगे\s*की\s*राह\s*\(Way\s*Forward\)\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-wf">🚀 आगे की राह (Way Forward):</span> <p class="para">\1</p></div>', text)
@@ -291,18 +300,11 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
     text = re.sub(r'^[•\-\*]\s*(.*)', r'<li class="list-item">\1</li>', text, flags=re.MULTILINE)
 
-    # 5. मैपिंग सेक्शन में केवल 1 साफ़ इमेज लगाना (कोई डुप्लीकेशन नहीं)
-    placed_image = False
-    for key, img_url in KNOWN_MAPS.items():
-        if key in text and not placed_image:
-            img_html = f"""
-            <figure class="img-figure">
-              <img src="{img_url}" alt="{key} मानचित्र" loading="lazy">
-              <figcaption>🗺️ भौगोलिक एवं रणनीतिक मानचित्र: {key}</figcaption>
-            </figure>
-            """
-            text = re.sub(rf'({key}[^<\n]*)', r'\1' + img_html, text, count=1)
-            placed_image = True
+    key_locations = ["कूनो", "गांधी सागर", "मन्नार की खाड़ी", "कच्छ का रण", "होर्मुज़", "लाल सागर", "अंडमान", "पश्चिमी घाट", "लद्दाख", "ताइवान", "रामसर स्थल"]
+    for loc in key_locations:
+        if loc in text:
+            vector_card = create_standalone_vector_map(loc)
+            text = re.sub(rf'({loc}[^<\n]*)', r'\1' + vector_card, text, count=1)
             break
 
     return text
@@ -322,10 +324,9 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
             sec_id = f"custom-sec-{sec_idx}"
             tag['id'] = sec_id
             
-            # 'खंड 1', 'खंड 2', 'खण्ड', 'भाग' हटाकर सीधे मुख्य विषय का नाम लगाना
             clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|\d+|[:\.\-\s])+', '', title_text).strip()
             clean_tab_name = re.sub(r'^[0-9]+\s*[:\.\-]?\s*', '', clean_tab_name).strip()
-            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳️️⚖️🔍📝🛣️❄️🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
+            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️❄️🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
             
             if not clean_tab_name:
                 clean_tab_name = f"विषय {sec_idx}"
@@ -335,9 +336,7 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
             nav_links += f'<a href="#{sec_id}">{clean_tab_name}</a>\n'
             sec_idx += 1
 
-    nav_links += '<a href="#sec-quiz" style="background:#f59e0b; color:#000;">🎯 लाइव टेस्ट</a>\n'
     final_body = str(soup)
-
     overview_title = "🧭 ट्रेंडिंग समसामयिक विश्लेषण" if is_trending else "📌 सत्र विहंगावलोकन (Session Scope & Core Index)"
 
     return f"""<!DOCTYPE html>
@@ -371,7 +370,7 @@ body {{
     font-size: 4.5rem; font-weight: 900; color: rgba(0, 0, 0, 0.50);
     transform: rotate(-35deg); z-index: 9999; pointer-events: none; letter-spacing: 8px;
   }}
-  .controls, nav.dashboard, #telegramBtn, .print-btn, #quiz-trigger-btn, .theme-btn {{ display: none !important; }}
+  .controls, nav.dashboard, #telegramBtn, .print-btn, .theme-btn {{ display: none !important; }}
   .news-card {{ box-shadow: none !important; border: 1px solid #ccc !important; page-break-inside: avoid; margin-bottom: 25px !important; }}
 }}
 .top-header {{
@@ -422,11 +421,6 @@ nav.dashboard a:hover {{ background: var(--accent); color: #fff; }}
   border-radius: 6px; font-size: 0.82rem; font-weight: 700; display: inline-block; margin-bottom: 12px;
 }}
 [data-theme="dark"] .badge-src {{ background: #451a03; color: #fde68a; border-color: #78350f; }}
-.badge-art {{
-  background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; padding: 3px 8px;
-  border-radius: 6px; font-size: 0.84rem; font-weight: 700; display: inline-block; margin-right: 6px;
-}}
-[data-theme="dark"] .badge-art {{ background: #064e3b; color: #6ee7b7; border-color: #047857; }}
 .table-box {{ overflow-x: auto; margin: 18px 0; width: 100%; border-radius: 8px; border: 1px solid var(--border); }}
 table {{ width: 100%; border-collapse: collapse; text-align: left; }}
 th {{ background: var(--accent); color: #fff; padding: 12px 14px; font-size: 0.95rem; font-weight: 600; }}
@@ -442,30 +436,20 @@ tr:nth-child(even) td {{ background: rgba(128, 128, 128, 0.04); }}
 .point-badge-wf {{ background: #10b981; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }}
 .point-badge-conc {{ background: #f59e0b; color: #000; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }}
 .mains-point {{ margin: 12px 0; padding-left: 8px; border-left: 3px solid #cbd5e1; }}
-
-/* सिंगल वास्तविक इमेज स्टाइल */
 .img-figure {{
   margin: 20px 0; text-align: center; background: #ffffff; padding: 12px;
   border-radius: 12px; border: 1.5px solid #bae6fd; box-shadow: var(--shadow);
 }}
 [data-theme="dark"] .img-figure {{ background: #1e293b; border-color: #0369a1; }}
-.img-figure img {{
-  width: 100%; max-height: 380px; object-fit: cover; border-radius: 8px;
-}}
 .img-figure figcaption {{
   font-size: 0.92rem; color: #0369a1; margin-top: 10px; font-weight: 700;
 }}
 [data-theme="dark"] .img-figure figcaption {{ color: #7dd3fc; }}
-
 .mcq-box {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 14px 0; }}
-.opt-label {{ display: block; padding: 10px 14px; margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: background 0.2s; }}
-.opt-label:hover {{ background: var(--tag-bg); }}
 .mcq-ans {{
   background: var(--tag-bg); border-left: 4px solid var(--green); padding: 10px 14px;
   margin-top: 10px; border-radius: 0 6px 6px 0; font-size: 0.92rem;
 }}
-.quiz-engine-card {{ background: var(--card); border: 2px solid var(--saffron); border-radius: 14px; padding: 26px; margin-top: 30px; }}
-.timer-pill {{ background: #ef4444; color: #fff; padding: 5px 14px; border-radius: 20px; font-weight: 700; font-size: 0.9rem; display: inline-block; margin-bottom: 12px; }}
 #telegramBtn {{
   position: fixed; bottom: 18px; right: 18px; z-index: 90; background: #229ED9; color: #fff;
   border: none; border-radius: 30px; padding: 12px 22px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25); font-size: 0.9rem;
@@ -503,67 +487,6 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 
   {final_body}
 
-  <section id="sec-quiz" class="quiz-engine-card">
-    <h3 class="section-title" style="color:var(--accent); border-left-color:var(--saffron);">🎯 विषय आधारित लाइव अभ्यास टेस्ट (5 Questions)</h3>
-    <p class="para">इस संकलन के मुख्य बिंदुओं पर आधारित लाइव टेस्ट। प्रत्येक सही उत्तर पर +2.0 अंक, गलत उत्तर पर -0.66 अंक।</p>
-    
-    <div style="text-align:center; margin: 20px 0;">
-      <button id="quiz-trigger-btn" onclick="startDailyQuiz()" style="background:var(--saffron); color:#000; font-weight:700; font-size:1.08rem; padding:12px 28px; border:none; border-radius:30px; cursor:pointer;">📝 टेस्ट प्रारंभ करें (Start Test)</button>
-    </div>
-
-    <div id="quiz-area" style="display:none;">
-      <div style="text-align:right;"><span class="timer-pill" id="timeRemaining">⏱ शेष समय: 06:00</span></div>
-      <form id="dailyUPSCForm">
-        
-        <div class="mcq-box">
-          <p><strong>प्रश्न 1: प्रस्तुत संकलन के संदर्भ में मुख्य विधिक/संवैधानिक प्रावधान के संबंध में कौन सा कथन सही है?</strong></p>
-          <label class="opt-label"><input type="radio" name="q1" value="a"> (a) यह केवल गैर-संवैधानिक कार्यकारी आदेशों द्वारा संचालित होता है।</label>
-          <label class="opt-label"><input type="radio" name="q1" value="b"> (b) यह संविधान के मूल ढांचे और विधिक उत्तरदायित्व के सिद्धांतों के अनुरूप है।</label>
-          <label class="opt-label"><input type="radio" name="q1" value="c"> (c) न्यायिक समीक्षा का इस पर कोई अधिकार क्षेत्र नहीं है।</label>
-          <label class="opt-label"><input type="radio" name="q1" value="d"> (d) उपर्युक्त में से कोई नहीं।</label>
-        </div>
-
-        <div class="mcq-box">
-          <p><strong>प्रश्न 2: समसामयिक नीतिगत विश्लेषण के अंतर्गत उल्लिखित मुख्य तकनीकी या आर्थिक घटक क्या है?</strong></p>
-          <label class="opt-label"><input type="radio" name="q2" value="a"> (a) पूर्णतः विदेशी तकनीकों पर निर्भरता।</label>
-          <label class="opt-label"><input type="radio" name="q2" value="b"> (b) स्वदेशी क्षमता निर्माण, डिजिटल अवसंरचना और सतत विकास का समन्वय।</label>
-          <label class="opt-label"><input type="radio" name="q2" value="c"> (c) पर्यावरण मानकों की पूर्ण अनदेखी।</label>
-          <label class="opt-label"><input type="radio" name="q2" value="d"> (d) केवल अल्पकालिक बजटीय आवंटन।</label>
-        </div>
-
-        <div class="mcq-box">
-          <p><strong>प्रश्न 3: चर्चित भौगोलिक/पर्यावरणीय स्थल के संदर्भ में निम्नलिखित कथनों पर विचार कीजिए:</strong></p>
-          <label class="opt-label"><input type="radio" name="q3" value="a"> (a) यह केवल शुष्क और मरुस्थलीय पारिस्थितिकी तंत्र में पाया जाता है।</label>
-          <label class="opt-label"><input type="radio" name="q3" value="b"> (b) यह वैश्विक स्तर पर जैव विविधता और रणनीतिक ऊर्जा गलियारों हेतु अत्यंत महत्वपूर्ण है।</label>
-          <label class="opt-label"><input type="radio" name="q3" value="c"> (c) यहाँ किसी भी अंतरराष्ट्रीय कानून के प्रावधान लागू नहीं होते।</label>
-          <label class="opt-label"><input type="radio" name="q3" value="d"> (d) यह पूर्णतः मानव हस्तक्षेप से मुक्त क्षेत्र है।</label>
-        </div>
-
-        <div class="mcq-box">
-          <p><strong>प्रश्न 4: प्रशासनिक सुधार एवं शासन (Governance) के दृष्टिकोण से प्राथमिक आवश्यकता क्या है?</strong></p>
-          <label class="opt-label"><input type="radio" name="q4" value="a"> (a) जटिल विनियामक बाधाओं का विस्तार।</label>
-          <label class="opt-label"><input type="radio" name="q4" value="b"> (b) पारदर्शिता, अंतर-विभागीय समन्वय और जन-केंद्रित समाधान।</label>
-          <label class="opt-label"><input type="radio" name="q4" value="c"> (c) नागरिक अधिकारों को सीमित करना।</label>
-          <label class="opt-label"><input type="radio" name="q4" value="d"> (d) वित्तीय उत्तरदायित्व से विमुख होना।</label>
-        </div>
-
-        <div class="mcq-box">
-          <p><strong>प्रश्न 5: प्रस्तुत विषय पर सुप्रीम कोर्ट / आधिकारिक आयोग की प्रमुख अनुशंसा क्या दर्शाती है?</strong></p>
-          <label class="opt-label"><input type="radio" name="q5" value="a"> (a) शक्तियों का संकेंद्रण ही एकमात्र उपाय है।</label>
-          <label class="opt-label"><input type="radio" name="q5" value="b"> (b) संस्थागत स्वायत्तता, समयबद्ध निर्णय और संवैधानिक नैतिकता का पालन अनिवार्य है।</label>
-          <label class="opt-label"><input type="radio" name="q5" value="c"> (c) संसदीय नियमों को निलंबित किया जाना चाहिए।</label>
-          <label class="opt-label"><input type="radio" name="q5" value="d"> (d) सभी राज्य सरकारों के अधिकारों का हनन।</label>
-        </div>
-
-        <div style="text-align:center; margin-top:22px;">
-          <button type="button" onclick="evaluateQuiz()" style="background:#10b981; color:#fff; font-weight:700; font-size:1.05rem; padding:12px 32px; border:none; border-radius:30px; cursor:pointer;">📊 टेस्ट सबमिट करें</button>
-        </div>
-      </form>
-
-      <div id="quizScoreZone" style="margin-top:24px;"></div>
-    </div>
-  </section>
-
 </main>
 
 <button id="telegramBtn" onclick="window.open('{CHANNEL_LINK}','_blank')">📲 TELEGRAM — {CHANNEL_NAME}</button>
@@ -586,65 +509,6 @@ document.getElementById('searchBox').addEventListener('input', function() {{
     card.style.display = card.innerText.toLowerCase().includes(q) ? 'block' : 'none';
   }});
 }});
-
-let timer = null;
-let seconds = 360;
-const ANSWER_KEY = {{"q1": "b", "q2": "b", "q3": "b", "q4": "b", "q5": "b"}};
-
-function startDailyQuiz() {{
-  const btn = document.getElementById('quiz-trigger-btn');
-  if (btn) btn.style.display = 'none';
-  const area = document.getElementById('quiz-area');
-  if (area) area.style.display = 'block';
-
-  timer = setInterval(() => {{
-    seconds--;
-    let m = Math.floor(seconds / 60);
-    let s = seconds % 60;
-    const tDisp = document.getElementById('timeRemaining');
-    if (tDisp) tDisp.innerText = `⏱ शेष समय: ${{m < 10 ? '0' : ''}}${{m}}:${{s < 10 ? '0' : ''}}${{s}}`;
-    if (seconds <= 0) {{
-      clearInterval(timer);
-      evaluateQuiz();
-    }}
-  }}, 1000);
-}}
-
-function evaluateQuiz() {{
-  clearInterval(timer);
-  let score = 0;
-  let correct = 0;
-  let wrong = 0;
-  let unattempted = 0;
-  let totalQ = Object.keys(ANSWER_KEY).length;
-
-  for (let q in ANSWER_KEY) {{
-    const sel = document.querySelector(`input[name="${{q}}"]:checked`);
-    if (sel) {{
-      if (sel.value.toLowerCase() === ANSWER_KEY[q].toLowerCase()) {{
-        score += 2.0;
-        correct++;
-      }} else {{
-        score -= 0.66;
-        wrong++;
-      }}
-    }} else {{
-      unattempted++;
-    }}
-  }}
-
-  const maxMarks = totalQ * 2.0;
-  const scoreDiv = document.getElementById('quizScoreZone');
-  if (scoreDiv) {{
-    scoreDiv.innerHTML = `
-      <div style="background:var(--tag-bg); border:2px solid var(--accent); border-radius:12px; padding:22px; text-align:center;">
-        <h3 style="color:var(--accent); font-size:1.3rem;">🏆 आपका आधिकारिक UPSC CSE स्कोरकार्ड</h3>
-        <p style="font-size:1.2rem; margin:12px 0;"><strong>प्राप्तांक:</strong> <span style="color:#ef4444; font-weight:700;">${{score.toFixed(2)}} / ${{maxMarks.toFixed(2)}}</span></p>
-        <p style="font-size:0.98rem;">✅ सही: <b>${{correct}}</b> | ❌ गलत: <b>${{wrong}}</b> | ⚪ अनुत्तरित: <b>${{unattempted}}</b></p>
-      </div>
-    `;
-  }}
-}}
 </script>
 </body>
 </html>"""
@@ -664,12 +528,12 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "नीचे सभी मुख्य कमांड्स उपलब्ध हैं:\n\n"
         "📖 <b>अध्ययन एवं नोट्स:</b>\n"
         "• <code>/daily</code> — दैनिक नोट्स (IST लाइव कैलेंडर)\n"
-        "• <code>/trending</code> — समसामयिक स्थान, व्यक्ति व ट्रेंडिंग मुद्दे\n"
+        "• <code>/trending</code> — दैनिक, मासिक व वार्षिक ट्रेंडिंग मुद्दे\n"
         "• <code>/quiz</code> — विषयवार लाइव टेस्ट शुरू करें\n"
         "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन (केवल आज तक)\n"
         "• <code>/monthly</code> — सम्पूर्ण मासिक संकलन\n"
         "• <code>/yearly</code> — वार्षिक कंपाइलेशन (PT-365 Style)\n"
-        "• <code>/ask &lt;सवाल&gt;</code> — डाउट पूछें\n\n"
+        "• <code>/ask &lt;सवाल&gt;</code> — यूपीएससी संशय समाधान\n\n"
         "🛠 <b>प्रशासनिक व निर्माण कमांड्स:</b>\n"
         "• <code>/generate &lt;तारीख/विषय&gt;</code> — नोट्स निर्माण\n"
         "• <code>/broadcast</code> — सभी छात्रों को वीडियो/फ़ोटो/टेक्स्ट संदेश भेजें\n"
@@ -694,7 +558,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
-# /daily: IST कैलेंडर
+# /daily
 async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -721,7 +585,7 @@ async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🎯 <b>चरण 1/2:</b> किस विषय का टेस्ट लगाना चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= ADVANCED TRENDING RADAR (DAILY, MONTHLY, YEARLY) =================
+# ================= ADVANCED TRENDING RADAR =================
 async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -764,7 +628,7 @@ async def handle_trending_type_selection(update: Update, context: ContextTypes.D
         p_text = f"🧭 <b>UPSC TRENDING RADAR — {scope_str} (पेज 1/3)</b>\n\n" + "\n\n".join(lines[:3])
         p_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के पूर्ण नोट्स हेतु नंबर भेजें (उदा. <code>1, 2</code>)\n• सभी मुद्दों के 360° नोट्स हेतु लिखें: <code>all</code>"
 
-        keyboard = [[InlineKeyboardButton("अगला पेज (4-6) ▶️️", callback_data="trpage_1")]]
+        keyboard = [[InlineKeyboardButton("अगला पेज (4-6) ▶", callback_data="trpage_1")]]
         await wait_m.edit_text(p_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}")
@@ -811,7 +675,7 @@ async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक महा-संकलन (PT-365)", callback_data=f"genyear_{y}")] for y in years]
     await update.message.reply_text("🏛️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# /weekly (केवल चालू दिन तक का सटीक कवरेज)
+# /weekly
 async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -865,7 +729,12 @@ async def handle_dynamic_generation_click(update: Update, context: ContextTypes.
         subj = subj_map.get(subj_code, "सामान्य अध्ययन")
 
         wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ <b>{subj}</b> का {count} प्रश्नों वाला UPSC मॉक टेस्ट तैयार हो रहा है...", parse_mode=ParseMode.HTML)
-        prompt = f"विषय: '{subj}' पर UPSC Prelims स्तर के {count} प्रश्न कथन आधारित 4 विकल्पों, सही उत्तर और आधिकारिक व्याख्या सहित बनाएं। मार्कडाउन स्टार्स का प्रयोग न करें।"
+        prompt = f"""
+विषय: '{subj}' पर UPSC Prelims स्तर के {count} प्रश्न कथन आधारित तैयार करें।
+सख्त नियम:
+प्रत्येक प्रश्न में स्पष्ट क्रमांक (जैसे प्रश्न 1:, प्रश्न 2:...), 4 विकल्प (a, b, c, d), सही उत्तर और आधिकारिक 2-पंक्ति व्याख्या अवश्य लिखें।
+मार्कडाउन स्टार्स का प्रयोग न करें।
+"""
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
             topic = f"UPSC Mock Test — {subj} ({count} प्रश्न)"
@@ -917,13 +786,7 @@ async def process_dynamic_generation(user_id, data, context):
 2. सभी तालिकाओं को केवल शुद्ध HTML (<div class="table-box"><table><thead><tr><th>...</th></tr></thead><tbody><tr><td>...</td></tr></tbody></table></div>) में लिखें।
 3. मैपिंग सेक्शन में स्थान का नाम स्पष्ट लिखें (जैसे मन्नार की खाड़ी, कच्छ का रण, होर्मुज़ आदि)।
 4. मेन्स फ्रेमवर्क के प्रत्येक बिंदु को पूरा लिखें।
-
-सामग्री संरचना:
-- संदर्भ, संवैधानिक स्थिति, 2-कॉलम HTML सारणी।
-- मैपिंग एवं चर्चित स्थल विवरण।
-- Prelims Facts (बुलेट प्वाइंट्स)।
-- Mains Framework: प्रश्न, भूमिका, 3 मुख्य बिंदु, आगे की राह, निष्कर्ष।
-- 4 Practice MCQs (व्याख्या सहित)।
+5. अंत में संकलन के मुख्य बिंदुओं पर आधारित 5 मानक अभ्यास MCQs जोड़ें (प्रश्न 1:, प्रश्न 2:... प्रारूप में)।
 """
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -947,12 +810,12 @@ async def process_dynamic_generation(user_id, data, context):
 माह: '{m_name}' का सम्पूर्ण और अत्यंत विस्तृत UPSC Monthly Current Affairs Digest तैयार करें।
 यह किसी दैनिक नोट्स से कई गुना बड़ा, गहन और सभी मुख्य विषयों को समेटे हुए होना चाहिए।
 शामिल करें:
-1. राजव्यवस्था एवं संविधान (GS-2): 4-5 मुख्य सुप्रीम कोर्ट निर्णय, विधायी अधिनियम, 2-कॉलम योजना मैट्रिक्स।
+1. राजव्यवस्था एवं संविधान (GS-2): मुख्य सुप्रीम कोर्ट निर्णय, विधायी अधिनियम, योजना मैट्रिक्स।
 2. अर्थव्यवस्था एवं बजट (GS-3): मौद्रिक नीतियां, व्यापार डेटा, अवसंरचना, औद्योगिक सुधार।
-3. पर्यावरण, पारिस्थितिकी एवं जैव विविधता (GS-3): वन्यजीव संरक्षण, रामसर स्थल, जलवायु शिखर सम्मेलन।
+3. पर्यावरण, पारिस्थितिकी एवं जैव विविधता (GS-3): वन्यजीव संरक्षण, रामसर स्थल, जलवायु रिपोर्ट।
 4. विज्ञान एवं प्रौद्योगिकी (GS-3): अंतरिक्ष मिशन, रक्षा सौदे, क्वांटम व AI।
-5. अंतरराष्ट्रीय संबंध (GS-2): द्विपक्षीय संधियाँ, शिखर सम्मेलन, भू-रणनीतिक स्थल।
-6. 10 उच्च-स्तरीय MCQs व्याख्या सहित।
+5. चर्चित स्थल एवं मैपिंग (Places in News)।
+6. इस पूरे महीने पर आधारित अभ्यास MCQs (प्रश्न 1:, प्रश्न 2:... प्रारूप में व्याख्या सहित)।
 सभी तालिकाओं को शुद्ध HTML में लिखें।
 """
             try:
@@ -977,13 +840,13 @@ async def process_dynamic_generation(user_id, data, context):
 वर्ष {y_name} का UPSC Civil Services Examination हेतु अत्यंत विस्तृत और संपूर्ण Annual Compendium (PT-365 Style) तैयार करें।
 यह पूरे वर्ष की सबसे प्रामाणिक अध्ययन सामग्री होनी चाहिए। इसे संक्षिप्त न करें।
 अनिवार्य खंड:
-1. संपूर्ण राजव्यवस्था एवं शासन (Polity & Governance): सभी ऐतिहासिक निर्णय, संवैधानिक संशोधन, केंद्र-राज्य संबंध, चुनाव सुधार।
-2. आर्थिक विकास (Economic Development): जीडीपी, बैंकिंग सुधार, डिजिटल मुद्रा, उत्पादन से जुड़े प्रोत्साहन (PLI), व्यापार समझौते।
-3. पर्यावरण एवं जलवायु परिवर्तन (Environment & Ecology): चीता प्रोजेक्ट, राष्ट्रीय उद्यान, रामसर स्थलों का संपूर्ण मैट्रिक्स, COP बैठकें।
-4. विज्ञान, अंतरिक्ष एवं रक्षा (Sci & Tech, Defense): गगनयान, चंद्र अन्वेषण, स्वदेशी मिसाइल प्रणालियाँ, क्वांटम मिशन।
+1. संपूर्ण राजव्यवस्था एवं शासन (Polity & Governance): सभी ऐतिहासिक निर्णय, संवैधानिक संशोधन, केंद्र-राज्य संबंध।
+2. आर्थिक विकास (Economic Development): जीडीपी, बैंकिंग सुधार, डिजिटल मुद्रा, उत्पादन से जुड़े प्रोत्साहन (PLI)।
+3. पर्यावरण एवं जलवायु परिवर्तन (Environment & Ecology): चीता प्रोजेक्ट, राष्ट्रीय उद्यान, रामसर स्थलों का संपूर्ण मैट्रिक्स।
+4. विज्ञान, अंतरिक्ष एवं रक्षा (Sci & Tech, Defense): गगनयान, स्वदेशी रक्षा प्रणालियां, क्वांटम मिशन।
 5. चर्चित स्थल एवं मैपिंग (Places in News): पूरे वर्ष चर्चा में रहे 5-6 राष्ट्रीय व वैश्विक स्थल।
-6. परीक्षा रणनीति एवं 10 मानक प्रीलिम्स MCQs।
-सभी तालिकाओं को मानक HTML (<div class="table-box"><table>...</table></div>) में ही लिखें।
+6. पूरे वर्ष के घटनाक्रमों पर आधारित अभ्यास MCQs (प्रश्न 1:, प्रश्न 2:... प्रारूप में व्याख्या सहित)।
+सभी तालिकाओं को मानक HTML में ही लिखें।
 """
             try:
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1006,10 +869,10 @@ async def process_dynamic_generation(user_id, data, context):
             days_since_mon = today.weekday()
             mon_dt = today - timedelta(days=days_since_mon)
             period_label = f"{mon_dt.strftime('%d %B')} से {today.strftime('%d %B %Y')} (चालू सप्ताह, आज तक)"
-            prompt = f"सप्ताह की शुरुआत ({mon_dt.strftime('%Y-%m-%d')}) से लेकर आज ({today.strftime('%Y-%m-%d')}) तक के {days_since_mon + 1} दिनों के महत्वपूर्ण UPSC घटनाक्रमों का संपूर्ण विस्तृत रिवीजन तैयार करें। आगे की किसी भी काल्पनिक तारीख का उल्लेख न करें।"
+            prompt = f"सप्ताह की शुरुआत ({mon_dt.strftime('%Y-%m-%d')}) से लेकर आज ({today.strftime('%Y-%m-%d')}) तक के {days_since_mon + 1} दिनों के महत्वपूर्ण UPSC घटनाक्रमों का संपूर्ण विस्तृत रिवीजन तैयार करें। आगे की किसी भी काल्पनिक तारीख का उल्लेख न करें। अंत में अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) अवश्य दें।"
         else:
             period_label = f"विगत पूर्ण सप्ताह (7 दिवसीय रिवीजन)"
-            prompt = f"विगत पूर्ण सप्ताह के मुख्य UPSC घटनाक्रमों का संपूर्ण 7-दिवसीय रिवीजन डाइजेस्ट HTML टेबल्स के साथ विस्तृत रूप में तैयार करें।"
+            prompt = f"विगत पूर्ण सप्ताह के मुख्य UPSC घटनाक्रमों का संपूर्ण 7-दिवसीय रिवीजन डाइजेस्ट HTML टेबल्स और अभ्यास प्रश्नों के साथ विस्तृत रूप में तैयार करें।"
 
         wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ <b>{period_label}</b> का संपूर्ण रिवीजन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         try:
@@ -1059,13 +922,14 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         raw_trend = "\n".join(cached_list)
-        wait_m = await msg.reply_text("⏳ <b>सभी ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स (चित्रों व सारणी सहित) तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+        wait_m = await msg.reply_text("⏳ <b>सभी ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
         prompt = f"""
 नीचे दिए गए सभी समसामयिक ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स तैयार करें:
 "{raw_trend}"
 सख्त नियम:
-1. सभी मुद्दों में संदर्भ, चर्चा में क्यों, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क और 2 MCQs अनिवार्य रूप से दें।
-2. कोई भी कच्चा कोड या पाइप टेबल न लिखें।
+1. सभी मुद्दों में संदर्भ, चर्चा में क्यों, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क अनिवार्य रूप से दें।
+2. प्रत्येक विषय के अंत में अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) व्याख्या सहित दें।
+3. कोई भी कच्चा कोड या पाइप टेबल न लिखें।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1107,7 +971,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC सिविल सेवा परीक्षा हेतु अत्यंत विस्तृत 360° विश्लेषण तैयार करें।
 सूची:
 "{raw_trend}"
-नियम: संदर्भ, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, और MCQs दें। कोई भी कच्चा कोड न लिखें।
+नियम: संदर्भ, 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, और अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) दें। कोई भी कच्चा कोड न लिखें।
 """
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1184,7 +1048,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
 शीर्षक: "{clean_title}"
 सामग्री:
 "{pdf_text[:4000]}"
-नियम: 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, प्रीलिम्स फैक्ट्स और MCQs शामिल करें।
+नियम: 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, प्रीलिम्स फैक्ट्स और अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) शामिल करें।
 """
         ai_notes = await asyncio.to_thread(call_gemini_safely, prompt)
         html_out = build_standalone_master_html(clean_title, ai_notes)
@@ -1239,9 +1103,29 @@ async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    blocked_non_upsc = [
+        r"मेरा नाम", r"तुम्हारा नाम", r"आपका नाम", r"तुम कौन", r"आप कौन",
+        r"हेलो", r"हाय", r"hello", r"hi", r"hey", r"कैसे हो", r"क्या कर रहे",
+        r"शायरी", r"मजाक", r"मौसम", r"गाना", r"लव", r"प्यार", r"गर्लफ्रेंड",
+        r"बॉयफ्रेंड", r"joke", r"time pass", r"who are you", r"what is your name",
+        r"my name", r"bot", r"robot"
+    ]
+    if any(re.search(pat, user_query, re.IGNORECASE) for pat in blocked_non_upsc) or len(user_query) < 5:
+        await update.message.reply_text(
+            "⚠️ <b>अमान्य प्रश्न:</b> इस संबंध में हम कोई जानकारी नहीं रखते हैं।\n\n"
+            "यह डेस्क केवल <b>संघ लोक सेवा आयोग (UPSC CSE)</b> पाठ्यक्रम (GS 1-4, करेंट अफेयर्स व समसामयिक व्यक्तित्व) के गंभीर अकादमिक विमर्श हेतु समर्पित है। कृपया परीक्षा संबंधी विषय ही पूछें।",
+            parse_mode=ParseMode.HTML
+        )
+        return
+
     wait_msg = await update.message.reply_text("🤔 UPSC परिप्रेक्ष्य में बिंदुवार विश्लेषण तैयार हो रहा है...")
     try:
-        prompt = f"UPSC मेंटर के दृष्टिकोण से इस विषय का बिंदुवार और संतुलित विश्लेषण दें: '{user_query}'। मार्कडाउन स्टार्स का प्रयोग न करें।"
+        prompt = f"""
+आप UPSC मेंटर हैं। निम्नलिखित विषय का बिंदुवार, सटीक एवं संतुलित प्रशासनिक विश्लेषण दें।
+यदि प्रश्न UPSC से बाहर का हो, तो विनम्रता से मना कर दें।
+विषय: '{user_query}'
+सख्त नियम: मार्कडाउन स्टार्स का प्रयोग न करें।
+"""
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_reply = clean_all_markdown_and_fix_content(reply_text)
 
@@ -1277,8 +1161,8 @@ async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 विषय: "{query}" पर 'Zero to Hero' स्तर के गहन, परीक्षा-केंद्रित UPSC नोट्स तैयार करें।
 सख्त नियम:
 1. 2-कॉलम HTML सारणी (<div class="table-box"><table>...</table></div>), मेन्स फ्रेमवर्क शुद्ध HTML में लिखें।
-2. कोई कच्चा कोड न लिखें।
-3. मार्कडाउन स्टार्स का प्रयोग न करें।
+2. अंत में अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) व्याख्या सहित अवश्य दें।
+3. कोई कच्चा कोड न लिखें। मार्कडाउन स्टार्स का प्रयोग न करें।
 """
         ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_topic = f"दैनिक समसामयिक महा-संकलन — {query}"[:40]
@@ -1428,7 +1312,6 @@ async def handle_admin_reply_to_user(update: Update, context: ContextTypes.DEFAU
     if admin_id not in ADMIN_IDS:
         return
 
-    # यदि एडमिन किसी वीडियो/मीडिया पर रिप्लाई करके /broadcast लिख रहा है तो सीधे ब्रॉडकास्ट करें
     if msg.text and msg.text.strip().lower() == "/broadcast":
         all_uids = get_all_user_ids()
         target_msg = msg.reply_to_message
@@ -1456,13 +1339,12 @@ async def handle_admin_reply_to_user(update: Update, context: ContextTypes.DEFAU
         except Exception as e:
             await msg.reply_text(f"❌ त्रुटि: {e}")
 
-# ================= UNIVERSAL BROADCAST SYSTEM (TEXT / VIDEO / PHOTO) =================
+# ================= UNIVERSAL BROADCAST SYSTEM =================
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
         return ConversationHandler.END
 
-    # यदि किसी वीडियो/फोटो पर रिप्लाई करके /broadcast किया गया हो
     if update.message.reply_to_message:
         target_msg = update.message.reply_to_message
         all_uids = get_all_user_ids()
