@@ -32,9 +32,15 @@ try:
 except ImportError:
     TELETHON_AVAILABLE = False
 
-# ================= CONFIGURATION =================
+# ================= CONFIGURATION & MULTI-KEY POOL =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+API_KEYS = [
+    k.strip() for k in [
+        os.environ.get("GEMINI_API_KEY", ""),
+        os.environ.get("GEMINI_API_KEY_2", "")
+    ] if k.strip()
+]
+
 TELEGRAM_API_ID = os.environ.get("TELEGRAM_API_ID", "").strip()
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
 
@@ -47,9 +53,6 @@ IST = ZoneInfo("Asia/Kolkata")
 
 def get_ist_now():
     return datetime.now(IST)
-
-# 2026 आधिकारिक Google GenAI Client
-ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # कन्वर्सेशन स्टेट्स
 WAITING_CONTACT_MSG = 1
@@ -236,46 +239,64 @@ def get_all_user_ids():
     conn.close()
     return [r[0] for r in rows]
 
-# ================= 2026 GUARANTEED GEMINI 3.8 FLASH ENGINE =================
+# ================= MULTI-KEY & MULTI-MODEL FAILOVER ENGINE =================
+MODELS_PRIORITY = [
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-pro",
+    "gemini-2.5-flash"
+]
+
 def call_gemini_safely(prompt: str) -> str:
-    if not ai_client:
+    if not API_KEYS:
         raise Exception("API Key सर्वर पर सेट नहीं है।")
 
-    try:
-        response = ai_client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=prompt
-        )
-        if response and response.text:
-            clean_res = response.text.strip()
-            clean_res = re.sub(r'^(?:\*|\-|\#)?\s*(?:Role|Candidate|Home State|Requirement|Specific Constraint|Draft|Language)[\s\S]*?(?=सचिन|नमस्कार|मान लीजिए|प्रश्न|\n\n)', '', clean_res, flags=re.IGNORECASE)
-            return clean_res.strip()
-    except Exception as e:
-        raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {e}")
+    last_err = None
+    for api_k in API_KEYS:
+        client = genai.Client(api_key=api_k)
+        for m_name in MODELS_PRIORITY:
+            try:
+                response = client.models.generate_content(
+                    model=m_name,
+                    contents=prompt
+                )
+                if response and response.text:
+                    clean_res = response.text.strip()
+                    clean_res = re.sub(r'^(?:\*|\-|\#)?\s*(?:Role|Candidate|Home State|Requirement|Specific Constraint|Draft|Language)[\s\S]*?(?=सचिन|नमस्कार|मान लीजिए|प्रश्न|\n\n)', '', clean_res, flags=re.IGNORECASE)
+                    return clean_res.strip()
+            except Exception as e:
+                last_err = e
+                # यदि 429 quota error या मॉडल अनुपलब्ध हो तो अगले मॉडल/की पर जाएं
+                continue
 
-    raise Exception("AI मॉडल प्रतिक्रिया देने में असमर्थ रहा।")
+    raise Exception(f"सभी API Keys और मॉडल्स का कोटा समाप्त है या समस्या आई: {last_err}")
 
 def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str) -> str:
-    if not ai_client:
+    if not API_KEYS:
         raise Exception("API Key सर्वर पर सेट नहीं है।")
 
     if "ogg" in mime_type.lower() or "opus" in mime_type.lower():
         mime_type = "audio/ogg"
 
-    try:
-        response = ai_client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=[
-                prompt,
-                types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
-            ]
-        )
-        if response and response.text:
-            return response.text.strip()
-    except Exception as e:
-        raise Exception(f"मल्टीमॉडल वॉयस विश्लेषण त्रुटि: {e}")
+    last_err = None
+    for api_k in API_KEYS:
+        client = genai.Client(api_key=api_k)
+        for m_name in MODELS_PRIORITY:
+            try:
+                response = client.models.generate_content(
+                    model=m_name,
+                    contents=[
+                        prompt,
+                        types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
+                    ]
+                )
+                if response and response.text:
+                    return response.text.strip()
+            except Exception as e:
+                last_err = e
+                continue
 
-    raise Exception("ऑडियो का विश्लेषण नहीं हो सका।")
+    raise Exception(f"ऑडियो विश्लेषण में समस्या आई: {last_err}")
 
 # ================= EDGE-TTS AUDIO GENERATOR (NO CUTOFF / 100% CLEAR) =================
 async def download_audio_stream(text: str) -> bytes:
@@ -402,7 +423,7 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
             
             clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|\d+|[:\.\-\s])+', '', title_text).strip()
             clean_tab_name = re.sub(r'^[0-9]+\s*[:\.\-]?\s*', '', clean_tab_name).strip()
-            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️❄️️🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
+            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️❄🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
             
             if not clean_tab_name:
                 clean_tab_name = f"विषय {sec_idx}"
@@ -1426,7 +1447,7 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
     
     lines = TRENDING_CACHE.get(user_id, [])
     if not lines:
-        await query.message.reply_text("⚠️️ सत्र समाप्त हो गया है। पुनः <code>/trending</code> चलाएं।", parse_mode=ParseMode.HTML)
+        await query.message.reply_text("⚠️ सत्र समाप्त हो गया है। पुनः <code>/trending</code> चलाएं।", parse_mode=ParseMode.HTML)
         return
 
     start_idx = target_page * 3
@@ -1438,7 +1459,7 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
 
     nav_btns = []
     if target_page > 0:
-        nav_btns.append(InlineKeyboardButton(f"◀️ पेज {target_page}/3", callback_data=f"trpage_{target_page - 1}"))
+        nav_btns.append(InlineKeyboardButton(f"◀️️ पेज {target_page}/3", callback_data=f"trpage_{target_page - 1}"))
     if end_idx < len(lines):
         nav_btns.append(InlineKeyboardButton(f"पेज {target_page + 2}/3 ▶️", callback_data=f"trpage_{target_page + 1}"))
 
@@ -1954,7 +1975,7 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
             return ConversationHandler.END
         else:
             CONTACT_SESSIONS.pop(user_id, None)
-            await msg.reply_text("⚠️ <b>सत्र रद्द:</b> आपने कमांड भेज दी थी। ओनर से संपर्क करने हेतु कृपया पुनः <code>/owner</code> चलाएं।", parse_mode=ParseMode.HTML)
+            await msg.reply_text("⚠️️ <b>सत्र रद्द:</b> आपने कमांड भेज दी थी। ओनर से संपर्क करने हेतु कृपया पुनः <code>/owner</code> चलाएं।", parse_mode=ParseMode.HTML)
             return ConversationHandler.END
 
     start_time = CONTACT_SESSIONS.get(user_id, 0)
