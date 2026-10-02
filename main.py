@@ -3,7 +3,6 @@ import re
 import time
 import asyncio
 import sqlite3
-import json
 import io
 import urllib.parse
 from datetime import datetime, timedelta
@@ -49,24 +48,32 @@ def get_ist_now():
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
+# कन्वर्सेशन स्टेट्स
 WAITING_CONTACT_MSG = 1
 WAITING_BROADCAST_MSG = 2
 WAITING_ASK_SESSION = 3
 
+# DAF स्टेप-बाय-स्टेप स्टेट्स
 DAF_NAME = 4
-DAF_STATE_COLLEGE = 5
-DAF_OPTIONAL_ATTEMPT = 6
-WAITING_INTERVIEW_VOICE = 7
+DAF_STATE = 5
+DAF_COLLEGE_NAME = 6
+DAF_COLLEGE_STATUS = 7
+DAF_RUNNING_SEM = 8
+DAF_STREAM = 9
+DAF_OPTIONAL = 10
+DAF_ATTEMPT = 11
+WAITING_INTERVIEW_QCOUNT = 12
+WAITING_INTERVIEW_VOICE = 13
 
-WAITING_QUESTION_TEXT = 8
-WAITING_ANSWER_COPY = 9
+WAITING_QUESTION_TEXT = 14
+WAITING_ANSWER_COPY = 15
 
 CONTACT_SESSIONS = {}
 USER_QUIZ_SELECTIONS = {}
 MAINS_SELECTIONS = {}
 CHECK_ANSWER_CACHE = {}
 TRENDING_CACHE = {}
-INTERVIEW_SESSION_DATA = {}
+INTERVIEW_SESSION = {}
 DB_PATH = "upsc_bot.db"
 
 telethon_client = None
@@ -90,7 +97,9 @@ def init_db():
             user_id INTEGER PRIMARY KEY,
             name TEXT,
             home_state TEXT,
-            college_grad TEXT,
+            college_name TEXT,
+            college_status TEXT,
+            stream_sem TEXT,
             optional_sub TEXT,
             attempt_info TEXT,
             created_at TEXT
@@ -132,18 +141,18 @@ def register_user(user_id, username, first_name):
 def get_user_daf(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT name, home_state, college_grad, optional_sub, attempt_info FROM user_daf WHERE user_id = ?", (user_id,))
+    c.execute("SELECT name, home_state, college_name, college_status, stream_sem, optional_sub, attempt_info FROM user_daf WHERE user_id = ?", (user_id,))
     row = c.fetchone()
     conn.close()
     return row
 
-def save_user_daf(user_id, name, home_state, college_grad, optional_sub, attempt_info):
+def save_user_daf(user_id, name, home_state, college_name, college_status, stream_sem, optional_sub, attempt_info):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("""
-        INSERT OR REPLACE INTO user_daf (user_id, name, home_state, college_grad, optional_sub, attempt_info, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (user_id, name, home_state, college_grad, optional_sub, attempt_info, get_ist_now().strftime("%Y-%m-%d %H:%M:%S")))
+        INSERT OR REPLACE INTO user_daf (user_id, name, home_state, college_name, college_status, stream_sem, optional_sub, attempt_info, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (user_id, name, home_state, college_name, college_status, stream_sem, optional_sub, attempt_info, get_ist_now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
     conn.close()
 
@@ -227,7 +236,7 @@ def get_all_user_ids():
     conn.close()
     return [r[0] for r in rows]
 
-# ================= ROBUST GEMINI 3.8/LATEST MULTIMODAL SELECTOR =================
+# ================= DYNAMIC GEMINI ENGINE (ZERO 404 CRASH) =================
 def call_gemini_safely(prompt: str) -> str:
     api_k = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_k:
@@ -236,36 +245,39 @@ def call_gemini_safely(prompt: str) -> str:
     genai.configure(api_key=api_k)
     generation_config = {"temperature": 0.25, "max_output_tokens": 8192}
 
-    models_to_try = [
-        "gemini-3.8-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-pro",
+    # 1. प्राथमिकता क्रम में उपलब्ध मॉडल
+    preferred_models = [
         "gemini-2.5-flash",
-        "gemini-1.5-flash"
+        "gemini-3.8-flash",
+        "gemini-1.5-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-pro"
     ]
 
-    last_err = None
-    for m_name in models_to_try:
+    for m_name in preferred_models:
         try:
             model = genai.GenerativeModel(m_name, generation_config=generation_config)
             resp = model.generate_content(prompt)
             if resp and resp.text:
                 return resp.text
-        except Exception as e:
-            last_err = e
+        except Exception:
             continue
 
+    # 2. सक्रिय मॉडल्स की सूची से स्वचालित चुनाव
     try:
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                model = genai.GenerativeModel(m.name, generation_config=generation_config)
-                resp = model.generate_content(prompt)
-                if resp and resp.text:
-                    return resp.text
+                try:
+                    model = genai.GenerativeModel(m.name, generation_config=generation_config)
+                    resp = model.generate_content(prompt)
+                    if resp and resp.text:
+                        return resp.text
+                except Exception:
+                    continue
     except Exception as e:
-        last_err = e
+        raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {e}")
 
-    raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {last_err}")
+    raise Exception("कोई भी उपयुक्त AI मॉडल प्रतिक्रिया नहीं दे रहा है।")
 
 def call_gemini_multimodal(prompt: str, file_bytes: bytes, mime_type: str) -> str:
     api_k = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -273,18 +285,23 @@ def call_gemini_multimodal(prompt: str, file_bytes: bytes, mime_type: str) -> st
         raise Exception("API Key सर्वर पर सेट नहीं है।")
 
     genai.configure(api_key=api_k)
-    models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"]
-    last_err = None
 
-    for m_name in models_to_try:
+    # मल्टीमॉडल के लिए सुरक्षित मॉडल्स
+    preferred_multimodal = [
+        "gemini-2.5-flash",
+        "gemini-3.8-flash",
+        "gemini-1.5-flash"
+    ]
+
+    parts = [{"mime_type": mime_type, "data": file_bytes}, prompt]
+
+    for m_name in preferred_multimodal:
         try:
             model = genai.GenerativeModel(m_name)
-            parts = [{"mime_type": mime_type, "data": file_bytes}, prompt]
             resp = model.generate_content(parts)
             if resp and resp.text:
                 return resp.text
-        except Exception as e:
-            last_err = e
+        except Exception:
             continue
 
     try:
@@ -292,18 +309,17 @@ def call_gemini_multimodal(prompt: str, file_bytes: bytes, mime_type: str) -> st
             if 'generateContent' in m.supported_generation_methods:
                 try:
                     model = genai.GenerativeModel(m.name)
-                    parts = [{"mime_type": mime_type, "data": file_bytes}, prompt]
                     resp = model.generate_content(parts)
                     if resp and resp.text:
                         return resp.text
                 except Exception:
                     continue
     except Exception as e:
-        last_err = e
+        raise Exception(f"मल्टीमॉडल विश्लेषण त्रुटि: {e}")
 
-    raise Exception(f"मल्टीमॉडल विश्लेषण त्रुटि: {last_err}")
+    raise Exception("मल्टीमॉडल समर्थन वाला कोई मॉडल उपलब्ध नहीं है।")
 
-# ================= AUDIO ENGINE (FULL COMPLETE AUDIO STREAM) =================
+# ================= AUDIO ENGINE =================
 async def download_audio_stream(text: str) -> bytes:
     clean_text = re.sub(r'[\*\_#`]', '', text).strip()
     sentences = re.split(r'([।\.\?!;\n]+)', clean_text)
@@ -683,7 +699,7 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("📅 <b>जिस तारीख के UPSC दैनिक नोट्स चाहिए, उस बटन पर क्लिक करें:</b>", reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
-# ================= HTML QUIZ GENERATOR (5, 10, 15, 20 QUESTIONS) =================
+# ================= HTML QUIZ GENERATOR =================
 async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -763,7 +779,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         await wait_m.edit_text(f"❌ टेस्ट बनाने में त्रुटि: {e}")
 
-# ================= UPSC MAINS SPECIAL WITH BACK BUTTONS =================
+# ================= UPSC MAINS SPECIAL WITH COMPLETE ARCHIVE =================
 async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -772,7 +788,7 @@ async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📜 विगत वर्षों के प्रश्न (PYQs)", callback_data="mq_type_pyq")],
         [InlineKeyboardButton("✨ नए संभावित मॉडल प्रश्न (New Expected)", callback_data="mq_type_new")]
     ]
-    await update.message.reply_text("✍️️ <b>UPSC मुख्य परीक्षा (Mains) उत्तर-लेखन:</b>\nआप पुराने प्रश्न देखना चाहते हैं या नए संभावित प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) उत्तर-लेखन:</b>\nआप पुराने प्रश्न देखना चाहते हैं या नए संभावित प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def handle_mains_type_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -806,13 +822,19 @@ async def handle_mains_gs_choice(update: Update, context: ContextTypes.DEFAULT_T
     gs_num = data.replace("mq_gs_", "")
     user_id = query.from_user.id
     MAINS_SELECTIONS[user_id]["gs"] = gs_num
+    is_pyq = (MAINS_SELECTIONS[user_id].get("q_type") == "pyq")
 
     keyboard = [
         [InlineKeyboardButton("⚡ 1 प्रश्न (क्विक मॉडल उत्तर)", callback_data="mq_cnt_1")],
         [InlineKeyboardButton("🎯 3 प्रश्न (मानक अभ्यास सेट)", callback_data="mq_cnt_3")],
-        [InlineKeyboardButton("🏆 5 प्रश्न (संपूर्ण टेस्ट मॉड्यूल)", callback_data="mq_cnt_5")],
-        [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data=f"mq_type_{MAINS_SELECTIONS[user_id].get('q_type', 'new')}")]
+        [InlineKeyboardButton("🏆 5 प्रश्न (संपूर्ण टेस्ट मॉड्यूल)", callback_data="mq_cnt_5")]
     ]
+    if is_pyq:
+        keyboard.append([InlineKeyboardButton("📚 इस GS पेपर के सभी मुख्य PYQs (Complete Archive)", callback_data="mq_cnt_all")])
+    else:
+        keyboard.append([InlineKeyboardButton("📚 10 प्रश्नों का संभावित मेगा सेट", callback_data="mq_cnt_10")])
+
+    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data=f"mq_type_{MAINS_SELECTIONS[user_id].get('q_type', 'new')}")])
     await query.message.edit_text(f"📝 <b>GS {gs_num} के कितने प्रश्नों का अभ्यास करना चाहते हैं?</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -825,19 +847,21 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
         await handle_mains_type_choice(update, context)
         return
 
-    cnt = int(data.replace("mq_cnt_", ""))
+    cnt_raw = data.replace("mq_cnt_", "")
+    cnt_desc = "सभी प्रमुख विगत वर्ष" if cnt_raw == "all" else f"{cnt_raw} प्रश्न"
+    
     sel = MAINS_SELECTIONS.get(user_id, {"q_type": "new", "gs": "2"})
     is_pyq = (sel.get("q_type") == "pyq")
     q_type_str = "विगत वर्षों के प्रश्न (PYQs)" if is_pyq else "नए संभावित प्रश्न"
     gs_paper = f"सामान्य अध्ययन - {sel.get('gs')}"
 
-    wait_m = await query.message.reply_text(f"⏳ <b>{gs_paper}</b> के {cnt} {q_type_str} उत्तर-लेखन मॉड्यूल तैयार हो रहे हैं...", parse_mode=ParseMode.HTML)
+    wait_m = await query.message.reply_text(f"⏳ <b>{gs_paper}</b> के {cnt_desc} {q_type_str} उत्तर-लेखन मॉड्यूल तैयार हो रहे हैं...", parse_mode=ParseMode.HTML)
 
-    tag_instruction = "प्रत्येक प्रश्न पर उसका वर्ष और पेपर स्पष्ट लिखें (उदा. [UPSC CSE 2023 / GS Paper 2])." if is_pyq else "प्रत्येक प्रश्न पर स्पष्ट लिखें: [सचिन शर्मा द्वारा अनुशंसित मॉडल प्रश्न / GS Paper 2]."
+    tag_instruction = "प्रत्येक प्रश्न पर उसका वर्ष और पेपर स्पष्ट लिखें (उदा. [UPSC CSE 2023 / GS Paper 2]). जब से यूपीएससी में यह विषय पूछा जा रहा है तब से अब तक के प्रमुख प्रश्नों को शामिल करें।" if is_pyq else "प्रत्येक प्रश्न पर स्पष्ट लिखें: [सचिन शर्मा द्वारा अनुशंसित मॉडल प्रश्न / GS Paper 2]."
 
     prompt = f"""
 आप UPSC मुख्य परीक्षा के शीर्ष विशेषज्ञ हैं।
-विषय: {gs_paper} के {cnt} {q_type_str} तैयार करें।
+विषय: {gs_paper} के {cnt_desc} {q_type_str} तैयार करें।
 {tag_instruction}
 संरचना:
 1. प्रश्न (15 अंक, 250 शब्द) एवं संदर्भ टैग
@@ -850,8 +874,8 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
     try:
         resp = await asyncio.to_thread(call_gemini_safely, prompt)
         today_str = get_ist_now().strftime("%d %B %Y")
-        topic = f"UPSC Mains Module — GS {sel.get('gs')} ({cnt} प्रश्न)"
-        filename = f"UPSC_Mains_GS{sel.get('gs')}_{cnt}Q.html"
+        topic = f"UPSC Mains Module — GS {sel.get('gs')} ({cnt_desc})"
+        filename = f"UPSC_Mains_GS{sel.get('gs')}_{cnt_raw}.html"
         html_out = build_standalone_master_html(topic, resp, date_str=today_str)
         
         with open(filename, "w", encoding="utf-8") as f:
@@ -1040,7 +1064,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
         if os.path.exists(temp_pdf):
             os.remove(temp_pdf)
 
-# ================= 1-on-1 UPSC INTERVIEW WITH DAF & EVALUATION =================
+# ================= 1-on-1 UPSC INTERVIEW WITH DETAILED DAF =================
 async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -1055,39 +1079,24 @@ async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return DAF_NAME
 
-    name, home_state, college_grad, optional_sub, attempt_info = daf
+    name, home_state, college_name, college_status, stream_sem, optional_sub, attempt_info = daf
     keyboard = [
         [InlineKeyboardButton("✅ इसी प्रोफाइल से साक्षात्कार दें", callback_data="daf_use_existing")],
         [InlineKeyboardButton("✏️ प्रोफाइल में बदलाव करें (Update DAF)", callback_data="daf_edit")]
     ]
     await update.message.reply_text(
-        f"🏛 <b>विगत साक्षात्कार प्रोफाइल:</b>\n\n"
+        f"🏛 <b>आपकी विगत साक्षात्कार प्रोफाइल:</b>\n\n"
         f"👤 <b>नाम:</b> {name}\n"
         f"📍 <b>गृह राज्य:</b> {home_state}\n"
-        f"🎓 <b>शिक्षा:</b> {college_grad}\n"
+        f"🏫 <b>कॉलेज:</b> {college_name} ({college_status})\n"
+        f"🎓 <b>स्ट्रीम / स्थिति:</b> {stream_sem}\n"
         f"📚 <b>वैकल्पिक विषय:</b> {optional_sub}\n"
-        f"🎯 <b>प्रयास:</b> {attempt_info}\n\n"
-        "आपकी पृष्ठभूमि के आधार पर ही बोर्ड द्वारा प्रश्न पूछे जाएँगे।",
+        f"🎯 <b>प्रयास / स्थिति:</b> {attempt_info}\n\n"
+        "आपकी इस पृष्ठभूमि के आधार पर ही बोर्ड द्वारा प्रश्न पूछे जाएँगे।",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.HTML
     )
     return DAF_NAME
-
-async def handle_daf_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    user_id = query.from_user.id
-
-    if query.data == "daf_edit":
-        await query.message.edit_text(
-            "कृपया अपना <b>पूरा नाम</b> लिखकर भेजें:",
-            parse_mode=ParseMode.HTML
-        )
-        return DAF_NAME
-    else:
-        daf = get_user_daf(user_id)
-        await query.message.delete()
-        return await ask_interview_situational_question(update, context, daf)
 
 async def handle_daf_name_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
@@ -1096,49 +1105,186 @@ async def handle_daf_name_step(update: Update, context: ContextTypes.DEFAULT_TYP
 
     await update.message.reply_text(
         f"धन्यवाद <b>{name} जी</b>।\n\n"
-        "👉 अब कृपया अपना <b>गृह राज्य</b> और <b>कॉलेज / ग्रेजुएशन का विषय</b> लिखकर भेजें:",
+        "👉 अब कृपया अपना <b>गृह राज्य</b> लिखकर भेजें:",
         parse_mode=ParseMode.HTML
     )
-    return DAF_STATE_COLLEGE
+    return DAF_STATE
 
 async def handle_daf_state_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    txt = update.message.text.strip() if update.message.text else "भारत"
-    context.user_data["daf_state_college"] = txt
+    state = update.message.text.strip() if update.message.text else "राजस्थान"
+    context.user_data["daf_state"] = state
 
     await update.message.reply_text(
-        "उत्तम।\n\n"
-        "👉 अब कृपया अपना <b>वैकल्पिक विषय (Optional Subject)</b> और आपका यह <b>कौन-सा प्रयास (Attempt)</b> है, वह लिखकर भेजें:",
+        f"उत्तम, राज्य: <b>{state}</b>।\n\n"
+        "👉 अब अपने <b>कॉलेज / विश्वविद्यालय का नाम</b> लिखकर भेजें:",
         parse_mode=ParseMode.HTML
     )
-    return DAF_OPTIONAL_ATTEMPT
+    return DAF_COLLEGE_NAME
+
+async def handle_daf_college_name_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    col_name = update.message.text.strip() if update.message.text else "शासकीय महाविद्यालय"
+    context.user_data["daf_college_name"] = col_name
+
+    keyboard = [
+        [InlineKeyboardButton("🎓 पूर्ण हो चुकी है (Completed)", callback_data="colstat_completed")],
+        [InlineKeyboardButton("⏳ अभी चल रही है (Running)", callback_data="colstat_running")]
+    ]
+    await update.message.reply_text(
+        "👉 आपकी कॉलेज / ग्रेजुएशन की वर्तमान स्थिति क्या है?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML
+    )
+    return DAF_COLLEGE_STATUS
+
+async def handle_daf_college_status_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    status_choice = query.data.replace("colstat_", "")
+    
+    if status_choice == "completed":
+        context.user_data["daf_college_status"] = "पूर्ण (Completed)"
+        await query.message.edit_text(
+            "👉 आपने किस स्ट्रीम / विषय से ग्रेजुएशन पूर्ण किया है? (उदा. कला / विज्ञान / वाणिज्य / इंजीनियरिंग):",
+            parse_mode=ParseMode.HTML
+        )
+        return DAF_STREAM
+    else:
+        context.user_data["daf_college_status"] = "चल रही है (Running)"
+        keyboard = [
+            [InlineKeyboardButton("1st / 2nd Sem", callback_data="sem_1_2"), InlineKeyboardButton("3rd / 4th Sem", callback_data="sem_3_4")],
+            [InlineKeyboardButton("5th / 6th Sem", callback_data="sem_5_6"), InlineKeyboardButton("वार्षिक पद्धति (Annual)", callback_data="sem_annual")]
+        ]
+        await query.message.edit_text(
+            "👉 आप वर्तमान में किस सेमेस्टर या वर्ष में अध्ययनरत हैं?",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+        return DAF_RUNNING_SEM
+
+async def handle_daf_running_sem_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    sem_choice = query.data.replace("sem_", "")
+    sem_map = {"1_2": "1st/2nd सेमेस्टर", "3_4": "3rd/4th सेमेस्टर", "5_6": "5th/6th सेमेस्टर", "annual": "वार्षिक पद्धति"}
+    context.user_data["daf_sem"] = sem_map.get(sem_choice, "रनिंग सेमेस्टर")
+
+    await query.message.edit_text(
+        "👉 आप किस स्ट्रीम / विषय से यह कोर्स कर रहे हैं? (उदा. B.A. भूगोल/अर्थशास्त्र या B.Sc.):",
+        parse_mode=ParseMode.HTML
+    )
+    return DAF_STREAM
+
+async def handle_daf_stream_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    stream_text = update.message.text.strip() if update.message.text else "कला वर्ग"
+    sem_info = context.user_data.get("daf_sem", "")
+    full_academic = f"{stream_text} ({sem_info})" if sem_info else stream_text
+    context.user_data["daf_stream_sem"] = full_academic
+
+    await update.message.reply_text(
+        "👉 आपका <b>UPSC वैकल्पिक विषय (Optional Subject)</b> क्या है? (उदा. भूगोल, इतिहास, PSIR, हिंदी साहित्य):",
+        parse_mode=ParseMode.HTML
+    )
+    return DAF_OPTIONAL
 
 async def handle_daf_optional_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
-    txt = update.message.text.strip() if update.message.text else "सामान्य अध्ययन"
-    
-    name = context.user_data.get("daf_name", update.effective_user.first_name)
-    state_col = context.user_data.get("daf_state_college", "भारत")
-    
-    save_user_daf(user_id, name, state_col, state_col, txt, txt)
-    await update.message.reply_text("✅ आपकी स्थिति और पृष्ठभूमि के आधार पर बोर्ड कक्ष में साक्षात्कार प्रारंभ हो रहा है...", parse_mode=ParseMode.HTML)
-    
+    opt_sub = update.message.text.strip() if update.message.text else "भूगोल"
+    context.user_data["daf_optional"] = opt_sub
+
+    keyboard = [
+        [InlineKeyboardButton("🌱 फ्रेशर / अभी तैयारी प्रारंभ की है", callback_data="att_fresher")],
+        [InlineKeyboardButton("🎯 1st Attempt (पहला प्रयास)", callback_data="att_1st")],
+        [InlineKeyboardButton("⚡ 2nd / 3rd Attempt (विगत अनुभव)", callback_data="att_repeat")]
+    ]
+    await update.message.reply_text(
+        "👉 UPSC सिविल सेवा परीक्षा में आपका अनुभव / प्रयास स्थिति क्या है?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML
+    )
+    return DAF_ATTEMPT
+
+async def handle_daf_attempt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    att_code = query.data.replace("att_", "")
+    att_map = {"fresher": "फ्रेशर (तैयारी जारी)", "1st": "पहला प्रयास", "repeat": "विगत अनुभव सहित"}
+    attempt_info = att_map.get(att_code, "पहला प्रयास")
+
+    name = context.user_data.get("daf_name", query.from_user.first_name)
+    state = context.user_data.get("daf_state", "राजस्थान")
+    college_name = context.user_data.get("daf_college_name", "कॉलेज")
+    college_status = context.user_data.get("daf_college_status", "पूर्ण")
+    stream_sem = context.user_data.get("daf_stream_sem", "B.A.")
+    optional_sub = context.user_data.get("daf_optional", "भूगोल")
+
+    save_user_daf(user_id, name, state, college_name, college_status, stream_sem, optional_sub, attempt_info)
+
+    keyboard = [
+        [InlineKeyboardButton("⚡ 1 स्थितिजन्य प्रश्न (Quick Test)", callback_data="iqcnt_1")],
+        [InlineKeyboardButton("🎯 3 प्रश्नों का साक्षात्कार सेट", callback_data="iqcnt_3")],
+        [InlineKeyboardButton("🏆 5 प्रश्नों का गहन बोर्ड इंटरव्यू", callback_data="iqcnt_5")]
+    ]
+    await query.message.edit_text(
+        "✅ आपकी स्थिति और पृष्ठभूमि के आधार पर बोर्ड कक्ष में प्रवेश की अनुमति दी गई है।\n\n"
+        "👉 <b>आप कितने प्रश्नों का साक्षात्कार सेट देना चाहते हैं?</b>",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.HTML
+    )
+    return WAITING_INTERVIEW_QCOUNT
+
+async def handle_daf_choice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "daf_edit":
+        await query.message.edit_text(
+            "कृपया अपना <b>पूरा नाम</b> लिखकर भेजें:",
+            parse_mode=ParseMode.HTML
+        )
+        return DAF_NAME
+    else:
+        keyboard = [
+            [InlineKeyboardButton("⚡ 1 स्थितिजन्य प्रश्न (Quick Test)", callback_data="iqcnt_1")],
+            [InlineKeyboardButton("🎯 3 प्रश्नों का साक्षात्कार सेट", callback_data="iqcnt_3")],
+            [InlineKeyboardButton("🏆 5 प्रश्नों का गहन बोर्ड इंटरव्यू", callback_data="iqcnt_5")]
+        ]
+        await query.message.edit_text(
+            "👉 <b>आप कितने प्रश्नों का साक्षात्कार सेट देना चाहते हैं?</b>",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+        return WAITING_INTERVIEW_QCOUNT
+
+async def handle_interview_qcount_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    qcnt = int(query.data.replace("iqcnt_", ""))
+
     daf = get_user_daf(user_id)
-    return await ask_interview_situational_question(update, context, daf)
+    name, home_state, college_name, college_status, stream_sem, optional_sub, attempt_info = daf
+    INTERVIEW_SESSION[user_id] = {"total": qcnt, "current": 1, "name": name, "daf": daf}
 
-async def ask_interview_situational_question(update: Update, context: ContextTypes.DEFAULT_TYPE, daf) -> int:
-    name, home_state, college_grad, optional_sub, attempt_info = daf
-    user_id = update.effective_user.id
-    INTERVIEW_SESSION_DATA[user_id] = {"name": name, "round": 1}
+    await query.message.delete()
+    return await ask_interview_situational_question(update, context, daf, 1, qcnt)
 
-    wait_m = await update.effective_message.reply_text("🎙️ <b>साक्षात्कार बोर्ड के अध्यक्ष आपके DAF के आधार पर प्रश्न तैयार कर रहे हैं...</b>", parse_mode=ParseMode.HTML)
+async def ask_interview_situational_question(update: Update, context: ContextTypes.DEFAULT_TYPE, daf, curr_round, total_rounds) -> int:
+    name, home_state, college_name, college_status, stream_sem, optional_sub, attempt_info = daf
+
+    wait_m = await update.effective_message.reply_text(f"🎙️ <b>साक्षात्कार बोर्ड (प्रश्न {curr_round}/{total_rounds}) तैयार हो रहा है...</b>", parse_mode=ParseMode.HTML)
 
     prompt = f"""
 आप UPSC साक्षात्कार बोर्ड के अध्यक्ष हैं।
-उम्मीदवार का नाम: {name}
-पृष्ठभूमि: राज्य/कॉलेज - {home_state}, ऑप्शनल/प्रयास - {optional_sub}
+उम्मीदवार का विवरण:
+नाम: {name}
+गृह राज्य: {home_state}
+कॉलेज व पृष्ठभूमि: {college_name} ({college_status}, {stream_sem})
+वैकल्पिक विषय: {optional_sub}
+प्रयास स्थिति: {attempt_info}
+वर्तमान प्रश्न संख्या: {curr_round} / {total_rounds}
 
-उम्मीदवार {name} का नाम लेकर एक संक्षिप्त (केवल 3-4 पंक्तियों का), विनम्र और सीधा प्रशासनिक स्थितिजन्य (Situational) प्रश्न पूछें।
-भाषा सरल, स्पष्ट और गरिमापूर्ण रखें।
+उम्मीदवार {name} जी का नाम लेकर एक संक्षिप्त (केवल 3-4 पंक्तियों का), विनम्र और सीधा प्रशासनिक स्थितिजन्य (Situational) प्रश्न पूछें।
+यदि वैकल्पिक विषय भूगोल/संबंधित है तो भौगोलिक या प्रशासनिक निर्णय-प्रक्रिया से जोड़ें।
 """
     try:
         q_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1148,17 +1294,17 @@ async def ask_interview_situational_question(update: Update, context: ContextTyp
         await wait_m.delete()
 
         await update.effective_message.reply_text(
-            f"🏛 <b>UPSC साक्षात्कार बोर्ड अध्यक्ष:</b>\n\n{clean_q}\n\n"
+            f"🏛 <b>UPSC साक्षात्कार बोर्ड अध्यक्ष (प्रश्न {curr_round}/{total_rounds}):</b>\n\n{clean_q}\n\n"
             "👉 <b>अब अपना उत्तर वॉयस नोट (Voice Message) रिकॉर्ड करके भेजें:</b>\n"
             "<i>(सत्र समाप्त करने हेतु <code>/cancel</code> भेजें)</i>",
             parse_mode=ParseMode.HTML
         )
         if audio_bytes:
             audio_io = io.BytesIO(audio_bytes)
-            audio_io.name = "UPSC_Interview_Question.mp3"
+            audio_io.name = f"UPSC_Interview_Question_{curr_round}.mp3"
             await update.effective_message.reply_voice(
                 voice=audio_io,
-                caption=f"🎙️ साक्षात्कार प्रश्न | {AUTHOR_NAME}"
+                caption=f"🎙️ साक्षात्कार प्रश्न {curr_round}/{total_rounds} | {AUTHOR_NAME}"
             )
 
     except Exception as e:
@@ -1169,8 +1315,18 @@ async def ask_interview_situational_question(update: Update, context: ContextTyp
 async def handle_interview_candidate_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     user_id = user.id
-    daf = get_user_daf(user_id)
-    c_name = daf[0] if daf else user.first_name
+    sess = INTERVIEW_SESSION.get(user_id)
+    
+    if not sess:
+        daf = get_user_daf(user_id)
+        if not daf:
+            await update.message.reply_text("सत्र समाप्त हो गया है। पुनः <code>/interview</code> चलाएं।", parse_mode=ParseMode.HTML)
+            return ConversationHandler.END
+        sess = {"total": 1, "current": 1, "name": daf[0], "daf": daf}
+
+    c_name = sess["name"]
+    curr = sess["current"]
+    tot = sess["total"]
 
     wait_m = await update.message.reply_text("🎧 <b>बोर्ड आपके मौखिक उत्तर का विश्लेषण कर रहा है...</b>", parse_mode=ParseMode.HTML)
 
@@ -1178,11 +1334,13 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
         f_bytes = await download_file_safely(update.message, context)
         mime_type = "audio/ogg" if update.message.voice else "audio/mpeg"
 
+        is_last = (curr >= tot)
+        last_inst = "यह अंतिम उत्तर था, अतः 275 में से प्राप्तांक, प्रशासनिक मानसिकता, संतुलन व कमियों की अंतिम रिपोर्ट दें।" if is_last else "2 पंक्तियों में मूल्यांकन करें और अगले प्रश्न के लिए तैयार रहने को कहें।"
+
         eval_prompt = f"""
-उम्मीदवार {c_name} ने UPSC साक्षात्कार के प्रश्न का मौखिक उत्तर दिया है।
-कृपया उम्मीदवार के उत्तर की सत्यनिष्ठा, प्रशासनिक परिपक्वता और भाषा का मूल्यांकन 2 पंक्तियों में करें।
-फिर एक विस्तृत 4-पंक्ति रिपोर्ट कार्ड दें (अंक: 275 में से, मानसिक दृढ़ता, विश्लेषणात्मक संतुलन, सुधार सुझाव)।
-{c_name} जी कहकर संबोधित करें। भाषा विनम्र व प्रेरणादायी रखें।
+उम्मीदवार {c_name} ने UPSC साक्षात्कार के प्रश्न {curr}/{tot} का मौखिक उत्तर दिया है।
+{last_inst}
+{c_name} जी कहकर संबोधित करें। भाषा प्रेरणादायी व गरिमापूर्ण रखें।
 """
         eval_resp = await asyncio.to_thread(call_gemini_multimodal, eval_prompt, bytes(f_bytes), mime_type)
         clean_resp = eval_resp.strip()
@@ -1191,22 +1349,30 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
         await wait_m.delete()
 
         await update.message.reply_text(
-            f"🏛 <b>साक्षात्कार बोर्ड मूल्यांकन रिपोर्ट:</b>\n\n{clean_resp}\n\n"
-            "👉 <i>पुनः वॉयस नोट भेजकर अगला प्रश्न हल करें या समाप्त करने हेतु <code>/cancel</code> भेजें।</i>",
+            f"🏛 <b>बोर्ड मूल्यांकन ({curr}/{tot}):</b>\n\n{clean_resp}\n\n",
             parse_mode=ParseMode.HTML
         )
         if audio_bytes:
             audio_io = io.BytesIO(audio_bytes)
-            audio_io.name = "UPSC_Board_Evaluation.mp3"
+            audio_io.name = f"UPSC_Board_Evaluation_{curr}.mp3"
             await update.message.reply_voice(
                 voice=audio_io,
                 caption=f"🎙️ साक्षात्कार बोर्ड मूल्यांकन | {AUTHOR_NAME}"
             )
 
+        if not is_last:
+            sess["current"] += 1
+            INTERVIEW_SESSION[user_id] = sess
+            await asyncio.sleep(1)
+            return await ask_interview_situational_question(update, context, sess["daf"], sess["current"], tot)
+        else:
+            INTERVIEW_SESSION.pop(user_id, None)
+            await update.message.reply_text("🏆 <b>आपका मॉक साक्षात्कार सत्र सफलतापूर्वक संपन्न हुआ!</b>", parse_mode=ParseMode.HTML)
+            return ConversationHandler.END
+
     except Exception as e:
         await wait_m.edit_text(f"❌ वॉयस प्रोसेसिंग में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
-
-    return WAITING_INTERVIEW_VOICE
+        return WAITING_INTERVIEW_VOICE
 
 # ================= CONTINUOUS ASK MENTORSHIP SESSION =================
 async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1343,7 +1509,7 @@ async def handle_trending_type_selection(update: Update, context: ContextTypes.D
         p_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के पूर्ण नोट्स हेतु नंबर भेजें (उदा. <code>1, 2</code>)\n• सभी मुद्दों के 360° नोट्स हेतु लिखें: <code>all</code>"
 
         keyboard = [
-            [InlineKeyboardButton("अगला पेज (4-6) ▶", callback_data="trpage_1")],
+            [InlineKeyboardButton("अगला पेज (पेज 2/3) ▶", callback_data="trpage_1")],
             [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="tr_back_root")]
         ]
         await wait_m.edit_text(p_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -1370,9 +1536,9 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
 
     nav_btns = []
     if target_page > 0:
-        nav_btns.append(InlineKeyboardButton("◀️ पिछला पेज", callback_data=f"trpage_{target_page - 1}"))
+        nav_btns.append(InlineKeyboardButton(f"◀️ पेज {target_page}/3", callback_data=f"trpage_{target_page - 1}"))
     if end_idx < len(lines):
-        nav_btns.append(InlineKeyboardButton("अगला पेज ▶️", callback_data=f"trpage_{target_page + 1}"))
+        nav_btns.append(InlineKeyboardButton(f"पेज {target_page + 2}/3 ▶️", callback_data=f"trpage_{target_page + 1}"))
 
     keyboard = [nav_btns] if nav_btns else []
     keyboard.append([InlineKeyboardButton("🔙 मुख्य मेनू (Back)", callback_data="tr_back_root")])
@@ -1393,7 +1559,7 @@ async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user.id, user.username, user.first_name)
     years = ["2026", "2025", "2024"]
     keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक महा-संकलन (PT-365)", callback_data=f"genyear_{y}")] for y in years]
-    await update.message.reply_text("🏛️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("🏛️️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 # /weekly
 async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1978,7 +2144,8 @@ async def global_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     user_id = update.effective_user.id
     CONTACT_SESSIONS.pop(user_id, None)
     CHECK_ANSWER_CACHE.pop(user_id, None)
-    INTERVIEW_SESSION_DATA.pop(user_id, None)
+    INTERVIEW_SESSION.pop(user_id, None)
+    context.user_data.clear()
     await update.message.reply_text("🛑 <b>प्रक्रिया रद्द कर दी गई।</b> आप नई कमांड का उपयोग कर सकते हैं।", parse_mode=ParseMode.HTML)
     return ConversationHandler.END
 
@@ -2022,7 +2189,7 @@ async def main():
     bot_app.add_handler(CommandHandler("removeuser", remove_user_cmd))
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd))
 
-    # क्विज़ कॉलबैक्स (HTML फाइल्स हेतु)
+    # क्विज़ कॉलबैक्स (HTML फाइल्स)
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_subj_choice, pattern=r"^quizsubj_"))
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_cnt_choice, pattern=r"^quizcnt_|^quiz_back_root"))
 
@@ -2035,9 +2202,6 @@ async def main():
     bot_app.add_handler(CallbackQueryHandler(handle_trending_type_selection, pattern=r"^trtype_|^tr_back_root"))
     bot_app.add_handler(CallbackQueryHandler(handle_trending_pages, pattern=r"^trpage_"))
     bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click))
-
-    # DAF अपडेट या उपयोग कॉलबैक
-    bot_app.add_handler(CallbackQueryHandler(handle_daf_choice_callback, pattern=r"^daf_"))
 
     # 1. उत्तर पुस्तिका 2-स्टेप चेकिंग (/checkanswer)
     answer_check_conv = ConversationHandler(
@@ -2055,9 +2219,18 @@ async def main():
     interview_conv = ConversationHandler(
         entry_points=[CommandHandler("interview", interview_flow_start)],
         states={
-            DAF_NAME: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_name_step)],
-            DAF_STATE_COLLEGE: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_state_step)],
-            DAF_OPTIONAL_ATTEMPT: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_optional_step)],
+            DAF_NAME: [
+                CallbackQueryHandler(handle_daf_choice_callback, pattern=r"^daf_"),
+                MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_name_step)
+            ],
+            DAF_STATE: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_state_step)],
+            DAF_COLLEGE_NAME: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_college_name_step)],
+            DAF_COLLEGE_STATUS: [CallbackQueryHandler(handle_daf_college_status_callback, pattern=r"^colstat_")],
+            DAF_RUNNING_SEM: [CallbackQueryHandler(handle_daf_running_sem_callback, pattern=r"^sem_")],
+            DAF_STREAM: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_stream_step)],
+            DAF_OPTIONAL: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_optional_step)],
+            DAF_ATTEMPT: [CallbackQueryHandler(handle_daf_attempt_callback, pattern=r"^att_")],
+            WAITING_INTERVIEW_QCOUNT: [CallbackQueryHandler(handle_interview_qcount_callback, pattern=r"^iqcnt_")],
             WAITING_INTERVIEW_VOICE: [MessageHandler((filters.VOICE | filters.AUDIO) & (~filters.COMMAND), handle_interview_candidate_voice)]
         },
         fallbacks=[CommandHandler("cancel", global_cancel)],
