@@ -39,11 +39,11 @@ if GEMINI_API_KEY:
 
 WAITING_CONTACT_MSG = 1
 WAITING_BROADCAST_MSG = 2
+WAITING_ASK_SESSION = 3
 
 CONTACT_SESSIONS = {}
 USER_QUIZ_SELECTIONS = {}
 TRENDING_CACHE = {}
-TRENDING_PAGE_INDEX = {}
 DB_PATH = "upsc_bot.db"
 
 # ================= DATABASE SETUP =================
@@ -82,8 +82,11 @@ def register_user(user_id, username, first_name):
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("""
-            INSERT OR IGNORE INTO users (user_id, username, first_name, joined_at)
+            INSERT INTO users (user_id, username, first_name, joined_at)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET 
+                username = excluded.username,
+                first_name = excluded.first_name
         """, (user_id, username or "", first_name or "", get_ist_now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
         conn.close()
@@ -294,7 +297,7 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'\*\*भूमिका\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-intro">📌 भूमिका:</span> <p class="para">\1</p></div>', text)
     text = re.sub(r'\*\*मुख्य\s*विश्लेषणात्मक\s*बिंदु\s*[:\-]?\*\*', r'<div class="point-badge-body">📊 मुख्य विश्लेषणात्मक आयाम:</div>', text)
     text = re.sub(r'\*\*आगे\s*की\s*राह\s*\(Way\s*Forward\)\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-wf">🚀 आगे की राह (Way Forward):</span> <p class="para">\1</p></div>', text)
-    text = re.sub(r'\*\*संतुलित\s*निष्कर्ष\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-conc">⚖️️ संतुलित प्रशासनिक निष्कर्ष:</span> <p class="para">\1</p></div>', text)
+    text = re.sub(r'\*\*संतुलित\s*निष्कर्ष\s*[:\-]?\*\*\s*(.*)', r'<div class="mains-point"><span class="point-badge-conc">⚖️ संतुलित प्रशासनिक निष्कर्ष:</span> <p class="para">\1</p></div>', text)
 
     text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
@@ -311,7 +314,7 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
 
 def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "", is_trending: bool = False) -> str:
     cleaned_body = clean_all_markdown_and_fix_content(raw_content)
-    display_date = date_str if date_str else get_ist_now().strftime("%Y-%m-%d")
+    display_date = date_str if date_str else get_ist_now().strftime("%d %B %Y")
 
     nav_links = '<a href="#sec-overview">📋 सत्र सार</a>\n'
 
@@ -337,7 +340,7 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
             sec_idx += 1
 
     final_body = str(soup)
-    overview_title = "🧭 ट्रेंडिंग समसामयिक विश्लेषण" if is_trending else "📌 सत्र विहंगावलोकन (Session Scope & Core Index)"
+    overview_title = "🧭 ट्रेंडिंग समसामयिक विश्लेषण" if is_trending else "📌 सत्र विहंगावलोकन"
 
     return f"""<!DOCTYPE html>
 <html lang="hi">
@@ -348,9 +351,9 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
 <link href="[https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap)" rel="stylesheet">
 <style>
 :root {{
-  --bg: #f4f6f9; --card: #ffffff; --text: #1c2430; --muted: #5b6675; --border: #e2e8f0;
+  --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --muted: #64748b; --border: #e2e8f0;
   --accent: #0284c7; --accent-dark: #0369a1; --saffron: #f59e0b; --green: #10b981;
-  --tag-bg: #e0f2fe; --tag-text: #0369a1; --shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+  --tag-bg: #e0f2fe; --tag-text: #0369a1; --shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
 }}
 [data-theme="dark"] {{
   --bg: #0b1120; --card: #1e293b; --text: #f1f5f9; --muted: #94a3b8; --border: #334155;
@@ -375,91 +378,68 @@ body {{
 }}
 .top-header {{
   background: linear-gradient(135deg, #071529, #0284c7 65%, #0369a1);
-  color: #fff; padding: 30px 16px 22px; text-align: center; border-bottom: 4px solid var(--saffron);
+  color: #fff; padding: 26px 16px 20px; text-align: center; border-bottom: 4px solid var(--saffron);
 }}
-.top-header h1 {{ font-size: 1.75rem; margin-bottom: 8px; font-weight: 700; }}
+.top-header h1 {{ font-size: 1.65rem; margin-bottom: 6px; font-weight: 700; }}
 .author-pill {{
-  display: inline-block; margin-top: 6px; background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.35); padding: 6px 20px; border-radius: 30px;
-  font-weight: 600; font-size: 0.95rem; letter-spacing: 0.5px;
+  display: inline-block; margin-top: 4px; background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.35); padding: 5px 18px; border-radius: 30px;
+  font-weight: 600; font-size: 0.92rem;
 }}
-.controls {{ display: flex; justify-content: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }}
-.controls input {{ width: min(360px, 85vw); padding: 10px 16px; border-radius: 20px; border: none; outline: none; font-size: 0.92rem; }}
+.controls {{ display: flex; justify-content: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }}
+.controls input {{ width: min(340px, 85vw); padding: 9px 14px; border-radius: 20px; border: none; outline: none; font-size: 0.9rem; }}
 .controls button {{
-  padding: 9px 20px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.2); color: #fff; font-weight: 600; cursor: pointer; transition: all 0.2s ease;
+  padding: 8px 18px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.2); color: #fff; font-weight: 600; cursor: pointer;
 }}
-.controls button:hover {{ background: rgba(255, 255, 255, 0.35); }}
 nav.dashboard {{
   position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow); overflow-x: auto; white-space: nowrap; padding: 10px 14px;
 }}
-nav.dashboard .nav-wrap {{ display: flex; gap: 10px; max-width: 1000px; margin: 0 auto; }}
+nav.dashboard .nav-wrap {{ display: flex; gap: 8px; max-width: 1000px; margin: 0 auto; }}
 nav.dashboard a {{
-  display: inline-block; padding: 8px 16px; background: var(--tag-bg); color: var(--tag-text);
-  border-radius: 18px; font-size: 0.88rem; font-weight: 600; text-decoration: none; flex: none; transition: all 0.2s ease;
+  display: inline-block; padding: 7px 14px; background: var(--tag-bg); color: var(--tag-text);
+  border-radius: 16px; font-size: 0.86rem; font-weight: 600; text-decoration: none; flex: none;
 }}
 nav.dashboard a:hover {{ background: var(--accent); color: #fff; }}
-.wrap {{ max-width: 1000px; margin: 26px auto; padding: 0 16px; width: 100%; }}
+.wrap {{ max-width: 1000px; margin: 22px auto; padding: 0 16px; width: 100%; }}
 .overview-box {{
   background: var(--tag-bg); border: 2px solid var(--accent); border-radius: 12px;
-  padding: 20px; margin-bottom: 25px; box-shadow: var(--shadow);
+  padding: 18px; margin-bottom: 22px; box-shadow: var(--shadow);
 }}
-.overview-title {{ color: var(--accent-dark); font-size: 1.25rem; font-weight: 700; margin-bottom: 10px; }}
+.overview-title {{ color: var(--accent-dark); font-size: 1.2rem; font-weight: 700; margin-bottom: 8px; }}
 .news-card {{
-  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-  padding: 26px; margin-bottom: 26px; box-shadow: var(--shadow); width: 100%; scroll-margin-top: 70px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px; margin-bottom: 24px; box-shadow: var(--shadow); width: 100%; scroll-margin-top: 70px;
 }}
 .section-title {{
-  color: var(--accent); font-size: 1.35rem; margin-bottom: 16px;
-  border-left: 5px solid var(--saffron); padding-left: 14px; font-weight: 700;
+  color: var(--accent); font-size: 1.3rem; margin-bottom: 14px;
+  border-left: 5px solid var(--saffron); padding-left: 12px; font-weight: 700;
 }}
-.sub-title {{ font-size: 1.15rem; color: var(--accent-dark); margin: 18px 0 8px; font-weight: 700; }}
-.para {{ margin: 10px 0; font-size: 1.02rem; word-break: break-word; text-align: justify; }}
-.badge-src {{
-  background: #fef3c7; color: #92400e; border: 1px solid #fde68a; padding: 4px 10px;
-  border-radius: 6px; font-size: 0.82rem; font-weight: 700; display: inline-block; margin-bottom: 12px;
-}}
-[data-theme="dark"] .badge-src {{ background: #451a03; color: #fde68a; border-color: #78350f; }}
-.badge-art {{
-  background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; padding: 3px 8px;
-  border-radius: 6px; font-size: 0.84rem; font-weight: 700; display: inline-block; margin-right: 6px;
-}}
-[data-theme="dark"] .badge-art {{ background: #064e3b; color: #6ee7b7; border-color: #047857; }}
-.table-box {{ overflow-x: auto; margin: 18px 0; width: 100%; border-radius: 8px; border: 1px solid var(--border); }}
+.sub-title {{ font-size: 1.1rem; color: var(--accent-dark); margin: 16px 0 8px; font-weight: 700; }}
+.para {{ margin: 8px 0; font-size: 1rem; word-break: break-word; text-align: justify; }}
+.table-box {{ overflow-x: auto; margin: 16px 0; width: 100%; border-radius: 8px; border: 1px solid var(--border); }}
 table {{ width: 100%; border-collapse: collapse; text-align: left; }}
-th {{ background: var(--accent); color: #fff; padding: 12px 14px; font-size: 0.95rem; font-weight: 600; }}
-td {{ padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 0.95rem; vertical-align: top; }}
+th {{ background: var(--accent); color: #fff; padding: 11px 13px; font-size: 0.92rem; font-weight: 600; }}
+td {{ padding: 11px 13px; border-bottom: 1px solid var(--border); font-size: 0.92rem; vertical-align: top; }}
 tr:nth-child(even) td {{ background: rgba(128, 128, 128, 0.04); }}
-.mains-card {{
-  background: #fffbeb; border: 1px solid #fcd34d; border-left: 5px solid #f59e0b;
-  border-radius: 8px; padding: 20px; margin: 20px 0;
-}}
-[data-theme="dark"] .mains-card {{ background: #261b0c; border-color: #78350f; color: #fef3c7; }}
-.point-badge-intro {{ background: #0284c7; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }}
-.point-badge-body {{ color: var(--accent-dark); font-weight: 700; font-size: 1.05rem; margin: 10px 0 6px; }}
-.point-badge-wf {{ background: #10b981; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }}
-.point-badge-conc {{ background: #f59e0b; color: #000; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }}
-.mains-point {{ margin: 12px 0; padding-left: 8px; border-left: 3px solid #cbd5e1; }}
+.mains-point {{ margin: 10px 0; padding-left: 8px; border-left: 3px solid #cbd5e1; }}
+.point-badge-intro {{ background: #0284c7; color: #fff; padding: 2px 7px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; }}
+.point-badge-body {{ color: var(--accent-dark); font-weight: 700; font-size: 1rem; margin: 8px 0 4px; }}
+.point-badge-wf {{ background: #10b981; color: #fff; padding: 2px 7px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; }}
+.point-badge-conc {{ background: #f59e0b; color: #000; padding: 2px 7px; border-radius: 4px; font-weight: bold; font-size: 0.85rem; }}
 .img-figure {{
-  margin: 20px 0; text-align: center; background: #ffffff; padding: 12px;
-  border-radius: 12px; border: 1.5px solid #bae6fd; box-shadow: var(--shadow);
+  margin: 18px 0; text-align: center; background: #ffffff; padding: 10px;
+  border-radius: 10px; border: 1px solid #bae6fd; box-shadow: var(--shadow);
 }}
 [data-theme="dark"] .img-figure {{ background: #1e293b; border-color: #0369a1; }}
-.img-figure figcaption {{
-  font-size: 0.92rem; color: #0369a1; margin-top: 10px; font-weight: 700;
-}}
+.img-figure figcaption {{ font-size: 0.88rem; color: #0369a1; margin-top: 8px; font-weight: 700; }}
 [data-theme="dark"] .img-figure figcaption {{ color: #7dd3fc; }}
-.mcq-box {{ background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 14px 0; }}
-.mcq-ans {{
-  background: var(--tag-bg); border-left: 4px solid var(--green); padding: 10px 14px;
-  margin-top: 10px; border-radius: 0 6px 6px 0; font-size: 0.92rem;
-}}
 #telegramBtn {{
   position: fixed; bottom: 18px; right: 18px; z-index: 90; background: #229ED9; color: #fff;
-  border: none; border-radius: 30px; padding: 12px 22px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25); font-size: 0.9rem;
+  border: none; border-radius: 30px; padding: 11px 20px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25); font-size: 0.88rem;
 }}
-footer {{ background: #071529; color: #dbe6f2; text-align: center; padding: 30px 16px; margin-top: 40px; font-size: 0.9rem; }}
+footer {{ background: #071529; color: #dbe6f2; text-align: center; padding: 26px 16px; margin-top: 36px; font-size: 0.88rem; }}
 footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 </style>
 </head>
@@ -485,9 +465,9 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 
   <section id="sec-overview" class="overview-box">
     <div class="overview-title">📌 {overview_title}</div>
-    <p class="para"><strong>📅 दिनांक एवं संस्करण:</strong> {display_date} (भारतीय मानक समय)</p>
-    <p class="para"><strong>🎯 संकलन ढांचा:</strong> 360° समग्र विश्लेषण, 2-कॉलम सारणी, वास्तविक भौगोलिक मानचित्र एवं प्रासंगिक मुख्य परीक्षा फ्रेमवर्क।</p>
-    <p class="para"><strong>📰 अधिकृत स्रोत:</strong> The Hindu, Indian Express, PIB, Vision IAS, Drishti IAS, Sanskriti IAS।</p>
+    <p class="para"><strong>📅 दिनांक:</strong> {display_date} (IST)</p>
+    <p class="para"><strong>🎯 संकलन आयाम:</strong> 360° समग्र विश्लेषण, 2-कॉलम सारणी, मानक भौगोलिक मानचित्र एवं मुख्य परीक्षा उत्तर-लेखन फ्रेमवर्क।</p>
+    <p class="para"><strong>📰 अधिकृत स्रोत:</strong> The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS, Sanskriti IAS।</p>
   </section>
 
   {final_body}
@@ -498,8 +478,8 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
 
 <footer>
   <div><b>UPSC CIVIL SERVICES EXAMINATION COMPREHENSIVE STUDY DESK</b></div>
-  <div style="margin-top:8px;">संकलन एवं प्रस्तुति: <b>{AUTHOR_NAME}</b> | टेलीग्राम: <a href="{CHANNEL_LINK}" target="_blank">{CHANNEL_NAME}</a></div>
-  <div style="margin-top:6px; font-size:0.82rem; color:#94a3b8;">कॉपीराइट सुरक्षित © {get_ist_now().strftime('%Y')} | केवल शैक्षणिक एवं स्व-अध्ययन हेतु</div>
+  <div style="margin-top:6px;">संकलन एवं प्रस्तुति: <b>{AUTHOR_NAME}</b> | टेलीग्राम: <a href="{CHANNEL_LINK}" target="_blank">{CHANNEL_NAME}</a></div>
+  <div style="margin-top:4px; font-size:0.8rem; color:#94a3b8;">कॉपीराइट सुरक्षित © {get_ist_now().strftime('%Y')} | केवल शैक्षणिक एवं स्व-अध्ययन हेतु</div>
 </footer>
 
 <script>
@@ -532,13 +512,15 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{admin_badge}"
         "नीचे सभी मुख्य कमांड्स उपलब्ध हैं:\n\n"
         "📖 <b>अध्ययन एवं नोट्स:</b>\n"
-        "• <code>/daily</code> — दैनिक नोट्स (IST लाइव कैलेंडर)\n"
-        "• <code>/trending</code> — दैनिक, मासिक व वार्षिक ट्रेंडिंग मुद्दे\n"
-        "• <code>/quiz</code> — विषयवार लाइव टेस्ट शुरू करें\n"
+        "• <code>/daily</code> — दैनिक नोट्स (IST कैलेंडर)\n"
+        "• <code>/trending</code> — दैनिक, मासिक व वार्षिक ट्रेंडिंग रडार\n"
+        "• <code>/quiz</code> — लाइव इंटरएक्टिव टेलीग्राम पोल क्विज़\n"
+        "• <code>/mains</code> — मुख्य परीक्षा विशेष उत्तर लेखन प्रश्न\n"
+        "• <code>/interview</code> — मॉक साक्षात्कार प्रश्न व वॉयस उत्तर\n"
         "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन (केवल आज तक)\n"
-        "• <code>/monthly</code> — सम्पूर्ण मासिक संकलन\n"
-        "• <code>/yearly</code> — वार्षिक कंपाइलेशन (PT-365 Style)\n"
-        "• <code>/ask &lt;सवाल&gt;</code> — यूपीएससी संशय समाधान\n\n"
+        "• <code>/monthly</code> — संपूर्ण मासिक संकलन डाइजेस्ट\n"
+        "• <code>/yearly</code> — वार्षिक महा-संकलन (PT-365 Style)\n"
+        "• <code>/ask</code> — निरंतर यूपीएससी मेंटरशिप सत्र (Continuous Session)\n\n"
         "🛠 <b>प्रशासनिक व निर्माण कमांड्स:</b>\n"
         "• <code>/generate &lt;तारीख/विषय&gt;</code> — नोट्स निर्माण\n"
         "• <code>/broadcast</code> — सभी छात्रों को वीडियो/फ़ोटो/टेक्स्ट संदेश भेजें\n"
@@ -557,9 +539,9 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 <b>UPSC SMART DESK — सहायता केंद्र ({AUTHOR_NAME})</b>\n\n"
         "1️⃣ <b>दैनिक, मासिक व वार्षिक नोट्स:</b> The Hindu, PIB, Vision IAS, Sanskriti IAS व Drishti IAS के समन्वय से तैयार संपूर्ण 360° नोट्स।\n\n"
-        "2️⃣ <b>ट्रेंडिंग रडार (`/trending`):</b> दैनिक, मासिक व वार्षिक ट्रेंडिंग मुद्दों का चुनाव करें और संपूर्ण 360° नोट्स पाएं।\n\n"
-        "3️⃣ <b>ब्रॉडकास्ट:</b> एडमिन किसी भी वीडियो, फोटो या टेक्स्ट का रिप्लाई देकर सभी छात्रों को तुरंत भेज सकते हैं।\n\n"
-        "4️⃣ <b>प्रिंट व वॉटरमार्क:</b> सभी फाइलों पर <b>SACHIN SHARMA</b> का 50% विजिबिलिटी वाला वॉटरमार्क प्रिंट होगा।"
+        "2️⃣ <b>लाइव क्विज़ (`/quiz`):</b> सीधे टेलीग्राम पर इंटरएक्टिव पोल के रूप में प्रश्न हल करें।\n\n"
+        "3️⃣ <b>निरंतर मेंटरशिप (`/ask`):</b> सत्र शुरू होने के बाद सीधे सवाल पूछते रहें। बाहर निकलने के लिए <code>/exit</code> भेजें।\n\n"
+        "4️⃣ <b>इंटरव्यू व मेन्स (`/interview`, `/mains`):</b> साक्षात्कार प्रश्नों के साथ वॉयस ऑडियो उत्तर प्राप्त करें।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
@@ -579,18 +561,208 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("📅 <b>जिस तारीख के UPSC दैनिक नोट्स चाहिए, उस बटन पर क्लिक करें:</b>", reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
-# /quiz
+# ================= TELEGRAM NATIVE POLL QUIZ =================
 async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
     keyboard = [
-        [InlineKeyboardButton("🏛 राजव्यवस्था (Polity)", callback_data="qsubj_polity"), InlineKeyboardButton("💰 अर्थव्यवस्था (Economy)", callback_data="qsubj_economy")],
-        [InlineKeyboardButton("🌿 पर्यावरण (Environment)", callback_data="qsubj_env"), InlineKeyboardButton("🔬 विज्ञान एवं टेक (Sci & Tech)", callback_data="qsubj_scitech")],
-        [InlineKeyboardButton("🧭 इतिहास एवं भूगोल", callback_data="qsubj_histgeo"), InlineKeyboardButton("⚡ केवल आज के करंट अफेयर्स", callback_data="qsubj_todayca")]
+        [InlineKeyboardButton("🏛 राजव्यवस्था (Polity)", callback_data="tpoll_polity"), InlineKeyboardButton("💰 अर्थव्यवस्था (Economy)", callback_data="tpoll_economy")],
+        [InlineKeyboardButton("🌿 पर्यावरण (Environment)", callback_data="tpoll_env"), InlineKeyboardButton("🔬 विज्ञान एवं टेक (Sci & Tech)", callback_data="tpoll_scitech")],
+        [InlineKeyboardButton("🧭 इतिहास एवं भूगोल", callback_data="tpoll_histgeo"), InlineKeyboardButton("⚡ आज के करेंट अफेयर्स", callback_data="tpoll_todayca")]
     ]
-    await update.message.reply_text("🎯 <b>चरण 1/2:</b> किस विषय का टेस्ट लगाना चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("🎯 <b>किस विषय का लाइव टेलीग्राम पोल टेस्ट लगाना चाहते हैं?</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= ADVANCED TRENDING RADAR =================
+async def handle_native_poll_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    subj_code = query.data.replace("tpoll_", "")
+    user_id = query.from_user.id
+    
+    subj_map = {
+        "polity": "भारतीय राजव्यवस्था एवं संविधान", "economy": "भारतीय अर्थव्यवस्था एवं बजट",
+        "env": "पर्यावरण, पारिस्थितिकी एवं जैव विविधता", "scitech": "विज्ञान एवं प्रौद्योगिकी",
+        "histgeo": "इतिहास, कला-संस्कृति एवं भूगोल", "todayca": f"दैनिक करेंट अफेयर्स ({get_ist_now().strftime('%d %B %Y')})"
+    }
+    subj = subj_map.get(subj_code, "सामान्य अध्ययन")
+
+    wait_m = await query.message.reply_text(f"⏳ <b>{subj}</b> के उच्च-स्तरीय UPSC प्रश्न पोल तैयार हो रहे हैं...", parse_mode=ParseMode.HTML)
+    
+    prompt = f"""
+विषय: '{subj}' पर UPSC Prelims स्तर के 3 उच्च-स्तरीय प्रश्न JSON प्रारूप में तैयार करें।
+प्रारूप:
+[
+  {{
+    "question": "प्रश्न का पूरा पाठ (कथनों सहित)?",
+    "options": ["विकल्प A", "विकल्प B", "विकल्प C", "विकल्प D"],
+    "correct_option_id": 0,
+    "explanation": "2 पंक्ति की आधिकारिक व्याख्या।"
+  }}
+]
+केवल वैध JSON दें। कोई मार्कडाउन बाड़ या अतिरिक्त शब्द न लिखें।
+"""
+    try:
+        raw_resp = await asyncio.to_thread(call_gemini_safely, prompt)
+        clean_json = re.sub(r'^```json\s*', '', raw_resp.strip(), flags=re.IGNORECASE)
+        clean_json = re.sub(r'^```\s*', '', clean_json)
+        clean_json = re.sub(r'\s*```$', '', clean_json)
+        
+        q_data = json.loads(clean_json)
+        await wait_m.delete()
+
+        for item in q_data[:3]:
+            q_text = item["question"][:290]
+            opts = [o[:95] for o in item["options"][:4]]
+            corr_id = int(item["correct_option_id"])
+            exp = item.get("explanation", "UPSC आधिकारिक संदर्भ")[:190]
+            
+            await context.bot.send_poll(
+                chat_id=user_id,
+                question=f"📚 [{subj[:20]}]\n{q_text}",
+                options=opts,
+                type="quiz",
+                correct_option_id=corr_id,
+                explanation=exp,
+                is_anonymous=False
+            )
+            await asyncio.sleep(0.5)
+            
+    except Exception as e:
+        await wait_m.edit_text(f"❌ पोल बनाने में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
+
+# ================= UPSC MAINS SPECIAL =================
+async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    register_user(user.id, user.username, user.first_name)
+    today_str = get_ist_now().strftime("%d %B %Y")
+    
+    wait_m = await update.message.reply_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) दैनिक उत्तर लेखन प्रश्न संकलित हो रहा है...</b>", parse_mode=ParseMode.HTML)
+    prompt = f"""
+आज {today_str} के ज्वलंत समसामयिक मुद्दों के आधार पर UPSC मुख्य परीक्षा (GS-1, 2, 3) के लिए 2 अत्यंत मानक प्रश्न और उनका व्यापक उत्तर-लेखन फ्रेमवर्क तैयार करें।
+प्रारूप:
+- प्रश्न (250 शब्द, 15 अंक)
+- भूमिका (Introduction: डेटा/अनुच्छेद/संदर्भ)
+- मुख्य भाग (Body: 3 बहुआयामी बिंदु)
+- आगे की राह (Way Forward)
+- संतुलित निष्कर्ष
+मार्कडाउन स्टार्स का प्रयोग न करें।
+"""
+    try:
+        resp = await asyncio.to_thread(call_gemini_safely, prompt)
+        clean_text = clean_all_markdown_and_fix_content(resp)
+        topic = f"UPSC Mains Practice — {today_str}"
+        filename = f"UPSC_Mains_{get_ist_now().strftime('%Y%m%d')}.html"
+        html_out = build_standalone_master_html(topic, clean_text, date_str=today_str)
+        
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(html_out)
+        with open(filename, "rb") as send_doc:
+            await update.message.reply_document(
+                document=send_doc,
+                filename=filename,
+                caption=f"📝 <b>UPSC मुख्य परीक्षा उत्तर-लेखन मॉड्यूल:</b> <code>{today_str}</code>\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                parse_mode=ParseMode.HTML
+            )
+        if os.path.exists(filename):
+            os.remove(filename)
+        await wait_m.delete()
+    except Exception as e:
+        await wait_m.edit_text(f"❌ त्रुटि: {e}")
+
+# ================= UPSC INTERVIEW & VOICE (TTS) ENGINE =================
+async def interview_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    register_user(user.id, user.username, user.first_name)
+    wait_m = await update.message.reply_text("🎙️ <b>UPSC साक्षात्कार बोर्ड कक्ष से सिमुलेशन प्रश्न तैयार हो रहा है...</b>", parse_mode=ParseMode.HTML)
+    
+    prompt = """
+UPSC व्यक्तित्व परीक्षण (Interview / Personality Test) के लिए एक गंभीर, प्रशासनिक एवं नीतिगत स्थितिजन्य प्रश्न (Situational Question) तैयार करें।
+साथ ही उसका 2 पंक्ति का संतुलित प्रशासनिक उत्तर दें। 
+मार्कडाउन स्टार्स का प्रयोग न करें।
+"""
+    try:
+        resp = await asyncio.to_thread(call_gemini_safely, prompt)
+        clean_text = resp.strip()
+        
+        encoded_text = urllib.parse.quote(clean_text[:250])
+        tts_url = f"https://all-api-free-text-to-speech-v1-five.vercel.app/api/tts?text={encoded_text}&lang=hi"
+        
+        await wait_m.delete()
+        await update.message.reply_text(
+            f"🏛 <b>UPSC साक्षात्कार बोर्ड सिमुलेशन:</b>\n\n{clean_text}\n\n📢 <i>नीचे बोर्ड मेंटर का ऑडियो उत्तर सुनें:</i>",
+            parse_mode=ParseMode.HTML
+        )
+        try:
+            await update.message.reply_voice(voice=tts_url, caption=f"🎙️ साक्षात्कार मार्गदर्शन | {AUTHOR_NAME}")
+        except Exception:
+            pass
+    except Exception as e:
+        await wait_m.edit_text(f"❌ त्रुटि: {e}")
+
+# ================= CONTINUOUS ASK MENTORSHIP SESSION =================
+async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    user_id = user.id
+    if not is_authorized(user_id):
+        await update.message.reply_text(
+            f"⛔ <b>अनुमति नहीं है:</b> यह सुविधा केवल अधिकृत छात्रों के लिए उपलब्ध है।\n"
+            f"एडमिन ({AUTHOR_NAME}) से एक्सेस हेतु <code>/owner</code> पर संपर्क करें।",
+            parse_mode=ParseMode.HTML
+        )
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        "🎓 <b>UPSC 1-on-1 मेंटरशिप सत्र सक्रिय हो गया है!</b>\n\n"
+        "आप UPSC सिविल सेवा परीक्षा (GS 1-4, करेंट अफेयर्स, वैकल्पिक विषय व निबंध) से जुड़ा कोई भी सवाल लगातार पूछते रह सकते हैं।\n\n"
+        "👉 <i>सत्र समाप्त करने के लिए कभी भी <code>/exit</code> या <code>/stop</code> भेजें।</i>",
+        parse_mode=ParseMode.HTML
+    )
+    return WAITING_ASK_SESSION
+
+async def handle_ask_continuous_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_query = update.message.text.strip()
+
+    if user_query.lower() in ["/exit", "/stop", "exit", "stop", "रद्द", "बंद"]:
+        await update.message.reply_text("✅ <b>मेंटरशिप सत्र समाप्त हुआ।</b> अध्ययन जारी रखें और शुभकामनाएं!", parse_mode=ParseMode.HTML)
+        return ConversationHandler.END
+
+    blocked_non_upsc = [
+        r"मेरा नाम", r"तुम्हारा नाम", r"आपका नाम", r"तुम कौन", r"आप कौन",
+        r"हेलो", r"हाय", r"hello", r"hi", r"hey", r"कैसे हो", r"क्या कर रहे",
+        r"शायरी", r"मजाक", r"मौसम", r"गाना", r"लव", r"प्यार", r"गर्लफ्रेंड",
+        r"बॉयफ्रेंड", r"joke", r"time pass", r"who are you", r"what is your name",
+        r"my name", r"bot", r"robot"
+    ]
+    if any(re.search(pat, user_query, re.IGNORECASE) for pat in blocked_non_upsc) or len(user_query) < 5:
+        await update.message.reply_text(
+            "⚠️ <b>अमान्य प्रश्न:</b> इस संबंध में हम कोई जानकारी नहीं रखते हैं।\n\n"
+            "यह डेस्क केवल <b>संघ लोक सेवा आयोग (UPSC CSE)</b> पाठ्यक्रम (GS 1-4, करेंट अफेयर्स व समसामयिक व्यक्तित्व) के गंभीर अकादमिक विमर्श हेतु समर्पित है। कृपया परीक्षा संबंधी विषय ही पूछें।",
+            parse_mode=ParseMode.HTML
+        )
+        return WAITING_ASK_SESSION
+
+    wait_msg = await update.message.reply_text("🤔 UPSC परिप्रेक्ष्य में बिंदुवार विश्लेषण तैयार हो रहा है...")
+    try:
+        prompt = f"""
+आप UPSC मेंटर हैं। निम्नलिखित विषय का बिंदुवार, सटीक एवं संतुलित प्रशासनिक विश्लेषण दें।
+विषय: '{user_query}'
+सख्त नियम: मार्कडाउन स्टार्स का प्रयोग न करें।
+"""
+        reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
+        clean_reply = clean_all_markdown_and_fix_content(reply_text)
+
+        if len(clean_reply) > 3800:
+            parts = [clean_reply[i:i+3800] for i in range(0, len(clean_reply), 3800)]
+            await wait_msg.delete()
+            for p in parts:
+                await update.message.reply_text(p, parse_mode=ParseMode.HTML)
+        else:
+            await wait_msg.edit_text(clean_reply, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        await wait_msg.edit_text(f"❌ उत्तर संकलित करने में समस्या आई: {e}")
+        
+    return WAITING_ASK_SESSION
+
+# ================= TRENDING RADAR WITH ROBUST FALLBACK =================
 async def trending_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -608,29 +780,47 @@ async def handle_trending_type_selection(update: Update, context: ContextTypes.D
     user_id = query.from_user.id
     tr_type = query.data.replace("trtype_", "")
     
-    today = get_ist_now().strftime("%Y-%m-%d")
+    today = get_ist_now().strftime("%d %B %Y")
     current_month = get_ist_now().strftime("%B %Y")
     current_year = get_ist_now().strftime("%Y")
 
     if tr_type == "daily":
         scope_str = f"आज ({today})"
-        prompt = f"आज {today} के संदर्भ में UPSC CSE परीक्षा हेतु 9 सबसे महत्वपूर्ण ट्रेंडिंग मुद्दे 1 से 9 तक बिंदुवार (2 पंक्ति सारांश व स्रोत सहित) लिखें। भाषा शुद्ध हिंदी रखें।"
+        prompt = f"आज {today} के संदर्भ में UPSC CSE परीक्षा हेतु 9 सबसे महत्वपूर्ण ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें।"
     elif tr_type == "monthly":
         scope_str = f"माह ({current_month})"
-        prompt = f"माह {current_month} के 9 सबसे महत्वपूर्ण नीतिगत, अंतर्राष्ट्रीय एवं पर्यावरणीय ट्रेंडिंग मुद्दे 1 से 9 तक बिंदुवार (2 पंक्ति सारांश सहित) लिखें। भाषा शुद्ध हिंदी रखें।"
+        prompt = f"माह {current_month} के 9 सबसे महत्वपूर्ण नीतिगत, अंतर्राष्ट्रीय एवं पर्यावरणीय ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें।"
     else:
         scope_str = f"वर्ष {current_year}"
-        prompt = f"वर्ष {current_year} के 9 सबसे बड़े राष्ट्रीय व वैश्विक ट्रेंडिंग मुद्दे 1 से 9 तक बिंदुवार (2 पंक्ति सारांश सहित) लिखें। भाषा शुद्ध हिंदी रखें।"
+        prompt = f"वर्ष {current_year} के 9 सबसे बड़े राष्ट्रीय व वैश्विक ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें।"
 
     wait_m = await query.message.reply_text(f"🛰 <b>{scope_str}</b> के ट्रेंडिंग मुद्दों का रडार संकलन हो रहा है...", parse_mode=ParseMode.HTML)
     try:
         raw_text = await asyncio.to_thread(call_gemini_safely, prompt)
-        lines = [l.strip() for l in raw_text.split('\n') if l.strip() and re.match(r'^\d+[\.\)]', l.strip())]
         
-        TRENDING_CACHE[user_id] = lines
-        TRENDING_PAGE_INDEX[user_id] = 0
+        # सुरक्षित पार्सिंग जो कभी खाली नहीं जाएगी
+        clean_lines = []
+        for l in raw_text.split('\n'):
+            line = l.strip()
+            if line and len(line) > 5 and not line.startswith('#'):
+                clean_lines.append(re.sub(r'^\*+\s*', '', line))
+                
+        if len(clean_lines) < 3:
+            clean_lines = [
+                "1. वैश्विक जलवायु वित्त एवं COP शिखर सम्मेलन रणनीति",
+                "2. भारत-यूरोपीय संघ व्यापक मुक्त व्यापार समझौता (FTA) विमर्श",
+                "3. राष्ट्रीय आर्टिफिशियल इंटेलिजेंस (AI) सुरक्षा व डेटा संप्रभुता",
+                "4. वैश्विक ऊर्जा संकट और भारत का हरित हाइड्रोजन कॉरिडोर",
+                "5. अंतरराष्ट्रीय समुद्री जैव विविधता संधि (BBNJ) का क्रियान्वयन",
+                "6. राष्ट्रीय सेमीकंडक्टर मिशन 2.0 और आपूर्ति श्रृंखला लचीलापन",
+                "7. वैश्विक खाद्य सुरक्षा एवं जलवायु-अनुकूल कृषि पद्धतियां",
+                "8. महत्वपूर्ण खनिज साझेदारी (Mineral Security Partnership)",
+                "9. कार्बन बॉर्डर एडजस्टमेंट मैकेनिज्म (CBAM) एवं भारतीय विनिर्माण"
+            ]
 
-        p_text = f"🧭 <b>UPSC TRENDING RADAR — {scope_str} (पेज 1/3)</b>\n\n" + "\n\n".join(lines[:3])
+        TRENDING_CACHE[user_id] = clean_lines
+
+        p_text = f"🧭 <b>UPSC TRENDING RADAR — {scope_str} (पेज 1/3)</b>\n\n" + "\n\n".join(clean_lines[:3])
         p_text += "\n\n━━━━━━━━━━━━━━━━━━━━\n👉 <b>विकल्प:</b>\n• किसी मुद्दे के पूर्ण नोट्स हेतु नंबर भेजें (उदा. <code>1, 2</code>)\n• सभी मुद्दों के 360° नोट्स हेतु लिखें: <code>all</code>"
 
         keyboard = [[InlineKeyboardButton("अगला पेज (4-6) ▶", callback_data="trpage_1")]]
@@ -710,52 +900,6 @@ async def handle_dynamic_generation_click(update: Update, context: ContextTypes.
         await query.message.delete()
     except Exception:
         pass
-
-    if data.startswith("qsubj_"):
-        subj_code = data.replace("qsubj_", "")
-        USER_QUIZ_SELECTIONS[user_id] = {"subj": subj_code}
-        keyboard = [
-            [InlineKeyboardButton("⚡ 5 प्रश्न (क्विक टेस्ट - 6 मिनट)", callback_data=f"qcount_{subj_code}_5")],
-            [InlineKeyboardButton("🎯 10 प्रश्न (मानक टेस्ट - 12 मिनट)", callback_data=f"qcount_{subj_code}_10")],
-            [InlineKeyboardButton("🏆 15 प्रश्न (मेगा टेस्ट - 18 मिनट)", callback_data=f"qcount_{subj_code}_15")]
-        ]
-        await context.bot.send_message(chat_id=user_id, text="🎯 <b>चरण 2/2:</b> आप कितने प्रश्नों का टेस्ट देना चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-        return
-
-    if data.startswith("qcount_"):
-        parts = data.split("_")
-        subj_code = parts[1]
-        count = int(parts[2])
-        subj_map = {
-            "polity": "भारतीय राजव्यवस्था एवं संविधान", "economy": "भारतीय अर्थव्यवस्था एवं बजट",
-            "env": "पर्यावरण, पारिस्थितिकी एवं जैव विविधता", "scitech": "विज्ञान एवं प्रौद्योगिकी",
-            "histgeo": "इतिहास, कला-संस्कृति एवं भूगोल", "todayca": f"दैनिक करेंट अफेयर्स ({get_ist_now().strftime('%Y-%m-%d')})"
-        }
-        subj = subj_map.get(subj_code, "सामान्य अध्ययन")
-
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ <b>{subj}</b> का {count} प्रश्नों वाला UPSC मॉक टेस्ट तैयार हो रहा है...", parse_mode=ParseMode.HTML)
-        prompt = f"""
-विषय: '{subj}' पर UPSC Prelims स्तर के {count} प्रश्न कथन आधारित तैयार करें।
-सख्त नियम:
-प्रत्येक प्रश्न में स्पष्ट क्रमांक (जैसे प्रश्न 1:, प्रश्न 2:...), 4 विकल्प (a, b, c, d), सही उत्तर और आधिकारिक 2-पंक्ति व्याख्या अवश्य लिखें।
-मार्कडाउन स्टार्स का प्रयोग न करें।
-"""
-        try:
-            ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-            topic = f"UPSC Mock Test — {subj} ({count} प्रश्न)"
-            filename = f"UPSC_Test_{subj_code}_{count}Q.html"
-            html_content = build_standalone_master_html(topic, ai_text)
-            
-            with open(filename, "w", encoding="utf-8") as f:
-                f.write(html_content)
-            with open(filename, "rb") as send_doc:
-                await context.bot.send_document(chat_id=user_id, document=send_doc, filename=filename, caption=f"📝 <b>UPSC टेस्ट:</b> <code>{topic}</code>\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}", parse_mode=ParseMode.HTML)
-            if os.path.exists(filename):
-                os.remove(filename)
-            await wait_m.delete()
-        except Exception as e:
-            await wait_m.edit_text(f"❌ टेस्ट बनाने में त्रुटि: {e}")
-        return
 
     asyncio.create_task(process_dynamic_generation(user_id, data, context))
 
@@ -921,7 +1065,6 @@ async def handle_admin_reply_or_direct_send(update: Update, context: ContextType
 
     # 1. यदि एडमिन किसी मैसेज पर रिप्लाई कर रहा है
     if msg.reply_to_message:
-        # ब्रॉडकास्ट शॉर्टकट
         if msg.text and msg.text.strip().lower() == "/broadcast":
             all_uids = get_all_user_ids()
             target_msg = msg.reply_to_message
@@ -938,7 +1081,6 @@ async def handle_admin_reply_or_direct_send(update: Update, context: ContextType
             return
 
         reply_to_text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
-        # 8 से 11 अंकों वाली यूज़र आईडी को बिना चूके ढूँढना
         match = re.search(r'(?:यूज़र\s*ID|ID)[:\s]*([0-9]{8,11})', reply_to_text) or re.search(r'([0-9]{8,11})', reply_to_text)
         if match:
             target_user_id = int(match.group(1))
@@ -976,7 +1118,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = update.effective_user.id
     register_user(user_id, update.effective_user.username, update.effective_user.first_name)
     user_input = msg.text.strip().lower()
-    today = get_ist_now().strftime("%Y-%m-%d")
+    today = get_ist_now().strftime("%d %B %Y")
 
     cached_list = TRENDING_CACHE.get(user_id, [])
 
@@ -998,7 +1140,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
             topic = f"UPSC Trending Radar All Topics — {today}"
-            filename = f"UPSC_Trending_Radar_{today.replace('-', '_')}.html"
+            filename = f"UPSC_Trending_Radar_{get_ist_now().strftime('%Y%m%d')}.html"
             html_content = build_standalone_master_html(topic, ai_text, date_str=today, is_trending=True)
             
             with open(filename, "w", encoding="utf-8") as f:
@@ -1040,7 +1182,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
             topic = f"UPSC Trending Topics {', '.join(nums)} — {today}"
-            filename = f"UPSC_Trending_Selected_{today.replace('-', '')}_{'_'.join(nums)}.html"
+            filename = f"UPSC_Trending_Selected_{get_ist_now().strftime('%Y%m%d')}_{'_'.join(nums)}.html"
             html_content = build_standalone_master_html(topic, ai_text, date_str=today, is_trending=True)
             
             with open(filename, "w", encoding="utf-8") as f:
@@ -1137,71 +1279,6 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
     finally:
         if os.path.exists(temp_pdf):
             os.remove(temp_pdf)
-
-# ================= RESPECTFUL FAITH FILTER & DOUBT SOLVER =================
-async def ask_doubt_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not is_authorized(user_id):
-        await update.message.reply_text(
-            f"⛔ <b>अनुमति नहीं है:</b> यह सुविधा केवल अधिकृत छात्रों के लिए उपलब्ध है।\n"
-            f"एडमिन ({AUTHOR_NAME}) से एक्सेस हेतु <code>/owner</code> पर संपर्क करें।",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    if not context.args:
-        await update.message.reply_text("💡 पूछने के लिए लिखें: <code>/ask आपका सवाल या टॉपिक</code>", parse_mode=ParseMode.HTML)
-        return
-
-    user_query = " ".join(context.args).strip()
-
-    faith_greetings = [
-        "जय सियाराम", "जय श्री राम", "जय श्रीराम", "राधे राधे", "जय श्री कृष्णा",
-        "हर हर महादेव", "नमस्ते", "प्रणाम", "चरण स्पर्श", "जय बजरंगबली"
-    ]
-    if any(fg in user_query for fg in faith_greetings):
-        await update.message.reply_text(
-            "🙏 <b>जय सियाराम! प्रभु श्री राम का आशीर्वाद आप पर सदैव बना रहे।</b>\n\n"
-            "यह UPSC स्मार्ट डेस्क सिविल सेवा अध्ययन हेतु समर्पित है। अपनी तैयारी, करेंट अफेयर्स या किसी विषय से संबंधित सवाल पूछें!",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    blocked_non_upsc = [
-        r"मेरा नाम", r"तुम्हारा नाम", r"आपका नाम", r"तुम कौन", r"आप कौन",
-        r"हेलो", r"हाय", r"hello", r"hi", r"hey", r"कैसे हो", r"क्या कर रहे",
-        r"शायरी", r"मजाक", r"मौसम", r"गाना", r"लव", r"प्यार", r"गर्लफ्रेंड",
-        r"बॉयफ्रेंड", r"joke", r"time pass", r"who are you", r"what is your name",
-        r"my name", r"bot", r"robot"
-    ]
-    if any(re.search(pat, user_query, re.IGNORECASE) for pat in blocked_non_upsc) or len(user_query) < 5:
-        await update.message.reply_text(
-            "⚠️ <b>अमान्य प्रश्न:</b> इस संबंध में हम कोई जानकारी नहीं रखते हैं।\n\n"
-            "यह डेस्क केवल <b>संघ लोक सेवा आयोग (UPSC CSE)</b> पाठ्यक्रम (GS 1-4, करेंट अफेयर्स व समसामयिक व्यक्तित्व) के गंभीर अकादमिक विमर्श हेतु समर्पित है। कृपया परीक्षा संबंधी विषय ही पूछें।",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    wait_msg = await update.message.reply_text("🤔 UPSC परिप्रेक्ष्य में बिंदुवार विश्लेषण तैयार हो रहा है...")
-    try:
-        prompt = f"""
-आप UPSC मेंटर हैं। निम्नलिखित विषय का बिंदुवार, सटीक एवं संतुलित प्रशासनिक विश्लेषण दें।
-यदि प्रश्न UPSC से बाहर का हो, तो विनम्रता से मना कर दें।
-विषय: '{user_query}'
-सख्त नियम: मार्कडाउन स्टार्स का प्रयोग न करें।
-"""
-        reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
-        clean_reply = clean_all_markdown_and_fix_content(reply_text)
-
-        if len(clean_reply) > 3800:
-            parts = [clean_reply[i:i+3800] for i in range(0, len(clean_reply), 3800)]
-            await wait_msg.delete()
-            for p in parts:
-                await update.message.reply_text(p, parse_mode=ParseMode.HTML)
-        else:
-            await wait_msg.edit_text(clean_reply, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        await wait_msg.edit_text(f"❌ उत्तर संकलित करने में समस्या आई: {e}")
 
 # ================= ADMIN GENERATE COMMAND =================
 async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1473,22 +1550,32 @@ async def main():
     bot_app.add_handler(CommandHandler("help", help_handler))
     bot_app.add_handler(CommandHandler("daily", daily_cmd))
     bot_app.add_handler(CommandHandler("quiz", quiz_cmd))
+    bot_app.add_handler(CommandHandler("mains", mains_special_cmd))
+    bot_app.add_handler(CommandHandler("interview", interview_cmd))
     bot_app.add_handler(CommandHandler("trending", trending_cmd))
     bot_app.add_handler(CommandHandler("weekly", weekly_cmd))
     bot_app.add_handler(CommandHandler("monthly", monthly_cmd))
     bot_app.add_handler(CommandHandler("yearly", yearly_cmd))
 
     bot_app.add_handler(CommandHandler("generate", ai_generate_cmd))
-    bot_app.add_handler(CommandHandler("ask", ask_doubt_cmd))
     bot_app.add_handler(CommandHandler("adduser", add_user_cmd))
     bot_app.add_handler(CommandHandler("removeuser", remove_user_cmd))
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd))
 
+    bot_app.add_handler(CallbackQueryHandler(handle_native_poll_quiz, pattern=r"^tpoll_"))
     bot_app.add_handler(CallbackQueryHandler(handle_trending_type_selection, pattern=r"^trtype_"))
     bot_app.add_handler(CallbackQueryHandler(handle_trending_pages, pattern=r"^trpage_"))
     bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click))
 
     bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_direct_pdf_upload))
+
+    # निरंतर आस्क मेंटरशिप सत्र (Continuous Ask Session)
+    ask_conv = ConversationHandler(
+        entry_points=[CommandHandler("ask", start_ask_session)],
+        states={WAITING_ASK_SESSION: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_ask_continuous_message)]},
+        fallbacks=[CommandHandler("exit", cancel), CommandHandler("stop", cancel), CommandHandler("cancel", cancel)],
+    )
+    bot_app.add_handler(ask_conv)
 
     # ओनर संपर्क सिस्टम
     contact_conv = ConversationHandler(
@@ -1506,7 +1593,7 @@ async def main():
     )
     bot_app.add_handler(broadcast_conv)
 
-    # एडमिन रिप्लाई हैंडलर (प्राथमिकता पर ताकि रिप्लाई तुरंत काम करे)
+    # एडमिन रिप्लाई हैंडलर
     bot_app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & (filters.REPLY | filters.Regex(r'^[0-9]{8,11}')), handle_admin_reply_or_direct_send))
 
     # सामान्य टेक्स्ट हैंडलर
