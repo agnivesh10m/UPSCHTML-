@@ -3,10 +3,13 @@ import re
 import time
 import asyncio
 import sqlite3
+import json
+import io
 import urllib.parse
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
+import aiohttp
 import google.generativeai as genai
 from pypdf import PdfReader
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -21,9 +24,19 @@ from telegram.ext import (
     filters,
 )
 
+# बड़ी फाइलों (20MB+) के लिए Telethon सपोर्ट
+try:
+    from telethon import TelegramClient
+    TELETHON_AVAILABLE = True
+except ImportError:
+    TELETHON_AVAILABLE = False
+
 # ================= CONFIGURATION =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+TELEGRAM_API_ID = os.environ.get("TELEGRAM_API_ID", "").strip()
+TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
+
 ADMIN_IDS = [1745425595, 7850454902]
 CHANNEL_LINK = "https://t.me/UPSCHTML"
 CHANNEL_NAME = "@UPSCHTML"
@@ -37,14 +50,21 @@ def get_ist_now():
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
+# कन्वर्सेशन स्टेट्स
 WAITING_CONTACT_MSG = 1
 WAITING_BROADCAST_MSG = 2
 WAITING_ASK_SESSION = 3
+WAITING_INTERVIEW_DAF = 4
+WAITING_INTERVIEW_VOICE = 5
+WAITING_ANSWER_COPY = 6
 
 CONTACT_SESSIONS = {}
 USER_QUIZ_SELECTIONS = {}
+MAINS_SELECTIONS = {}
 TRENDING_CACHE = {}
 DB_PATH = "upsc_bot.db"
+
+telethon_client = None
 
 # ================= DATABASE SETUP =================
 def init_db():
@@ -58,6 +78,17 @@ def init_db():
             joined_at TEXT,
             is_vip INTEGER DEFAULT 0,
             vip_expiry TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS user_daf (
+            user_id INTEGER PRIMARY KEY,
+            name TEXT,
+            home_state TEXT,
+            college_grad TEXT,
+            optional_sub TEXT,
+            attempt_info TEXT,
+            created_at TEXT
         )
     """)
     c.execute("""
@@ -92,6 +123,24 @@ def register_user(user_id, username, first_name):
         conn.close()
     except Exception as e:
         print(f"Error registering user: {e}")
+
+def get_user_daf(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT name, home_state, college_grad, optional_sub, attempt_info FROM user_daf WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return row
+
+def save_user_daf(user_id, name, home_state, college_grad, optional_sub, attempt_info):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        INSERT OR REPLACE INTO user_daf (user_id, name, home_state, college_grad, optional_sub, attempt_info, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (user_id, name, home_state, college_grad, optional_sub, attempt_info, get_ist_now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
 
 def is_authorized(user_id):
     if user_id in ADMIN_IDS:
@@ -186,11 +235,11 @@ def call_gemini_safely(prompt: str) -> str:
     }
 
     models_to_try = [
+        "gemini-2.5-flash",
+        "gemini-1.5-flash",
         "gemini-3.8-flash",
         "gemini-3.5-flash-lite",
-        "gemini-3.1-pro",
-        "gemini-2.5-flash",
-        "gemini-1.5-flash"
+        "gemini-3.1-pro"
     ]
 
     last_err = None
@@ -204,17 +253,56 @@ def call_gemini_safely(prompt: str) -> str:
             last_err = e
             continue
 
-    try:
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                model = genai.GenerativeModel(m.name, generation_config=generation_config)
-                resp = model.generate_content(prompt)
-                if resp and resp.text:
-                    return resp.text
-    except Exception as e:
-        last_err = e
-
     raise Exception(f"AI सर्वर कनेक्ट नहीं हो सका: {last_err}")
+
+def call_gemini_multimodal(prompt: str, file_bytes: bytes, mime_type: str) -> str:
+    api_k = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_k:
+        raise Exception("API Key सर्वर पर सेट नहीं है।")
+
+    genai.configure(api_key=api_k)
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    cookie_parts = [
+        {"mime_type": mime_type, "data": file_bytes},
+        prompt
+    ]
+    resp = model.generate_content(cookie_parts)
+    if resp and resp.text:
+        return resp.text
+    raise Exception("मल्टीमॉडल विश्लेषण में कोई उत्तर प्राप्त नहीं हुआ।")
+
+# ================= ROBUST AUDIO ENGINE (FULL LENGTH & CUSTOM FILENAME) =================
+async def download_audio_stream(text: str) -> bytes:
+    # 200 अक्षरों के छोटे-छोटे वाक्यों में बाँटकर संपूर्ण ऑडियो डाउनलोड करना ताकि कोई शब्द न कटे
+    sentences = re.split(r'([।\.\?!;,\n]+)', text)
+    chunks = []
+    curr = ""
+    for s in sentences:
+        if len(curr) + len(s) < 180:
+            curr += s
+        else:
+            if curr.strip():
+                chunks.append(curr.strip())
+            curr = s
+    if curr.strip():
+        chunks.append(curr.strip())
+
+    if not chunks:
+        chunks = [text[:180]]
+
+    combined_audio = bytearray()
+    async with aiohttp.ClientSession() as session:
+        for chunk in chunks[:4]: # मुख्य भाग को धाराप्रवाह डाउनलोड करना
+            encoded = urllib.parse.quote(chunk)
+            tts_url = f"https://all-api-free-text-to-speech-v1-five.vercel.app/api/tts?text={encoded}&lang=hi"
+            try:
+                async with session.get(tts_url, timeout=12) as r:
+                    if r.status == 200:
+                        data = await r.read()
+                        combined_audio.extend(data)
+            except Exception:
+                pass
+    return bytes(combined_audio)
 
 # ================= ROBUST TABLE & VISUAL BUILDER =================
 def create_standalone_vector_map(place_name: str) -> str:
@@ -514,13 +602,14 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📖 <b>अध्ययन एवं नोट्स:</b>\n"
         "• <code>/daily</code> — दैनिक नोट्स (IST कैलेंडर)\n"
         "• <code>/trending</code> — दैनिक, मासिक व वार्षिक ट्रेंडिंग रडार\n"
-        "• <code>/quiz</code> — लाइव इंटरएक्टिव टेलीग्राम पोल क्विज़\n"
-        "• <code>/mains</code> — मुख्य परीक्षा विशेष उत्तर लेखन प्रश्न\n"
-        "• <code>/interview</code> — मॉक साक्षात्कार प्रश्न व वॉयस उत्तर\n"
+        "• <code>/quiz</code> — लाइव इंटरएक्टिव पोल टेस्ट\n"
+        "• <code>/mains</code> — मुख्य परीक्षा विशेष प्रश्न (PYQ व नए)\n"
+        "• <code>/checkanswer</code> — उत्तर पुस्तिका मूल्यांकन (कॉपी चेकिंग)\n"
+        "• <code>/interview</code> — 1-on-1 साक्षात्कार (वॉइस कॉल सिमुलेशन)\n"
         "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन (केवल आज तक)\n"
         "• <code>/monthly</code> — संपूर्ण मासिक संकलन डाइजेस्ट\n"
         "• <code>/yearly</code> — वार्षिक महा-संकलन (PT-365 Style)\n"
-        "• <code>/ask</code> — निरंतर यूपीएससी मेंटरशिप सत्र (Continuous Session)\n\n"
+        "• <code>/ask</code> — निरंतर यूपीएससी मेंटरशिप सत्र\n\n"
         "🛠 <b>प्रशासनिक व निर्माण कमांड्स:</b>\n"
         "• <code>/generate &lt;तारीख/विषय&gt;</code> — नोट्स निर्माण\n"
         "• <code>/broadcast</code> — सभी छात्रों को वीडियो/फ़ोटो/टेक्स्ट संदेश भेजें\n"
@@ -537,11 +626,11 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
     help_text = (
-        f"📖 <b>UPSC SMART DESK — सहायता केंद्र ({AUTHOR_NAME})</b>\n\n"
-        "1️⃣ <b>दैनिक, मासिक व वार्षिक नोट्स:</b> The Hindu, PIB, Vision IAS, Sanskriti IAS व Drishti IAS के समन्वय से तैयार संपूर्ण 360° नोट्स।\n\n"
-        "2️⃣ <b>लाइव क्विज़ (`/quiz`):</b> सीधे टेलीग्राम पर इंटरएक्टिव पोल के रूप में प्रश्न हल करें।\n\n"
-        "3️⃣ <b>निरंतर मेंटरशिप (`/ask`):</b> सत्र शुरू होने के बाद सीधे सवाल पूछते रहें। बाहर निकलने के लिए <code>/exit</code> भेजें।\n\n"
-        "4️⃣ <b>इंटरव्यू व मेन्स (`/interview`, `/mains`):</b> साक्षात्कार प्रश्नों के साथ वॉयस ऑडियो उत्तर प्राप्त करें।"
+        f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
+        "1️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF भरने के बाद बॉट आपको वॉइस नोट में प्रश्न पूछेगा। आप अपनी आवाज़ रिकॉर्ड करके भेजेंगे और बॉट सुनकर मार्गदर्शन देगा।\n\n"
+        "2️⃣ <b>कॉपी चेकिंग (`/checkanswer`):</b> अपने लिखे उत्तर की फ़ोटो या PDF भेजें, यूपीएससी परीक्षक की तरह अंक व कमियाँ मिलेंगी।\n\n"
+        "3️⃣ <b>मुख्य परीक्षा (`/mains`):</b> PYQs या नए संभावित प्रश्नों के चयन के साथ उत्तर-लेखन मॉडल प्राप्त करें।\n\n"
+        "4️⃣ <b>क्विज़ (`/quiz`):</b> सीधे टेलीग्राम पोल में बिना फ़ाइल डाउनलोड किए प्रश्न हल करें।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
@@ -629,37 +718,84 @@ async def handle_native_poll_quiz(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         await wait_m.edit_text(f"❌ पोल बनाने में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
-# ================= UPSC MAINS SPECIAL =================
+# ================= UPSC MAINS SPECIAL (PYQs & NEW QUESTIONS) =================
 async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
-    today_str = get_ist_now().strftime("%d %B %Y")
     
-    wait_m = await update.message.reply_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) दैनिक उत्तर लेखन प्रश्न संकलित हो रहा है...</b>", parse_mode=ParseMode.HTML)
+    keyboard = [
+        [InlineKeyboardButton("📜 विगत वर्षों के प्रश्न (PYQs)", callback_data="mq_type_pyq")],
+        [InlineKeyboardButton("✨ नए संभावित मॉडल प्रश्न (New Expected)", callback_data="mq_type_new")]
+    ]
+    await update.message.reply_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) उत्तर-लेखन:</b>\nआप पुराने प्रश्न देखना चाहते हैं या नए संभावित प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def handle_mains_type_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    q_type = query.data.replace("mq_type_", "")
+    user_id = query.from_user.id
+    MAINS_SELECTIONS[user_id] = {"q_type": q_type}
+
+    keyboard = [
+        [InlineKeyboardButton("🏛 GS 1 (इतिहास, भूगोल, समाज)", callback_data="mq_gs_1")],
+        [InlineKeyboardButton("⚖️ GS 2 (राजव्यवस्था, शासन, IR)", callback_data="mq_gs_2")],
+        [InlineKeyboardButton("💰 GS 3 (अर्थव्यवस्था, पर्यावरण, Sci-Tech)", callback_data="mq_gs_3")],
+        [InlineKeyboardButton("🧭 GS 4 (नीतिशास्त्र, सत्यनिष्ठा, केस स्टडी)", callback_data="mq_gs_4")]
+    ]
+    await query.message.edit_text("🎯 <b>विषय / GS पेपर का चयन करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def handle_mains_gs_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    gs_num = query.data.replace("mq_gs_", "")
+    user_id = query.from_user.id
+    MAINS_SELECTIONS[user_id]["gs"] = gs_num
+
+    keyboard = [
+        [InlineKeyboardButton("⚡ 1 प्रश्न (क्विक मॉडल उत्तर)", callback_data="mq_cnt_1")],
+        [InlineKeyboardButton("🎯 3 प्रश्न (मानक अभ्यास सेट)", callback_data="mq_cnt_3")],
+        [InlineKeyboardButton("🏆 5 प्रश्न (संपूर्ण टेस्ट मॉड्यूल)", callback_data="mq_cnt_5")]
+    ]
+    await query.message.edit_text(f"📝 <b>GS {gs_num} के कितने प्रश्नों का अभ्यास करना चाहते हैं?</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    cnt = int(query.data.replace("mq_cnt_", ""))
+    user_id = query.from_user.id
+    
+    sel = MAINS_SELECTIONS.get(user_id, {"q_type": "new", "gs": "2"})
+    q_type_str = "विगत वर्षों के प्रश्न (PYQs)" if sel.get("q_type") == "pyq" else "नए संभावित प्रश्न"
+    gs_paper = f"सामान्य अध्ययन - {sel.get('gs')}"
+
+    wait_m = await query.message.reply_text(f"⏳ <b>{gs_paper}</b> के {cnt} {q_type_str} उत्तर-लेखन मॉड्यूल तैयार हो रहे हैं...", parse_mode=ParseMode.HTML)
+
     prompt = f"""
-आज {today_str} के ज्वलंत समसामयिक मुद्दों के आधार पर UPSC मुख्य परीक्षा (GS-1, 2, 3) के लिए 2 अत्यंत मानक प्रश्न और उनका व्यापक उत्तर-लेखन फ्रेमवर्क तैयार करें।
-प्रारूप:
-- प्रश्न (250 शब्द, 15 अंक)
-- भूमिका (Introduction: डेटा/अनुच्छेद/संदर्भ)
-- मुख्य भाग (Body: 3 बहुआयामी बिंदु)
-- आगे की राह (Way Forward)
-- संतुलित निष्कर्ष
-मार्कडाउन स्टार्स का प्रयोग न करें।
+आप UPSC मुख्य परीक्षा के शीर्ष विशेषज्ञ हैं।
+विषय: {gs_paper} के {cnt} {q_type_str} तैयार करें।
+प्रत्येक प्रश्न के लिए:
+1. प्रश्न (15 अंक, 250 शब्द)
+2. भूमिका (संवैधानिक अनुच्छेद / हालिया रिपोर्ट / ऐतिहासिक संदर्भ)
+3. मुख्य भाग (3 स्पष्ट विश्लेषणात्मक बिंदु, उप-शीर्षक और उदाहरण)
+4. आगे की राह (Way Forward)
+5. संतुलित प्रशासनिक निष्कर्ष
+तालिकाओं में मानक HTML का प्रयोग करें।
 """
     try:
         resp = await asyncio.to_thread(call_gemini_safely, prompt)
-        clean_text = clean_all_markdown_and_fix_content(resp)
-        topic = f"UPSC Mains Practice — {today_str}"
-        filename = f"UPSC_Mains_{get_ist_now().strftime('%Y%m%d')}.html"
-        html_out = build_standalone_master_html(topic, clean_text, date_str=today_str)
+        today_str = get_ist_now().strftime("%d %B %Y")
+        topic = f"UPSC Mains Module — GS {sel.get('gs')} ({cnt} प्रश्न)"
+        filename = f"UPSC_Mains_GS{sel.get('gs')}_{cnt}Q.html"
+        html_out = build_standalone_master_html(topic, resp, date_str=today_str)
         
         with open(filename, "w", encoding="utf-8") as f:
             f.write(html_out)
         with open(filename, "rb") as send_doc:
-            await update.message.reply_document(
+            await context.bot.send_document(
+                chat_id=user_id,
                 document=send_doc,
                 filename=filename,
-                caption=f"📝 <b>UPSC मुख्य परीक्षा उत्तर-लेखन मॉड्यूल:</b> <code>{today_str}</code>\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                caption=f"📝 <b>UPSC मुख्य परीक्षा मॉड्यूल:</b> <code>{topic}</code>\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
                 parse_mode=ParseMode.HTML
             )
         if os.path.exists(filename):
@@ -668,35 +804,261 @@ async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}")
 
-# ================= UPSC INTERVIEW & VOICE (TTS) ENGINE =================
-async def interview_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ================= 20MB+ SECURE DOWNLOAD HELPER =================
+async def download_file_safely(msg, context: ContextTypes.DEFAULT_TYPE) -> bytearray:
+    # 1. Telethon (यदि API_ID व API_HASH उपलब्ध हो तो 2GB तक डाउनलोड)
+    if TELETHON_AVAILABLE and TELEGRAM_API_ID and TELEGRAM_API_HASH and telethon_client:
+        try:
+            out_buf = io.BytesIO()
+            await telethon_client.download_media(msg.message_id, out_buf)
+            return bytearray(out_buf.getvalue())
+        except Exception:
+            pass
+
+    # 2. फ़ॉलबैक: मानक Telegram Bot API (20MB तक)
+    doc = msg.document or (msg.photo[-1] if msg.photo else None)
+    f_obj = await doc.get_file()
+    return await f_obj.download_as_bytearray()
+
+# ================= UPSC ANSWER COPY CHECKING (/checkanswer) =================
+async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
-    wait_m = await update.message.reply_text("🎙️ <b>UPSC साक्षात्कार बोर्ड कक्ष से सिमुलेशन प्रश्न तैयार हो रहा है...</b>", parse_mode=ParseMode.HTML)
-    
+    await update.message.reply_text(
+        "📝 <b>UPSC मुख्य परीक्षा उत्तर पुस्तिका मूल्यांकन डेस्क</b>\n\n"
+        "कृपया अपने लिखे हुए उत्तर की <b>साफ़ फ़ोटो (Image)</b> या <b>PDF फ़ाइल (20MB से बड़ी भी समर्थित)</b> भेजें।\n"
+        "UPSC परीक्षक की तरह विस्तृत अंक, संरचनात्मक कमियाँ और सुधार बिंदु दिए जाएँगे।\n\n"
+        "<i>(रद्द करने के लिए <code>/cancel</code> भेजें)</i>",
+        parse_mode=ParseMode.HTML
+    )
+    return WAITING_ANSWER_COPY
+
+async def handle_answer_copy_submission(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    msg = update.message
+    wait_m = await msg.reply_text("🔍 <b>आपकी उत्तर पुस्तिका प्राप्त हुई!</b> UPSC मूल्यांकन प्रक्रिया चालू है...", parse_mode=ParseMode.HTML)
+
     prompt = """
-UPSC व्यक्तित्व परीक्षण (Interview / Personality Test) के लिए एक गंभीर, प्रशासनिक एवं नीतिगत स्थितिजन्य प्रश्न (Situational Question) तैयार करें।
-साथ ही उसका 2 पंक्ति का संतुलित प्रशासनिक उत्तर दें। 
-मार्कडाउन स्टार्स का प्रयोग न करें।
+आप UPSC मुख्य परीक्षा के वरिष्ठ परीक्षक (Copy Evaluator) हैं।
+प्रस्तुत उत्तर पुस्तिका का निष्पक्ष, गहन और सटीक मूल्यांकन करें।
+प्रारूप:
+1. 📊 प्राप्तांक (Marks Awarded): (उदा. 6.5/10 या 9/15)
+2. 🌟 सकारात्मक पक्ष (Strengths): (भूमिका, स्पष्टता, मुख्य बिंदु)
+3. ⚠️ संरचनात्मक कमियाँ (Areas of Improvement): (प्रमाणिक डेटा, आरेख, अनुच्छेदों की कमी)
+4. 🚀 परीक्षक की मूल्य संवर्धन सलाह (Value Addition): (आगे की राह व निष्कर्ष को बेहतर बनाने के सुझाव)
+उच्च-स्तरीय एवं गंभीर हिंदी में उत्तर दें।
 """
     try:
-        resp = await asyncio.to_thread(call_gemini_safely, prompt)
-        clean_text = resp.strip()
+        f_bytes = await download_file_safely(msg, context)
+        m_type = "application/pdf" if (msg.document and msg.document.file_name.lower().endswith('.pdf')) else "image/jpeg"
+        eval_result = await asyncio.to_thread(call_gemini_multimodal, prompt, bytes(f_bytes), m_type)
+
+        clean_eval = clean_all_markdown_and_fix_content(eval_result)
+        await wait_m.delete()
+
+        if len(clean_eval) > 3800:
+            parts = [clean_eval[i:i+3800] for i in range(0, len(clean_eval), 3800)]
+            for p in parts:
+                await msg.reply_text(p, parse_mode=ParseMode.HTML)
+        else:
+            await msg.reply_text(clean_eval, parse_mode=ParseMode.HTML)
+
+    except Exception as e:
+        await wait_m.edit_text(f"❌ मूल्यांकन में त्रुटि: {e}। कृपया साफ़ फ़ोटो या PDF भेजें।")
+
+    return ConversationHandler.END
+
+# ================= DIRECT PDF TO HTML CONVERTER (ALL SIZES SUPPORTED) =================
+async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    doc = msg.document
+    user_id = update.effective_user.id
+    register_user(user_id, update.effective_user.username, update.effective_user.first_name)
+
+    if not doc or not doc.file_name.lower().endswith(".pdf"):
+        return
+
+    wait_m = await msg.reply_text("📥 <b>PDF प्राप्त हुआ!</b>\nसामग्री निकाली जा रही है व UPSC 360° HTML नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+    temp_pdf = f"temp_{user_id}_{int(time.time())}.pdf"
+    
+    try:
+        f_bytes = await download_file_safely(msg, context)
+        with open(temp_pdf, "wb") as f:
+            f.write(f_bytes)
+
+        reader = PdfReader(temp_pdf)
+        pdf_text = ""
+        for page in reader.pages[:18]:
+            t = page.extract_text()
+            if t:
+                pdf_text += t + "\n"
+
+        if not pdf_text.strip():
+            # यदि स्कैन की गई PDF हो तो मल्टीमॉडल इंजन से नोट्स बनाना
+            prompt = "इस PDF सामग्री का UPSC सिविल सेवा परीक्षा के स्तर पर संपूर्ण 360° अध्ययन नोट्स शुद्ध 2-कॉलम HTML सारणी व मेन्स फ्रेमवर्क सहित तैयार करें।"
+            ai_notes = await asyncio.to_thread(call_gemini_multimodal, prompt, bytes(f_bytes), "application/pdf")
+        else:
+            clean_title = doc.file_name.replace(".pdf", "")[:35]
+            prompt = f"""
+नीचे दी गई PDF सामग्री का UPSC सिविल सेवा परीक्षा के स्तर पर संपूर्ण और व्यवस्थित 360° अध्ययन नोट्स तैयार करें:
+शीर्षक: "{clean_title}"
+सामग्री:
+"{pdf_text[:4500]}"
+नियम: 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, प्रीलिम्स फैक्ट्स और अभ्यास प्रश्न शामिल करें।
+"""
+            ai_notes = await asyncio.to_thread(call_gemini_safely, prompt)
+
+        clean_title = doc.file_name.replace(".pdf", "")[:35]
+        html_out = build_standalone_master_html(clean_title, ai_notes)
+
+        out_fname = f"UPSC_{re.sub(r'[^a-zA-Z0-9]', '_', clean_title)[:20]}.html"
+        with open(out_fname, "w", encoding="utf-8") as f:
+            f.write(html_out)
+
+        with open(out_fname, "rb") as send_doc:
+            await msg.reply_document(
+                document=send_doc,
+                filename=out_fname,
+                caption=f"📄 <b>PDF से जनरेटेड HTML नोट्स:</b> <code>{clean_title}</code>\n👤 <b>संकलनकर्ता:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                parse_mode=ParseMode.HTML
+            )
+        await wait_m.delete()
+        if os.path.exists(out_fname):
+            os.remove(out_fname)
+
+    except Exception as e:
+        await wait_m.edit_text(f"❌ PDF प्रोसेसिंग में त्रुटि आई: {e}")
+    finally:
+        if os.path.exists(temp_pdf):
+            os.remove(temp_pdf)
+
+# ================= 1-on-1 UPSC INTERVIEW VOICE SIMULATION (FULL VOICE & CUSTOM FILE) =================
+async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    register_user(user.id, user.username, user.first_name)
+    user_id = user.id
+
+    daf = get_user_daf(user_id)
+    if not daf:
+        await update.message.reply_text(
+            f"🏛 <b>UPSC साक्षात्कार बोर्ड (Personality Test)</b>\n\n"
+            f"नमस्ते <b>{user.first_name}</b>! बोर्ड रूम में प्रवेश से पहले हमें आपका संक्षिप्त DAF (बायोडाटा) चाहिए।\n\n"
+            "कृपया एक ही मैसेज में नीचे दिए गए प्रारूप में अपनी जानकारी लिखकर भेजें:\n\n"
+            "<code>नाम:\nगृह राज्य:\nकॉलेज / ग्रेजुएशन विषय:\nवैकल्पिक विषय (Optional):\nअटेम्प्ट (उदा. पहला / दूसरा):</code>\n\n"
+            "<i>(यह जानकारी डेटाबेस में हमेशा के लिए सुरक्षित रहेगी)</i>",
+            parse_mode=ParseMode.HTML
+        )
+        return WAITING_INTERVIEW_DAF
+
+    name, home_state, college_grad, optional_sub, attempt_info = daf
+    wait_m = await update.message.reply_text("🎙️ <b>साक्षात्कार बोर्ड के अध्यक्ष आपके DAF का अध्ययन कर रहे हैं...</b>", parse_mode=ParseMode.HTML)
+
+    prompt = f"""
+आप UPSC साक्षात्कार बोर्ड के अध्यक्ष हैं।
+उम्मीदवार का विवरण:
+नाम: {name}
+गृह राज्य: {home_state}
+शिक्षा: {college_grad}
+वैकल्पिक विषय: {optional_sub}
+अटेम्प्ट: {attempt_info}
+
+उम्मीदवार {name} का नाम लेकर एक गंभीर, विनम्र और प्रशासनिक स्थितिजन्य प्रश्न (Situational Question) पूछें।
+प्रश्न विस्तृत और व्यावहारिक होना चाहिए।
+"""
+    try:
+        q_text = await asyncio.to_thread(call_gemini_safely, prompt)
+        clean_q = q_text.strip()
         
-        encoded_text = urllib.parse.quote(clean_text[:250])
-        tts_url = f"https://all-api-free-text-to-speech-v1-five.vercel.app/api/tts?text={encoded_text}&lang=hi"
+        # संपूर्ण ऑडियो डाउनलोड (बिना किसी 30 सेकंड की कटौती के)
+        audio_bytes = await download_audio_stream(clean_q)
         
         await wait_m.delete()
         await update.message.reply_text(
-            f"🏛 <b>UPSC साक्षात्कार बोर्ड सिमुलेशन:</b>\n\n{clean_text}\n\n📢 <i>नीचे बोर्ड मेंटर का ऑडियो उत्तर सुनें:</i>",
+            f"🏛 <b>UPSC साक्षात्कार बोर्ड अध्यक्ष:</b>\n\n{clean_q}\n\n"
+            "👉 <b>अब अपना उत्तर वॉयस नोट (Voice Message) रिकॉर्ड करके भेजें:</b>",
             parse_mode=ParseMode.HTML
         )
-        try:
-            await update.message.reply_voice(voice=tts_url, caption=f"🎙️ साक्षात्कार मार्गदर्शन | {AUTHOR_NAME}")
-        except Exception:
-            pass
+        if audio_bytes:
+            audio_io = io.BytesIO(audio_bytes)
+            audio_io.name = "UPSC_Interview_Question.mp3"
+            await update.message.reply_voice(
+                voice=audio_io,
+                caption=f"🎙️ साक्षात्कार प्रश्न | {AUTHOR_NAME}"
+            )
+
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}")
+
+    return WAITING_INTERVIEW_VOICE
+
+async def handle_daf_submission(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    user_id = user.id
+    raw_text = update.message.text.strip()
+
+    name = user.first_name
+    home_state = "भारत"
+    college_grad = "स्नातक"
+    optional_sub = "सामान्य अध्ययन"
+    attempt_info = "पहला प्रयास"
+
+    lines = raw_text.split('\n')
+    for l in lines:
+        if "नाम" in l and ":" in l:
+            name = l.split(":", 1)[1].strip()
+        elif "राज्य" in l and ":" in l:
+            home_state = l.split(":", 1)[1].strip()
+        elif "कॉलेज" in l or "ग्रेजुएशन" in l and ":" in l:
+            college_grad = l.split(":", 1)[1].strip()
+        elif "वैकल्पिक" in l and ":" in l:
+            optional_sub = l.split(":", 1)[1].strip()
+        elif "अटेम्प्ट" in l and ":" in l:
+            attempt_info = l.split(":", 1)[1].strip()
+
+    save_user_daf(user_id, name, home_state, college_grad, optional_sub, attempt_info)
+    await update.message.reply_text("✅ <b>आपका DAF बायोडाटा हमेशा के लिए सुरक्षित कर लिया गया है!</b>\nबोर्ड रूम से आपका पहला वॉयस प्रश्न आ रहा है...", parse_mode=ParseMode.HTML)
+    return await interview_flow_start(update, context)
+
+async def handle_interview_candidate_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    user_id = user.id
+    daf = get_user_daf(user_id)
+    c_name = daf[0] if daf else user.first_name
+
+    wait_m = await update.message.reply_text("🎧 <b>बोर्ड आपके उत्तर का विश्लेषण कर रहा है...</b>", parse_mode=ParseMode.HTML)
+
+    try:
+        f_bytes = await download_file_safely(update.message, context)
+        mime_type = "audio/ogg" if update.message.voice else "audio/mpeg"
+
+        eval_prompt = f"""
+उम्मीदवार {c_name} ने UPSC साक्षात्कार के प्रश्न का मौखिक उत्तर दिया है।
+कृपया उम्मीदवार के उत्तर की सत्यनिष्ठा, प्रशासनिक परिपक्वता और भाषा का मूल्यांकन 2 पंक्तियों में करें।
+फिर अगला क्रॉस-क्वेश्चन (Counter Question) पूछें।
+नाम लेकर संबोधित करें।
+"""
+        eval_resp = await asyncio.to_thread(call_gemini_multimodal, eval_prompt, bytes(f_bytes), mime_type)
+        clean_resp = eval_resp.strip()
+
+        audio_bytes = await download_audio_stream(clean_resp)
+
+        await wait_m.delete()
+        await update.message.reply_text(
+            f"🏛 <b>बोर्ड का प्रत्युत्तर एवं प्रति-प्रश्न:</b>\n\n{clean_resp}\n\n"
+            "👉 <i>पुनः वॉयस नोट भेजकर साक्षात्कार जारी रखें या समाप्त करने हेतु <code>/cancel</code> भेजें।</i>",
+            parse_mode=ParseMode.HTML
+        )
+        if audio_bytes:
+            audio_io = io.BytesIO(audio_bytes)
+            audio_io.name = "UPSC_Board_Evaluation.mp3"
+            await update.message.reply_voice(
+                voice=audio_io,
+                caption=f"🎙️ साक्षात्कार बोर्ड मूल्यांकन | {AUTHOR_NAME}"
+            )
+
+    except Exception as e:
+        await wait_m.edit_text(f"❌ वॉयस प्रोसेसिंग में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
+
+    return WAITING_INTERVIEW_VOICE
 
 # ================= CONTINUOUS ASK MENTORSHIP SESSION =================
 async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -798,7 +1160,6 @@ async def handle_trending_type_selection(update: Update, context: ContextTypes.D
     try:
         raw_text = await asyncio.to_thread(call_gemini_safely, prompt)
         
-        # सुरक्षित पार्सिंग जो कभी खाली नहीं जाएगी
         clean_lines = []
         for l in raw_text.split('\n'):
             line = l.strip()
@@ -1205,81 +1566,6 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
             await wait_m.edit_text(f"❌ त्रुटि: {e}")
         return
 
-# ================= DIRECT PDF TO HTML ENGINE =================
-async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    doc = msg.document
-    user_id = update.effective_user.id
-    register_user(user_id, update.effective_user.username, update.effective_user.first_name)
-
-    if not doc or not doc.file_name.lower().endswith(".pdf"):
-        return
-
-    MAX_FILE_SIZE = 20 * 1024 * 1024
-    if doc.file_size and doc.file_size > MAX_FILE_SIZE:
-        size_mb = doc.file_size / (1024 * 1024)
-        await msg.reply_text(
-            f"⚠️ <b>फ़ाइल का आकार बहुत बड़ा है ({size_mb:.1f} MB)!</b>\n\n"
-            "टेलीग्राम केवल <b>20 MB</b> तक की PDF फ़ाइलों को प्रोसेस करने की अनुमति देता है।\n\n"
-            "💡 <b>विकल्प:</b>\n"
-            "1. मुख्य संपादकीय का टेक्स्ट कॉपी करके सीधे भेजें।\n"
-            "2. या इस तारीख के संपूर्ण नोट्स हेतु लिखें: <code>/generate 01 October 2026</code>",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    wait_m = await msg.reply_text("📥 <b>PDF प्राप्त हुआ!</b>\nसामग्री निकाली जा रही है व UPSC 360° HTML नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
-    temp_pdf = f"temp_{user_id}_{int(time.time())}.pdf"
-    
-    try:
-        f_obj = await doc.get_file()
-        await f_obj.download_to_drive(temp_pdf)
-
-        reader = PdfReader(temp_pdf)
-        pdf_text = ""
-        for page in reader.pages[:15]:
-            t = page.extract_text()
-            if t:
-                pdf_text += t + "\n"
-
-        if not pdf_text.strip():
-            await wait_m.edit_text("⚠️ यह PDF स्कैन की गई इमेज जैसी है। कृपया टेक्स्ट-आधारित PDF भेजें।")
-            if os.path.exists(temp_pdf):
-                os.remove(temp_pdf)
-            return
-
-        clean_title = doc.file_name.replace(".pdf", "")[:35]
-        prompt = f"""
-नीचे दी गई PDF सामग्री का UPSC सिविल सेवा परीक्षा के स्तर पर संपूर्ण और व्यवस्थित 360° अध्ययन नोट्स तैयार करें:
-शीर्षक: "{clean_title}"
-सामग्री:
-"{pdf_text[:4000]}"
-नियम: 2-कॉलम HTML सारणी, मेन्स फ्रेमवर्क, प्रीलिम्स फैक्ट्स और अभ्यास प्रश्न (प्रश्न 1:, प्रश्न 2:... प्रारूप में) शामिल करें।
-"""
-        ai_notes = await asyncio.to_thread(call_gemini_safely, prompt)
-        html_out = build_standalone_master_html(clean_title, ai_notes)
-
-        out_fname = f"UPSC_{re.sub(r'[^a-zA-Z0-9]', '_', clean_title)[:20]}.html"
-        with open(out_fname, "w", encoding="utf-8") as f:
-            f.write(html_out)
-
-        with open(out_fname, "rb") as send_doc:
-            await msg.reply_document(
-                document=send_doc,
-                filename=out_fname,
-                caption=f"📄 <b>PDF से जनरेटेड HTML नोट्स:</b> <code>{clean_title}</code>\n👤 <b>संकलनकर्ता:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
-                parse_mode=ParseMode.HTML
-            )
-        await wait_m.delete()
-        if os.path.exists(out_fname):
-            os.remove(out_fname)
-
-    except Exception as e:
-        await wait_m.edit_text(f"❌ PDF प्रोसेसिंग में त्रुटि आई: {e}")
-    finally:
-        if os.path.exists(temp_pdf):
-            os.remove(temp_pdf)
-
 # ================= ADMIN GENERATE COMMAND =================
 async def ai_generate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -1542,8 +1828,19 @@ async def run_server():
 
 # ================= MAIN APPLICATION =================
 async def main():
+    global telethon_client
     init_db()
     await run_server()
+
+    # Telethon 20MB+ क्लाइंट इनिशियलाइज़ेशन
+    if TELETHON_AVAILABLE and TELEGRAM_API_ID and TELEGRAM_API_HASH:
+        try:
+            telethon_client = TelegramClient('bot_session', int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
+            await telethon_client.start(bot_token=BOT_TOKEN)
+            print("Telethon Client Connected for 2GB+ File Support!")
+        except Exception as e:
+            print(f"Telethon Init Error: {e}")
+
     bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     bot_app.add_handler(CommandHandler("start", start_handler))
@@ -1551,7 +1848,6 @@ async def main():
     bot_app.add_handler(CommandHandler("daily", daily_cmd))
     bot_app.add_handler(CommandHandler("quiz", quiz_cmd))
     bot_app.add_handler(CommandHandler("mains", mains_special_cmd))
-    bot_app.add_handler(CommandHandler("interview", interview_cmd))
     bot_app.add_handler(CommandHandler("trending", trending_cmd))
     bot_app.add_handler(CommandHandler("weekly", weekly_cmd))
     bot_app.add_handler(CommandHandler("monthly", monthly_cmd))
@@ -1562,14 +1858,39 @@ async def main():
     bot_app.add_handler(CommandHandler("removeuser", remove_user_cmd))
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd))
 
+    # मेन्स व क्विज़ कॉलबैक्स
     bot_app.add_handler(CallbackQueryHandler(handle_native_poll_quiz, pattern=r"^tpoll_"))
+    bot_app.add_handler(CallbackQueryHandler(handle_mains_type_choice, pattern=r"^mq_type_"))
+    bot_app.add_handler(CallbackQueryHandler(handle_mains_gs_choice, pattern=r"^mq_gs_"))
+    bot_app.add_handler(CallbackQueryHandler(handle_mains_cnt_choice, pattern=r"^mq_cnt_"))
+
+    # ट्रेंडिंग कॉलबैक्स
     bot_app.add_handler(CallbackQueryHandler(handle_trending_type_selection, pattern=r"^trtype_"))
     bot_app.add_handler(CallbackQueryHandler(handle_trending_pages, pattern=r"^trpage_"))
     bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click))
 
-    bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_direct_pdf_upload))
+    # 1. 1-on-1 साक्षात्कार वॉयस फ्लो (/interview)
+    interview_conv = ConversationHandler(
+        entry_points=[CommandHandler("interview", interview_flow_start)],
+        states={
+            WAITING_INTERVIEW_DAF: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_submission)],
+            WAITING_INTERVIEW_VOICE: [MessageHandler((filters.VOICE | filters.AUDIO) & (~filters.COMMAND), handle_interview_candidate_voice)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    bot_app.add_handler(interview_conv)
 
-    # निरंतर आस्क मेंटरशिप सत्र (Continuous Ask Session)
+    # 2. उत्तर पुस्तिका कॉपी चेकिंग (/checkanswer)
+    answer_check_conv = ConversationHandler(
+        entry_points=[CommandHandler("checkanswer", check_answer_cmd)],
+        states={
+            WAITING_ANSWER_COPY: [MessageHandler((filters.PHOTO | filters.Document.ALL) & (~filters.COMMAND), handle_answer_copy_submission)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    bot_app.add_handler(answer_check_conv)
+
+    # 3. निरंतर आस्क मेंटरशिप सत्र (/ask)
     ask_conv = ConversationHandler(
         entry_points=[CommandHandler("ask", start_ask_session)],
         states={WAITING_ASK_SESSION: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_ask_continuous_message)]},
@@ -1577,7 +1898,7 @@ async def main():
     )
     bot_app.add_handler(ask_conv)
 
-    # ओनर संपर्क सिस्टम
+    # 4. ओनर संपर्क सिस्टम (/owner)
     contact_conv = ConversationHandler(
         entry_points=[CommandHandler("owner", contact_cmd), CommandHandler("contact", contact_cmd)],
         states={WAITING_CONTACT_MSG: [MessageHandler(filters.ALL & (~filters.COMMAND), forward_contact_msg)]},
@@ -1585,7 +1906,7 @@ async def main():
     )
     bot_app.add_handler(contact_conv)
 
-    # यूनिवर्सल ब्रॉडकास्ट सिस्टम
+    # 5. यूनिवर्सल ब्रॉडकास्ट सिस्टम (/broadcast)
     broadcast_conv = ConversationHandler(
         entry_points=[CommandHandler("broadcast", broadcast_cmd)],
         states={WAITING_BROADCAST_MSG: [MessageHandler(filters.ALL & (~filters.COMMAND), execute_broadcast)]},
@@ -1595,6 +1916,9 @@ async def main():
 
     # एडमिन रिप्लाई हैंडलर
     bot_app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & (filters.REPLY | filters.Regex(r'^[0-9]{8,11}')), handle_admin_reply_or_direct_send))
+
+    # सामान्य डॉक्यूमेंट (PDF से 360° UPSC HTML नोट्स निर्माण)
+    bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_direct_pdf_upload))
 
     # सामान्य टेक्स्ट हैंडलर
     bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_messages))
