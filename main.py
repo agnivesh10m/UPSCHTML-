@@ -2,6 +2,7 @@ import os
 import re
 import time
 import asyncio
+import io
 from datetime import timedelta
 from telegram import (
     Update,
@@ -96,7 +97,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n\n"
             "आपका पंजीकरण सुरक्षित हो गया है (स्थिति: <b>निःशुल्क सदस्य</b>)।\n\n"
             "इस पोर्टल पर UPSC CSE के 360° दैनिक नोट्स, लाइव DAF साक्षात्कार, उत्तर-पुस्तिका मूल्यांकन और विगत वर्षों के प्रश्नों (PYQs) का संग्रह उपलब्ध है।\n\n"
-            f"⚠️ <b>नोट:</b> वर्तमान में प्रीमियम AI टूल्स आपके खाते पर सक्रिय नहीं हैं। एक्सेस सक्रिय करवाने हेतु <code>/owner</code> पर संपर्क करें।\n\n"
+            f"⚠️️ <b>नोट:</b> वर्तमान में प्रीमियम AI टूल्स आपके खाते पर सक्रिय नहीं हैं। एक्सेस सक्रिय करवाने हेतु <code>/owner</code> पर संपर्क करें।\n\n"
             f"📢 <b>आधिकारिक चैनल:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>",
             parse_mode=ParseMode.HTML
         )
@@ -194,7 +195,7 @@ async def handle_quiz_gs_choice(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("💰 भारतीय अर्थव्यवस्था व कृषि", callback_data="quizsub_economy")],
             [InlineKeyboardButton("🌿 पर्यावरण, पारिस्थितिकी व जैव विविधता", callback_data="quizsub_env")],
             [InlineKeyboardButton("🔬 विज्ञान, प्रौद्योगिकी व अंतरिक्ष", callback_data="quizsub_scitech")],
-            [InlineKeyboardButton("🛡️ आंतरिक सुरक्षा व आपदा प्रबंधन", callback_data="quizsub_security")],
+            [InlineKeyboardButton("🛡️️ आंतरिक सुरक्षा व आपदा प्रबंधन", callback_data="quizsub_security")],
             [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="quiz_back_gs")]
         ]
         await query.message.edit_text("🎯 <b>चरण 2/3 (GS 3):</b> विशिष्ट विषय चुनें:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -347,7 +348,7 @@ async def handle_daf_name_step(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return DAF_QCOUNT
 
-    if txt == "✏️ प्रोफाइल अपडेट करें (Edit DAF)":
+    if txt == "✏️️ प्रोफाइल अपडेट करें (Edit DAF)":
         await update.message.reply_text("👉 <b>चरण 1/6:</b> अपना <b>पूरा नाम</b> लिखकर भेजें:", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
         return DAF_NAME
 
@@ -449,6 +450,7 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.HTML
         )
 
+        # बोर्ड अध्यक्ष की गंभीर पुरुष (Male) आवाज भेजना
         asyncio.create_task(send_async_voice_question(update, context, q_text, curr, tot))
 
     except Exception as e:
@@ -461,8 +463,12 @@ async def send_async_voice_question(update, context, text, curr, tot):
         audio_bytes = await download_audio_stream(text)
         if audio_bytes:
             audio_io = io.BytesIO(audio_bytes)
-            audio_io.name = f"Interview_Q_{curr}.mp3"
-            await update.effective_message.reply_voice(voice=audio_io, caption=f"🎙️ साक्षात्कार प्रश्न {curr}/{tot} | {AUTHOR_NAME}")
+            audio_io.name = f"Board_Question_{curr}.mp3"
+            await context.bot.send_voice(
+                chat_id=update.effective_chat.id,
+                voice=audio_io,
+                caption=f"🎙️ साक्षात्कार प्रश्न {curr}/{tot} (बोर्ड अध्यक्ष - पुरुष आवाज़) | {AUTHOR_NAME}"
+            )
     except Exception as e:
         print(f"Async voice skip: {e}")
 
@@ -498,7 +504,8 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 
         await update.message.reply_text(f"🏛 <b>बोर्ड का अवलोकन ({sess['current']}/{sess['total']}):</b>\n\n{eval_resp}", parse_mode=ParseMode.HTML)
 
-        asyncio.create_task(send_async_voice_feedback(update, eval_resp))
+        # बोर्ड का मौखिक पुरुष फीडबैक भेजना
+        asyncio.create_task(send_async_voice_feedback(update, context, eval_resp))
 
         if not is_last:
             sess["current"] += 1
@@ -520,13 +527,17 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
         await wait_m.edit_text(f"❌ वॉयस प्रोसेसिंग में त्रुटि: {e}। कृपया पुनः वॉयस भेजें।")
         return WAITING_INTERVIEW_VOICE
 
-async def send_async_voice_feedback(update, text):
+async def send_async_voice_feedback(update, context, text):
     try:
-        audio_bytes = await download_audio_stream(text[:300])
+        audio_bytes = await download_audio_stream(text[:350])
         if audio_bytes:
             audio_io = io.BytesIO(audio_bytes)
             audio_io.name = "Board_Feedback.mp3"
-            await update.effective_message.reply_voice(voice=audio_io, caption=f"🎙️ बोर्ड फीडबैक | {AUTHOR_NAME}")
+            await context.bot.send_voice(
+                chat_id=update.effective_chat.id,
+                voice=audio_io,
+                caption=f"🎙️ बोर्ड अवलोकन एवं फीडबैक (अध्यक्ष) | {AUTHOR_NAME}"
+            )
     except Exception as e:
         print(f"Async feedback skip: {e}")
 
@@ -1576,7 +1587,6 @@ async def main():
     )
     bot_app.add_handler(interview_conv)
 
-    # 2. उत्तर पुस्तिका 2-स्टेप चेकिंग फ़्लो (PYQ व मॉडल प्रश्न विकल्प के साथ)
     answer_check_conv = ConversationHandler(
         entry_points=[CommandHandler("checkanswer", check_answer_cmd)],
         states={
