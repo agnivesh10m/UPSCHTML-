@@ -452,7 +452,7 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
         asyncio.create_task(send_async_voice_question(update, context, q_text, curr, tot))
 
     except Exception as e:
-        await update.effective_message.reply_text(f"❌ त्रुटि: {e}")
+        await update.effective_message.reply_text(f"❌ साक्षात्कार प्रश्न बनाने में समस्या: {e}")
 
     return WAITING_INTERVIEW_VOICE
 
@@ -1576,7 +1576,7 @@ async def main():
     )
     bot_app.add_handler(interview_conv)
 
-    # 2. उन्नत उत्तर पुस्तिका मूल्यांकन फ़्लो (PYQ vs New Question चयन)
+    # 2. उत्तर पुस्तिका 2-स्टेप चेकिंग फ़्लो (PYQ व मॉडल प्रश्न विकल्प के साथ)
     answer_check_conv = ConversationHandler(
         entry_points=[CommandHandler("checkanswer", check_answer_cmd)],
         states={
