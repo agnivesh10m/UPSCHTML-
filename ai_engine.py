@@ -1,4 +1,6 @@
+import os
 import re
+import tempfile
 import asyncio
 import edge_tts
 from google import genai
@@ -58,16 +60,32 @@ def call_gemini_audio_transcribe(file_bytes: bytes, mime_type: str = "audio/ogg"
     return call_gemini_multimodal_inline(prompt, file_bytes, mime_type)
 
 async def download_audio_stream(text: str) -> bytes:
+    """UPSC साक्षात्कार बोर्ड अध्यक्ष की गंभीर पुरुष (Male) आवाज़ - MadhurNeural"""
+    temp_path = None
     try:
-        clean_text = re.sub(r'[\*\_#`]', '', text).strip().replace("\n", " ")
-        communicate = edge_tts.Communicate(clean_text, "hi-IN-SwaraNeural")
-        audio_stream = bytearray()
-        async with asyncio.timeout(6):
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    audio_stream.extend(chunk["data"])
-        return bytes(audio_stream)
+        clean_text = re.sub(r'[\*\_#`]', '', text).strip()
+        clean_text = re.sub(r'\s+', ' ', clean_text)
+        if not clean_text:
+            return b""
+
+        # गंभीर पुरुष आवाज़: hi-IN-MadhurNeural
+        communicate = edge_tts.Communicate(clean_text, "hi-IN-MadhurNeural", rate="+0%", pitch="+0Hz")
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+            temp_path = fp.name
+
+        await communicate.save(temp_path)
+
+        with open(temp_path, "rb") as f:
+            audio_bytes = f.read()
+
+        return audio_bytes
     except Exception as e:
-        print(f"TTS Stream Handled/Skipped: {e}")
+        print(f"TTS Audio Generation Error: {e}")
         return b""
-      
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
