@@ -83,6 +83,27 @@ def is_authorized(user_id):
         print(f"Auth error: {e}")
     return False
 
+def add_vip_user(target_uid: int, days: int):
+    expiry = get_ist_now() + psycopg2.extensions.AsIs(f"INTERVAL '{days} days'")
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO users (user_id, is_vip, vip_expiry, joined_at)
+        VALUES (%s, 1, NOW() + (%s || ' days')::INTERVAL, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET 
+            is_vip = 1, 
+            vip_expiry = NOW() + (%s || ' days')::INTERVAL;
+    """, (target_uid, str(days), str(days)))
+    c.close()
+    conn.close()
+
+def remove_vip_user(target_uid: int):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("UPDATE users SET is_vip = 0, vip_expiry = NULL WHERE user_id = %s", (target_uid,))
+    c.close()
+    conn.close()
+
 def get_user_daf(user_id):
     try:
         conn = get_db_connection()
@@ -188,4 +209,3 @@ def get_all_users_detailed():
     except Exception as e:
         print(f"Error getting detailed users: {e}")
         return []
-      
