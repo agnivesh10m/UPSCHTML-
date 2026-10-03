@@ -88,7 +88,9 @@ LAST_BROADCAST_DATA = {}
 def get_db_connection():
     if not DATABASE_URL:
         raise Exception("DATABASE_URL एनवायरनमेंट वैरिएबल में सेट नहीं है।")
-    return psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
+    return conn
 
 def init_db():
     conn = get_db_connection()
@@ -121,7 +123,6 @@ def init_db():
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
     """)
-    conn.commit()
     c.close()
     conn.close()
 
@@ -141,7 +142,6 @@ def register_user(user_id, username, first_name):
                 username = EXCLUDED.username,
                 first_name = EXCLUDED.first_name;
         """, (user_id, username or "", first_name or ""))
-        conn.commit()
         c.close()
         conn.close()
     except Exception as e:
@@ -195,7 +195,6 @@ def save_user_daf(user_id, name, home_state, college, status, opt_sub, attempt):
                 attempt_number = EXCLUDED.attempt_number,
                 updated_at = NOW();
         """, (user_id, name, home_state, college, status, opt_sub, attempt))
-        conn.commit()
         c.close()
         conn.close()
     except Exception as e:
@@ -232,7 +231,6 @@ def save_to_archive(period, topic, html_content, ref_date=None):
                 html_content = EXCLUDED.html_content,
                 created_at = NOW();
         """, (period, d_val, topic, html_content))
-        conn.commit()
         c.close()
         conn.close()
     except Exception as e:
@@ -333,13 +331,13 @@ async def download_audio_stream(text: str) -> bytes:
         clean_text = re.sub(r'[\*\_#`]', '', text).strip().replace("\n", " ")
         communicate = edge_tts.Communicate(clean_text, "hi-IN-SwaraNeural")
         audio_stream = bytearray()
-        async with asyncio.timeout(12):
+        async with asyncio.timeout(6):
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     audio_stream.extend(chunk["data"])
         return bytes(audio_stream)
     except Exception as e:
-        print(f"TTS Error/Timeout: {e}")
+        print(f"TTS Stream Handled/Skipped: {e}")
         return b""
 
 # ================= ROBUST TABLE & VISUAL BUILDER =================
@@ -414,35 +412,35 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'##\s*(.*)', r'<h3 class="section-title">\1</h3>', text)
     text = re.sub(r'#\s*(.*)', r'<h2 class="section-title">\1</h2>', text)
 
-    # मेन्स फॉर्मेटिंग को हाईलाइट और बोल्ड बॉक्सेज में बदलना
+    # मेन्स मुख्य परीक्षा प्रश्न को अलग उभरे हुए बॉक्स में अलग से प्रस्तुत करना
     text = re.sub(
-        r'(?:प्रश्न\s*\d+\s*[:\-]|UPSC\s*CSE\s*प्रश्न\s*[:\-])\s*(.*)',
-        r'<div class="mains-q-box"><h3 class="q-heading">📝 \1</h3></div>',
+        r'(?:प्रश्न\s*\d*\s*[:\-]|UPSC\s*CSE\s*प्रश्न\s*[:\-])\s*(.*)',
+        r'<div class="mains-q-card"><div class="q-icon">📝 मुख्य परीक्षा प्रश्न:</div><h3 class="q-bold-text">\1</h3></div>',
         text
     )
     text = re.sub(
         r'(\[UPSC\s*CSE[^\]]*\])',
-        r'<span class="mains-badge">\1</span>',
+        r'<div class="badge-wrap"><span class="mains-badge">\1</span></div>',
         text
     )
     text = re.sub(
-        r'\*\*भूमिका\s*[:\-]?\*\*\s*(.*)',
-        r'<div class="mains-point"><span class="point-badge-intro">📌 भूमिका (Introduction):</span> <p class="para"><b>\1</b></p></div>',
+        r'(?:📌\s*)?(?:\*\*|\#\#)?\s*भूमिका\s*[:\-]?\s*(?:\*\*)?\s*(.*)',
+        r'<div class="mains-point"><span class="point-badge-intro">📌 भूमिका (Introduction):</span><p class="para-bold">\1</p></div>',
         text
     )
     text = re.sub(
-        r'\*\*मुख्य\s*विश्लेषणात्मक\s*बिंदु\s*[:\-]?\*\*',
+        r'(?:📊\s*)?(?:\*\*|\#\#)?\s*मुख्य\s*विश्लेषणात्मक\s*आयाम\s*[:\-]?\s*(?:\*\*)?',
         r'<div class="point-badge-body">📊 मुख्य विश्लेषणात्मक आयाम (Core Analysis):</div>',
         text
     )
     text = re.sub(
-        r'\*\*आगे\s*की\s*राह\s*\(Way\s*Forward\)\s*[:\-]?\*\*\s*(.*)',
-        r'<div class="mains-point"><span class="point-badge-wf">🚀 आगे की राह (Way Forward):</span> <p class="para"><b>\1</b></p></div>',
+        r'(?:🚀\s*)?(?:\*\*|\#\#)?\s*आगे\s*की\s*राह\s*\(Way\s*Forward\)\s*[:\-]?\s*(?:\*\*)?\s*(.*)',
+        r'<div class="mains-point"><span class="point-badge-wf">🚀 आगे की राह (Way Forward):</span><p class="para-bold">\1</p></div>',
         text
     )
     text = re.sub(
-        r'\*\*संतुलित\s*निष्कर्ष\s*[:\-]?\*\*\s*(.*)',
-        r'<div class="mains-point"><span class="point-badge-conc">⚖️ संतुलित प्रशासनिक निष्कर्ष:</span> <p class="para"><b>\1</b></p></div>',
+        r'(?:⚖️\s*)?(?:\*\*|\#\#)?\s*संतुलित\s*प्रशासनिक\s*निष्कर्ष\s*[:\-]?\s*(?:\*\*)?\s*(.*)',
+        r'<div class="mains-point"><span class="point-badge-conc">⚖️ संतुलित प्रशासनिक निष्कर्ष:</span><p class="para-bold">\1</p></div>',
         text
     )
 
@@ -454,7 +452,7 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     for loc in key_locations:
         if loc in text:
             vector_card = create_standalone_vector_map(loc)
-            text += f"\n<div class='map-section'><h4>🗺️ भौगोलिक एवं रणनीतिक मैपिंग</h4><p><i>(नोट: संबंधित विषय का भौगोलिक परिदृश्य नीचे प्रदर्शित है)</i></p>{vector_card}</div>"
+            text += f"\n<div class='map-section'><h4>🗺️️ भौगोलिक एवं रणनीतिक मैपिंग</h4><p><i>(नोट: संबंधित विषय का भौगोलिक परिदृश्य नीचे प्रदर्शित है)</i></p>{vector_card}</div>"
             break
 
     return text
@@ -474,7 +472,7 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
             sec_id = f"custom-sec-{sec_idx}"
             tag['id'] = sec_id
             clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|\d+|[:\.\-\s])+', '', title_text).strip()
-            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️❄🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
+            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️️❄🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
             if not clean_tab_name:
                 clean_tab_name = f"विषय {sec_idx}"
             if len(clean_tab_name) > 20:
@@ -561,20 +559,27 @@ nav.dashboard a:hover {{ background: var(--accent); color: #fff; }}
 }}
 .sub-title {{ font-size: 1.1rem; color: var(--accent-dark); margin: 16px 0 8px; font-weight: 700; }}
 .para {{ margin: 8px 0; font-size: 1rem; word-break: break-word; text-align: justify; }}
-.mains-q-box {{
-  background: #f1f5f9; border-left: 6px solid var(--accent); padding: 14px 18px;
-  border-radius: 8px; margin: 20px 0 14px;
+.para-bold {{ margin: 8px 0; font-size: 1.02rem; font-weight: 600; color: var(--text); text-align: justify; line-height: 1.8; }}
+.mains-q-card {{
+  background: linear-gradient(135deg, #f0fdf4, #e0f2fe);
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin: 24px 0 14px;
+  box-shadow: var(--shadow);
 }}
-.q-heading {{ font-size: 1.25rem; font-weight: 800; color: #0f172a; line-height: 1.6; }}
+.q-icon {{ font-size: 0.95rem; font-weight: 800; color: var(--accent-dark); text-transform: uppercase; margin-bottom: 6px; }}
+.q-bold-text {{ font-size: 1.3rem; font-weight: 900; color: #0f172a; line-height: 1.6; letter-spacing: 0.2px; }}
+.badge-wrap {{ margin: 8px 0 16px; }}
 .mains-badge {{
-  display: inline-block; background: #e0f2fe; color: #0369a1; padding: 3px 10px;
-  border-radius: 15px; font-weight: 800; font-size: 0.88rem; margin-bottom: 10px;
+  display: inline-block; background: #0284c7; color: #ffffff; padding: 4px 12px;
+  border-radius: 20px; font-weight: 800; font-size: 0.9rem; letter-spacing: 0.5px;
 }}
-.mains-point {{ margin: 12px 0; padding-left: 10px; border-left: 3px solid var(--accent); }}
-.point-badge-intro {{ background: #0284c7; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }}
-.point-badge-body {{ color: var(--accent-dark); font-weight: 800; font-size: 1.05rem; margin: 12px 0 6px; }}
-.point-badge-wf {{ background: #10b981; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }}
-.point-badge-conc {{ background: #f59e0b; color: #000; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.9rem; }}
+.mains-point {{ margin: 16px 0; padding-left: 12px; border-left: 4px solid var(--accent); }}
+.point-badge-intro {{ background: #0284c7; color: #fff; padding: 3px 10px; border-radius: 4px; font-weight: 800; font-size: 0.92rem; display: inline-block; margin-bottom: 6px; }}
+.point-badge-body {{ color: var(--accent-dark); font-weight: 900; font-size: 1.15rem; margin: 18px 0 8px; border-bottom: 2px solid var(--border); padding-bottom: 4px; }}
+.point-badge-wf {{ background: #10b981; color: #fff; padding: 3px 10px; border-radius: 4px; font-weight: 800; font-size: 0.92rem; display: inline-block; margin-bottom: 6px; }}
+.point-badge-conc {{ background: #f59e0b; color: #000; padding: 3px 10px; border-radius: 4px; font-weight: 800; font-size: 0.92rem; display: inline-block; margin-bottom: 6px; }}
 .table-box {{ overflow-x: auto; margin: 16px 0; width: 100%; border-radius: 8px; border: 1px solid var(--border); }}
 table {{ width: 100%; border-collapse: collapse; text-align: left; }}
 th {{ background: var(--accent); color: #fff; padding: 11px 13px; font-size: 0.92rem; }}
@@ -598,7 +603,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
   <div class="controls">
     <input type="text" id="searchBox" placeholder="🔍 खोजें: विषय, अनुच्छेद, कीवर्ड...">
     <button onclick="toggleTheme()" class="theme-btn">🌗 डार्क / लाइट</button>
-    <button onclick="window.print()" class="print-btn">🖨️ प्रिंट / सेव PDF</button>
+    <button onclick="window.print()" class="print-btn">🖨️️ प्रिंट / सेव PDF</button>
   </div>
 </header>
 <nav class="dashboard"><div class="nav-wrap">{nav_links}</div></nav>
@@ -632,9 +637,117 @@ document.getElementById('searchBox').addEventListener('input', function() {{
 </body>
 </html>"""
 
-# ================= VISION IAS STYLE INTERACTIVE TEST ENGINE (FIXED SCRIPT & 50% WATERMARK) =================
+# ================= VISION IAS STYLE INTERACTIVE TEST ENGINE =================
 def build_vision_ias_interactive_portal(subject_title: str, test_id: str, q_count: int, questions_json: str) -> str:
     duration_min = 60 if q_count == 50 else (120 if q_count == 100 else 180)
+    
+    js_logic = """
+        const TOTAL_Q = questions.length;
+        const MARKS_PER_CORRECT = 2.00;
+        const NEGATIVE_MARK = 0.66;
+
+        let totalSeconds = TIME_MINUTES * 60;
+        let timerInterval;
+        let currentQIndex = 0;
+        let userAnswers = new Array(TOTAL_Q).fill(null);
+        let studentName = "";
+
+        function startTest() {
+            studentName = document.getElementById('candidate-name').value.trim();
+            if(!studentName) { alert("कृपया अपना नाम दर्ज करें!"); return; }
+            document.getElementById('res-display-name').innerText = studentName;
+            document.getElementById('home-screen').classList.add('hidden');
+            document.getElementById('test-screen').classList.remove('hidden');
+            initPalette();
+            loadQuestion(0);
+            timerInterval = setInterval(() => {
+                totalSeconds--;
+                let mins = Math.floor(totalSeconds / 60);
+                let secs = totalSeconds % 60;
+                document.getElementById('timer-display').innerText = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+                if(totalSeconds <= 0) { clearInterval(timerInterval); submitTest(); }
+            }, 1000);
+        }
+
+        function loadQuestion(index) {
+            currentQIndex = index;
+            document.getElementById('q-counter').innerText = 'प्रश्न ' + (index + 1) + ' / ' + TOTAL_Q;
+            document.getElementById('q-num-display').innerText = 'Q. ' + (index + 1) + ' / ' + TOTAL_Q;
+            const q = questions[index];
+            document.getElementById('progress-bar').style.width = (((index + 1) / TOTAL_Q) * 100) + '%';
+            document.getElementById('q-text').innerHTML = q.text;
+            const optsContainer = document.getElementById('options-container');
+            optsContainer.innerHTML = '';
+            const letters = ['A', 'B', 'C', 'D'];
+            q.options.forEach((optText, i) => {
+                const optDiv = document.createElement('div');
+                optDiv.className = 'option' + (userAnswers[index] === i ? ' selected' : '');
+                optDiv.onclick = () => { userAnswers[currentQIndex] = i; loadQuestion(currentQIndex); };
+                optDiv.innerHTML = '<div class="opt-letter">' + letters[i] + '</div><div class="opt-text">' + optText + '</div>';
+                optsContainer.appendChild(optDiv);
+            });
+            document.getElementById('next-btn').innerText = (index === TOTAL_Q - 1) ? 'Submit' : 'Next ▶';
+            document.getElementById('answered-counter').innerText = 'उत्तर दिए: ' + userAnswers.filter(ans => ans !== null).length;
+            updatePaletteUI();
+        }
+
+        function markSkipped() { nextQuestion(); }
+        function nextQuestion() { if (currentQIndex < TOTAL_Q - 1) loadQuestion(currentQIndex + 1); else submitTest(); }
+        function prevQuestion() { if (currentQIndex > 0) loadQuestion(currentQIndex - 1); }
+
+        function initPalette() {
+            const grid = document.getElementById('palette-grid');
+            grid.innerHTML = '';
+            for(let i=0; i<TOTAL_Q; + 1; ; btn="document.createElement('button');" btn.className="q-grid-btn" btn.id="pal-btn-" btn.innerText="i" btn.onclick="()" const i++) i; {> { loadQuestion(i); togglePalette(); };
+                grid.appendChild(btn);
+            }
+        }
+
+        function updatePaletteUI() {
+            for(let i=0; i<TOTAL_Q; !="=" (i="==" (userAnswers[i] + ; btn="document.getElementById('pal-btn-'" btn.classList.add('status-answered'); btn.classList.add('status-current'); btn.className="q-grid-btn" const continue; currentQIndex) else function i); i++) if if(!btn) if(modal.classList.contains('open')) if(totalSeconds modal="document.getElementById('palette-modal');" modal.classList.add('open'); modal.classList.remove('open'); null) overlay="document.getElementById('overlay');" overlay.style.display="block" submitTest() togglePalette() updatePaletteUI(); { }> 0 && !confirm("क्या आप परीक्षा सबमिट करना चाहते हैं?")) return;
+            clearInterval(timerInterval);
+            document.getElementById('test-screen').classList.add('hidden');
+            document.getElementById('result-screen').classList.remove('hidden');
+            document.getElementById('palette-modal').classList.remove('open');
+            document.getElementById('overlay').style.display = 'none';
+
+            let correct = 0, wrong = 0, skipped = 0;
+            const reviewContainer = document.getElementById('review-container');
+            reviewContainer.innerHTML = '';
+            const letters = ['A', 'B', 'C', 'D'];
+
+            let printHTML = '<div class="print-header-box"><h2>UPSC CSE PRELIMS MOCK TEST</h2><h3>' + (questions[0].topic || 'सामान्य अध्ययन') + '</h3><p>Candidate: ' + studentName + ' | Marking: +2.00, -0.66</p></div>';
+
+            questions.forEach((q, idx) => {
+                const uAns = userAnswers[idx];
+                let statusColor = '', statusText = '';
+                if (uAns === null) { skipped++; statusColor = 'var(--skipped)'; statusText = 'अनुत्तरित'; }
+                else if (uAns === q.correctAnswer) { correct++; statusColor = 'var(--correct)'; statusText = 'सही (CORRECT)'; }
+                else { wrong++; statusColor = 'var(--wrong)'; statusText = 'गलत (INCORRECT)'; }
+
+                const uAnsText = uAns !== null ? '(' + letters[uAns] + ') ' + q.options[uAns] : 'कोई नहीं';
+                const cAnsText = '(' + letters[q.correctAnswer] + ') ' + q.options[q.correctAnswer];
+
+                reviewContainer.innerHTML += '<div class="review-box"><div class="q-header-row"><span style="color:var(--primary); font-weight:bold;">Q' + (idx + 1) + '.</span><span class="q-topic-tag">' + q.topic + '</span></div><div class="review-q">' + q.text + '</div><div class="ans-row"><div class="ans-lbl">आपका उत्तर:</div><div style="color:' + statusColor + '">' + uAnsText + '</div></div><div class="ans-row"><div class="ans-lbl">सही उत्तर:</div><div style="color:var(--correct)">' + cAnsText + '</div></div><div class="solution-box"><div class="solution-title">💡 आधिकारिक व्याख्या:</div>' + q.solution + '</div></div>';
+
+                printHTML += '<div class="print-q-box"><div class="print-q-head"><span>Q' + (idx + 1) + '.</span><span class="print-q-topic">' + q.topic + '</span></div><div class="print-q-text">' + q.text + '</div><div class="print-ans-row"><strong>आपका उत्तर:</strong> ' + uAnsText + ' | <strong>सही:</strong> ' + cAnsText + '</div><div class="print-sol-box"><b>व्याख्या:</b> ' + q.solution + '</div></div>';
+            });
+
+            document.getElementById('print-content').innerHTML = printHTML;
+            let marks = Math.max(0, (correct * MARKS_PER_CORRECT) - (wrong * NEGATIVE_MARK));
+            document.getElementById('final-score').innerHTML = marks.toFixed(2) + ' <span style="font-size:16px; color:var(--text-muted);">/ ' + (TOTAL_Q * MARKS_PER_CORRECT).toFixed(2) + '</span>';
+            document.getElementById('stat-correct').innerText = correct;
+            document.getElementById('stat-wrong').innerText = wrong;
+            document.getElementById('stat-skipped').innerText = skipped;
+            let acc = (correct + wrong) > 0 ? Math.round((correct / (correct + wrong)) * 100) : 0;
+            document.getElementById('stat-accuracy').innerText = acc + '%';
+            let timeTaken = (TIME_MINUTES * 60) - totalSeconds;
+            document.getElementById('stat-time').innerText = Math.floor(timeTaken/60) + 'm ' + (timeTaken%60) + 's';
+            document.getElementById('stat-avg-time').innerText = Math.round(timeTaken/TOTAL_Q) + 's';
+            window.scrollTo(0,0);
+        }
+    """
+
     return f"""<!DOCTYPE html>
 <html lang="hi">
 <head>
@@ -841,132 +954,8 @@ body {{ background-color: var(--bg-dark); color: var(--text-main); display: flex
 
     <script>
         const questions = {questions_json};
-        const TOTAL_Q = questions.length;
-        const MARKS_PER_CORRECT = 2.00;
-        const NEGATIVE_MARK = 0.66;
         const TIME_MINUTES = {duration_min};
-
-        let totalSeconds = TIME_MINUTES * 60;
-        let timerInterval;
-        let currentQIndex = 0;
-        let userAnswers = new Array(TOTAL_Q).fill(null);
-        let studentName = "";
-
-        function startTest() {{
-            studentName = document.getElementById('candidate-name').value.trim();
-            if(!studentName) {{ alert("कृपया अपना नाम दर्ज करें!"); return; }}
-            document.getElementById('res-display-name').innerText = studentName;
-            document.getElementById('home-screen').classList.add('hidden');
-            document.getElementById('test-screen').classList.remove('hidden');
-            initPalette();
-            loadQuestion(0);
-            timerInterval = setInterval(() => {{
-                totalSeconds--;
-                let mins = Math.floor(totalSeconds / 60);
-                let secs = totalSeconds % 60;
-                document.getElementById('timer-display').innerText = `${{String(mins).padStart(2, '0')}}:${{String(secs).padStart(2, '0')}}`;
-                if(totalSeconds <= 0) {{ clearInterval(timerInterval); submitTest(); }}
-            }}, 1000);
-        }}
-
-        function loadQuestion(index) {{
-            currentQIndex = index;
-            document.getElementById('q-counter').innerText = `प्रश्न ${{index + 1}} / ${{TOTAL_Q}}`;
-            document.getElementById('q-num-display').innerText = `Q. ${{index + 1}} / ${{TOTAL_Q}}`;
-            const q = questions[index];
-            document.getElementById('progress-bar').style.width = `${{((index + 1) / TOTAL_Q) * 100}}%`;
-            document.getElementById('q-text').innerHTML = q.text;
-            const optsContainer = document.getElementById('options-container');
-            optsContainer.innerHTML = '';
-            const letters = ['A', 'B', 'C', 'D'];
-            q.options.forEach((optText, i) => {{
-                const optDiv = document.createElement('div');
-                optDiv.className = `option ${{userAnswers[index] === i ? 'selected' : ''}}`;
-                optDiv.onclick = () => {{ userAnswers[currentQIndex] = i; loadQuestion(currentQIndex); }};
-                optDiv.innerHTML = `<div class="opt-letter">${{letters[i]}}</div><div class="opt-text">${{optText}}</div>`;
-                optsContainer.appendChild(optDiv);
-            }});
-            document.getElementById('next-btn').innerText = (index === TOTAL_Q - 1) ? 'Submit' : 'Next ▶';
-            document.getElementById('answered-counter').innerText = `उत्तर दिए: ${{userAnswers.filter(ans => ans !== null).length}}`;
-            updatePaletteUI();
-        }}
-
-        function markSkipped() {{ nextQuestion(); }}
-        function nextQuestion() {{ if (currentQIndex < TOTAL_Q - 1) loadQuestion(currentQIndex + 1); else submitTest(); }}
-        function prevQuestion() {{ if (currentQIndex > 0) loadQuestion(currentQIndex - 1); }}
-
-        function initPalette() {{
-            const grid = document.getElementById('palette-grid');
-            grid.innerHTML = '';
-            for(let i=0; i<TOTAL_Q; + 1; ; btn="document.createElement('button');" btn.className="q-grid-btn" btn.id="`pal-btn-${{i}}`;" btn.innerText="i" btn.onclick="()" const i++) {{> {{ loadQuestion(i); togglePalette(); }};
-                grid.appendChild(btn);
-            }}
-        }}
-
-        function updatePaletteUI() {{
-            for(let i=0; i<TOTAL_Q; !="=" ; btn="document.getElementById(`pal-btn-${{i}}`);" btn.classList.add('status-answered'); btn.classList.add('status-current'); btn.className="q-grid-btn" const continue; currentQIndex) else function i++) if(!btn) if(i="==" if(modal.classList.contains('open')) if(totalSeconds if(userAnswers[i] modal="document.getElementById('palette-modal');" modal.classList.add('open'); modal.classList.remove('open'); null) overlay="document.getElementById('overlay');" overlay.style.display="block" submitTest() togglePalette() updatePaletteUI(); {{ }}> 0 && !confirm("क्या आप परीक्षा सबमिट करना चाहते हैं?")) return;
-            clearInterval(timerInterval);
-            document.getElementById('test-screen').classList.add('hidden');
-            document.getElementById('result-screen').classList.remove('hidden');
-            document.getElementById('palette-modal').classList.remove('open');
-            document.getElementById('overlay').style.display = 'none';
-
-            let correct = 0, wrong = 0, skipped = 0;
-            const reviewContainer = document.getElementById('review-container');
-            reviewContainer.innerHTML = '';
-            const letters = ['A', 'B', 'C', 'D'];
-
-            let printHTML = `
-                <div class="print-header-box">
-                    <h2>UPSC CSE PRELIMS MOCK TEST</h2>
-                    <h3>${{questions[0].topic || "{subject_title}"}}</h3>
-                    <p>Candidate: ${{studentName}} | Marking: +2.00, -0.66</p>
-                </div>
-            `;
-
-            questions.forEach((q, idx) => {{
-                const uAns = userAnswers[idx];
-                let statusColor = '', statusText = '';
-                if (uAns === null) {{ skipped++; statusColor = 'var(--skipped)'; statusText = 'अनुत्तरित'; }}
-                else if (uAns === q.correctAnswer) {{ correct++; statusColor = 'var(--correct)'; statusText = 'सही (CORRECT)'; }}
-                else {{ wrong++; statusColor = 'var(--wrong)'; statusText = 'गलत (INCORRECT)'; }}
-
-                const uAnsText = uAns !== null ? `(${{letters[uAns]}}) ${{q.options[uAns]}}` : "कोई नहीं";
-                const cAnsText = `(${{letters[q.correctAnswer]}}) ${{q.options[q.correctAnswer]}}`;
-
-                reviewContainer.innerHTML += `
-                    <div class="review-box">
-                        <div class="q-header-row"><span style="color:var(--primary); font-weight:bold;">Q${{idx + 1}}.</span><span class="q-topic-tag">${{q.topic}}</span></div>
-                        <div class="review-q">${{q.text}}</div>
-                        <div class="ans-row"><div class="ans-lbl">आपका उत्तर:</div><div style="color:${{statusColor}}">${{uAnsText}}</div></div>
-                        <div class="ans-row"><div class="ans-lbl">सही उत्तर:</div><div style="color:var(--correct)">${{cAnsText}}</div></div>
-                        <div class="solution-box"><div class="solution-title">💡 आधिकारिक व्याख्या:</div>${{q.solution}}</div>
-                    </div>
-                `;
-
-                printHTML += `
-                    <div class="print-q-box">
-                        <div class="print-q-head"><span>Q${{idx + 1}}.</span><span class="print-q-topic">${{q.topic}}</span></div>
-                        <div class="print-q-text">${{q.text}}</div>
-                        <div class="print-ans-row"><strong>आपका उत्तर:</strong> ${{uAnsText}} | <strong>सही:</strong> ${{cAnsText}}</div>
-                        <div class="print-sol-box"><b>व्याख्या:</b> ${{q.solution}}</div>
-                    </div>
-                `;
-            }});
-
-            document.getElementById('print-content').innerHTML = printHTML;
-            let marks = Math.max(0, (correct * MARKS_PER_CORRECT) - (wrong * NEGATIVE_MARK));
-            document.getElementById('final-score').innerHTML = marks.toFixed(2) + ` <span style="font-size:16px; color:var(--text-muted);">/ ${{(TOTAL_Q * MARKS_PER_CORRECT).toFixed(2)}}</span>`;
-            document.getElementById('stat-correct').innerText = correct;
-            document.getElementById('stat-wrong').innerText = wrong;
-            document.getElementById('stat-skipped').innerText = skipped;
-            let acc = (correct + wrong) > 0 ? Math.round((correct / (correct + wrong)) * 100) : 0;
-            document.getElementById('stat-accuracy').innerText = `${{acc}}%`;
-            let timeTaken = (TIME_MINUTES * 60) - totalSeconds;
-            document.getElementById('stat-time').innerText = `${{Math.floor(timeTaken/60)}}m ${{timeTaken%60}}s`;
-            document.getElementById('stat-avg-time').innerText = `${{Math.round(timeTaken/TOTAL_Q)}}s`;
-            window.scrollTo(0,0);
-        }}
+        {js_logic}
     </script>
 </body>
 </html>"""
@@ -1044,12 +1033,12 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
         "1️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF भरने के बाद बोर्ड आपकी पृष्ठभूमि के आधार पर प्रशासनिक प्रश्न ऑडियो में पूछेगा। आप बोलकर उत्तर रिकॉर्ड करें, बोर्ड सुनकर मूल्यांकन व रिपोर्ट देगा।\n\n"
         "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> GS-1, GS-2 व GS-3 के विषयों में से 50, 100 या 200 प्रश्नों का लाइव टेस्ट पोर्टल प्राप्त करें।\n\n"
-        "3️⃣ <b>कॉपी चेकिंग (`/checkanswer`):</b> पहले प्रश्न टाइप/बोलें, फिर अपनी उत्तर पुस्तिका की फोटो या PDF भेजें।\n\n"
+        "3️⃣ <b>कॉपी चेकिंग (`/checkanswer`):</b> केवल और केवल यूपीएससी मुख्य परीक्षा का प्रश्न भेजें, फिर उत्तर पुस्तिका की फोटो या PDF भेजें।\n\n"
         "4️⃣ <b>मुख्य परीक्षा (`/mains`):</b> PYQs (2013-2026 संपूर्ण आर्काइव) या नए संभावित प्रश्नों का चयन करें।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
-# ================= DAILY COMPILATION (LIVE PROGRESS) =================
+# ================= DAILY COMPILATION =================
 @ensure_auth
 async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = get_ist_now()
@@ -1068,7 +1057,7 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🏛 GS पेपर 1 (इतिहास, भूगोल, समाज)", callback_data="quizgs_1")],
-        [InlineKeyboardButton("⚖️ GS पेपर 2 (राजव्यवस्था, शासन, IR)", callback_data="quizgs_2")],
+        [InlineKeyboardButton("⚖️️ GS पेपर 2 (राजव्यवस्था, शासन, IR)", callback_data="quizgs_2")],
         [InlineKeyboardButton("💰 GS पेपर 3 (अर्थव्यवस्था, पर्यावरण, Sci-Tech)", callback_data="quizgs_3")],
         [InlineKeyboardButton("⚡ संपूर्ण समसामयिकी (Current Affairs)", callback_data="quizgs_ca")],
         [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")]
@@ -1203,7 +1192,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
                     f"🎯 <b>UPSC CSE ऑनलाइन टेस्ट पोर्टल तैयार!</b>\n\n"
                     f"📚 <b>विषय:</b> <code>{subj}</code>\n"
                     f"📝 <b>कुल प्रश्न:</b> <code>{cnt} MCQs</code>\n"
-                    f"⏱️️ <b>सुविधाएं:</b> लाइव टाइमर, OMR पैलेट ग्रिड, तत्काल प्राप्तांक व 50% वाटरमार्क PDF\n\n"
+                    f"⏱ <b>सुविधाएं:</b> लाइव टाइमर, OMR पैलेट ग्रिड, तत्काल प्राप्तांक व 50% वाटरमार्क PDF\n\n"
                     f"👤 <b>संरक्षक:</b> {AUTHOR_NAME}\n"
                     f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
                 ),
@@ -1215,7 +1204,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         await status_msg.edit_text(f"❌ पोर्टल बनाने में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
-# ================= 1-on-1 UPSC INTERVIEW WITH LIVE REAL-TIME STATUS & TIMEOUT FIX =================
+# ================= 1-on-1 UPSC INTERVIEW (IMMEDIATE TEXT + ASYNC VOICE) =================
 @ensure_auth
 async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -1323,7 +1312,7 @@ async def handle_daf_qcount_step(update: Update, context: ContextTypes.DEFAULT_T
     daf = get_user_daf(user_id)
     INTERVIEW_SESSION[user_id] = {"total": cnt, "current": 1, "daf": daf, "history": []}
 
-    status_m = await update.message.reply_text("🏛 <b>बोर्ड कक्ष में स्वागत है।</b>\n⏳ [■■□□□□□□□□] 25% DAF और पृष्ठभूमि का विश्लेषण...", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
+    status_m = await update.message.reply_text("🏛 <b>बोर्ड कक्ष में स्वागत है।</b> प्रश्न तैयार किया जा रहा है...", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
     return await ask_interview_question(update, context, user_id, status_m)
 
 async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, status_m = None) -> int:
@@ -1331,9 +1320,6 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
     curr = sess["current"]
     tot = sess["total"]
     name, state, college, status, opt_sub, attempt = sess["daf"]
-
-    if status_m:
-        await status_m.edit_text(f"🏛 <b>बोर्ड कक्ष (राउंड {curr}/{tot})</b>\n⏳ [■■■■■□□□□□] 55% प्रशासनिक स्थितिजन्य प्रश्न तैयार...")
 
     prompt = f"""
 आप UPSC साक्षात्कार बोर्ड के अध्यक्ष हैं।
@@ -1353,11 +1339,10 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
     try:
         q_text = await asyncio.to_thread(call_gemini_safely, prompt)
         if status_m:
-            await status_m.edit_text(f"🏛 <b>बोर्ड कक्ष (राउंड {curr}/{tot})</b>\n⏳ [■■■■■■■■□□] 85% बोर्ड अध्यक्ष की ऑडियो रिकॉर्डिंग...")
-
-        audio_bytes = await download_audio_stream(q_text)
-        if status_m:
-            await status_m.delete()
+            try:
+                await status_m.delete()
+            except Exception:
+                pass
 
         await update.effective_message.reply_text(
             f"🏛 <b>UPSC साक्षात्कार बोर्ड अध्यक्ष (प्रश्न {curr}/{tot}):</b>\n\n{q_text}\n\n"
@@ -1365,15 +1350,23 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
             "<i>(प्रक्रिया रोकने के लिए <code>/cancel</code> भेजें)</i>",
             parse_mode=ParseMode.HTML
         )
-        if audio_bytes:
-            audio_io = io.BytesIO(audio_bytes)
-            audio_io.name = f"Interview_Q_{curr}.mp3"
-            await update.effective_message.reply_voice(voice=audio_io, caption=f"🎙️ साक्षात्कार प्रश्न {curr}/{tot} | {AUTHOR_NAME}")
+
+        asyncio.create_task(send_async_voice_question(update, context, q_text, curr, tot))
 
     except Exception as e:
         await update.effective_message.reply_text(f"❌ त्रुटि: {e}")
 
     return WAITING_INTERVIEW_VOICE
+
+async def send_async_voice_question(update, context, text, curr, tot):
+    try:
+        audio_bytes = await download_audio_stream(text)
+        if audio_bytes:
+            audio_io = io.BytesIO(audio_bytes)
+            audio_io.name = f"Interview_Q_{curr}.mp3"
+            await update.effective_message.reply_voice(voice=audio_io, caption=f"🎙️ साक्षात्कार प्रश्न {curr}/{tot} | {AUTHOR_NAME}")
+    except Exception as e:
+        print(f"Async voice skip: {e}")
 
 async def handle_interview_candidate_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
@@ -1382,7 +1375,7 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
         await update.message.reply_text("सत्र समाप्त हो चुका है। पुनः <code>/interview</code> चलाएं।", parse_mode=ParseMode.HTML)
         return ConversationHandler.END
 
-    wait_m = await update.message.reply_text("🎧 [■■■■□□□□□□] 40% बोर्ड आपके मौखिक उत्तर का विश्लेषण कर रहा है...", parse_mode=ParseMode.HTML)
+    wait_m = await update.message.reply_text("🎧 बोर्ड आपके मौखिक उत्तर का विश्लेषण कर रहा है...", parse_mode=ParseMode.HTML)
 
     try:
         msg = update.message
@@ -1393,7 +1386,6 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
         transcribed_text = await asyncio.to_thread(call_gemini_audio_transcribe, bytes(f_bytes), "audio/ogg")
         sess["history"].append({"round": sess["current"], "answer": transcribed_text})
 
-        await wait_m.edit_text("🎧 [■■■■■■■□□□] 75% बोर्ड मूल्यांकन तैयार...")
         is_last = (sess["current"] >= sess["total"])
         name = sess["daf"][0]
 
@@ -1404,20 +1396,17 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 उम्मीदवार को {name} जी कहकर संबोधित करते हुए 2-3 पंक्तियों में प्रशासनिक भाषा में संतुलित मौखिक फीडबैक दें। केवल शुद्ध हिंदी लिखें।
 """
         eval_resp = await asyncio.to_thread(call_gemini_safely, eval_prompt)
-        audio_bytes = await download_audio_stream(eval_resp)
         await wait_m.delete()
 
         await update.message.reply_text(f"🏛 <b>बोर्ड का अवलोकन ({sess['current']}/{sess['total']}):</b>\n\n{eval_resp}", parse_mode=ParseMode.HTML)
-        if audio_bytes:
-            audio_io = io.BytesIO(audio_bytes)
-            audio_io.name = "Board_Feedback.mp3"
-            await update.message.reply_voice(voice=audio_io, caption=f"🎙️ बोर्ड फीडबैक | {AUTHOR_NAME}")
+
+        asyncio.create_task(send_async_voice_feedback(update, eval_resp))
 
         if not is_last:
             sess["current"] += 1
             INTERVIEW_SESSION[user_id] = sess
             await asyncio.sleep(1)
-            status_m = await update.message.reply_text("⏳ [■■□□□□□□□□] अगले प्रश्न की तैयारी जारी है...")
+            status_m = await update.message.reply_text("⏳ अगले प्रश्न की तैयारी जारी है...")
             return await ask_interview_question(update, context, user_id, status_m)
         else:
             reply_kb = [["➕ 1 और स्थितिजन्य प्रश्न दें"], ["📊 संपूर्ण परिणाम व रिपोर्ट कार्ड देखें"]]
@@ -1432,6 +1421,16 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
     except Exception as e:
         await wait_m.edit_text(f"❌ वॉयस प्रोसेसिंग में त्रुटि: {e}। कृपया पुनः वॉयस भेजें।")
         return WAITING_INTERVIEW_VOICE
+
+async def send_async_voice_feedback(update, text):
+    try:
+        audio_bytes = await download_audio_stream(text[:300])
+        if audio_bytes:
+            audio_io = io.BytesIO(audio_bytes)
+            audio_io.name = "Board_Feedback.mp3"
+            await update.effective_message.reply_voice(voice=audio_io, caption=f"🎙️ बोर्ड फीडबैक | {AUTHOR_NAME}")
+    except Exception as e:
+        print(f"Async feedback skip: {e}")
 
 async def handle_interview_decision(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
@@ -1449,7 +1448,7 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
         status_m = await update.message.reply_text("अगला उन्नत स्तर का प्रश्न तैयार हो रहा है...", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
         return await ask_interview_question(update, context, user_id, status_m)
 
-    wait_m = await update.message.reply_text("⏳ [■■■■■■■■□□] 85% बोर्ड मेंबर अंतिम मूल्यांकन पत्रक तैयार कर रहे हैं...", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
+    wait_m = await update.message.reply_text("⏳ बोर्ड मेंबर अंतिम मूल्यांकन पत्रक तैयार कर रहे हैं...", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
     name = sess["daf"][0]
     final_prompt = f"""
 उम्मीदवार {name} का UPSC साक्षात्कार पूर्ण हो चुका है। कुल {len(sess['history'])} प्रश्नों के उत्तर दिए गए।
@@ -1470,123 +1469,13 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
     INTERVIEW_SESSION.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= UPSC MAINS SPECIAL (PYQs 2013-2026 WITH BOLD STYLING) =================
-@ensure_auth
-async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [
-        [InlineKeyboardButton("📜 विगत वर्षों के प्रश्न (PYQs 2013-2026 Complete)", callback_data="mq_type_pyq")],
-        [InlineKeyboardButton("✨ नए संभावित मॉडल प्रश्न (New Expected)", callback_data="mq_type_new")],
-        [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")]
-    ]
-    await update.message.reply_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) अभ्यास:</b>\nआप पुराने सभी प्रश्न देखना चाहते हैं या नए संभावित मॉडल प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-
-async def handle_mains_type_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    q_type = query.data.replace("mq_type_", "")
-    user_id = query.from_user.id
-    MAINS_SELECTIONS[user_id] = {"q_type": q_type}
-
-    keyboard = [
-        [InlineKeyboardButton("🏛 GS 1 (इतिहास, भूगोल, समाज)", callback_data="mq_gs_1")],
-        [InlineKeyboardButton("⚖ GS 2 (राजव्यवस्था, शासन, IR)", callback_data="mq_gs_2")],
-        [InlineKeyboardButton("💰 GS 3 (अर्थव्यवस्था, पर्यावरण, सुरक्षा)", callback_data="mq_gs_3")],
-        [InlineKeyboardButton("🧭 GS 4 (नीतिशास्त्र, केस स्टडी)", callback_data="mq_gs_4")],
-        [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="mains_back_root")]
-    ]
-    await query.message.edit_text("🎯 <b>विषय / GS पेपर का चयन करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-
-async def handle_mains_gs_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-
-    if data == "mains_back_root":
-        await mains_special_cmd(update, context)
-        return
-
-    gs_num = data.replace("mq_gs_", "")
-    user_id = query.from_user.id
-    MAINS_SELECTIONS[user_id]["gs"] = gs_num
-    is_pyq = (MAINS_SELECTIONS[user_id].get("q_type") == "pyq")
-
-    keyboard = [
-        [InlineKeyboardButton("⚡ 1 प्रश्न", callback_data="mq_cnt_1")],
-        [InlineKeyboardButton("🎯 3 प्रश्न", callback_data="mq_cnt_3")],
-        [InlineKeyboardButton("🏆 5 प्रश्न", callback_data="mq_cnt_5")]
-    ]
-    if is_pyq:
-        keyboard.append([InlineKeyboardButton("📚 2013-2026 तक के सभी मुख्य PYQs (Complete Set)", callback_data="mq_cnt_all")])
-    else:
-        keyboard.append([InlineKeyboardButton("📚 10 प्रश्नों का संभावित मेगा सेट", callback_data="mq_cnt_10")])
-
-    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="mq_type_" + MAINS_SELECTIONS[user_id].get("q_type", "new"))])
-    await query.message.edit_text(f"📝 <b>GS {gs_num} के कितने प्रश्नों का अभ्यास करना चाहते हैं?</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-
-async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = query.from_user.id
-
-    cnt_raw = data.replace("mq_cnt_", "")
-    cnt_desc = "2013 से 2026 तक के सभी मुख्य PYQs" if cnt_raw == "all" else f"{cnt_raw} प्रश्न"
-    
-    sel = MAINS_SELECTIONS.get(user_id, {"q_type": "new", "gs": "2"})
-    is_pyq = (sel.get("q_type") == "pyq")
-    gs_paper = f"सामान्य अध्ययन - {sel.get('gs')}"
-
-    wait_m = await query.message.reply_text(f"⏳ [■■□□□□□□□□] 20% <b>{gs_paper}</b> के {cnt_desc} उत्तर-लेखन मॉड्यूल तैयार हो रहे हैं...", parse_mode=ParseMode.HTML)
-
-    tag_instruction = "2013 से 2026 तक इस विषय में पूछे गए प्रश्नों को शामिल करें। प्रत्येक प्रश्न पर उसका वर्ष, पेपर और अंक स्पष्ट लिखें (उदा. [UPSC CSE 2023 / GS " + sel.get('gs') + " / 15 अंक])." if is_pyq else "प्रत्येक प्रश्न पर लिखें: [मॉडल प्रश्न / GS " + sel.get('gs') + " / 15 अंक]."
-
-    prompt = f"""
-आप UPSC मुख्य परीक्षा के शीर्ष विशेषज्ञ हैं।
-विषय: {gs_paper} के {cnt_desc} उत्तर-लेखन मॉड्यूल तैयार करें।
-{tag_instruction}
-
-सख्त नियम:
-1. प्रत्येक प्रश्न को स्पष्ट शीर्षक में रखें।
-2. विस्तृत उत्तर-लेखन ढांचा दें:
-   - प्रश्न का पूरा विवरण व [वर्ष / पेपर टैग]
-   - 📌 भूमिका (Introduction)
-   - 📊 मुख्य विश्लेषणात्मक आयाम (Body): 3 स्पष्ट उप-शीर्षक और उदाहरण
-   - 🚀 आगे की राह (Way Forward)
-   - ⚖️ संतुलित प्रशासनिक निष्कर्ष
-भाषा केवल शुद्ध हिंदी रखें। मार्कडाउन स्टार्स का प्रयोग न करें।
-"""
-    try:
-        await wait_m.edit_text(f"⏳ [■■■■■■□□□□] 60% विश्लेषणात्मक आयाम एवं आगे की राह का संकलन जारी...")
-        resp = await asyncio.to_thread(call_gemini_safely, prompt)
-        
-        await wait_m.edit_text(f"⏳ [■■■■■■■■■□] 90% मास्टर HTML लेआउट एवं प्रिंट कंट्रोल असेंबल हो रहा है...")
-        topic = f"UPSC Mains Module — GS {sel.get('gs')} ({cnt_desc})"
-        filename = f"UPSC_Mains_GS{sel.get('gs')}_{cnt_raw}.html"
-        html_out = build_standalone_master_html(topic, resp)
-
-        with open(filename, "wb") as f:
-            f.write(html_out.encode("utf-8"))
-
-        with open(filename, "rb") as send_doc:
-            await context.bot.send_document(
-                chat_id=user_id,
-                document=send_doc,
-                filename=filename,
-                caption=f"📝 <b>UPSC मुख्य परीक्षा संग्रह:</b> <code>{topic}</code>\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
-                parse_mode=ParseMode.HTML
-            )
-        if os.path.exists(filename):
-            os.remove(filename)
-        await wait_m.delete()
-    except Exception as e:
-        await wait_m.edit_text(f"❌ त्रुटि: {e}")
-
-# ================= 2-STEP ANSWER COPY EVALUATION (/checkanswer) =================
+# ================= UPSC 2-STEP ANSWER COPY EVALUATION (/checkanswer) =================
 @ensure_auth
 async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "📝 <b>UPSC मुख्य परीक्षा उत्तर पुस्तिका मूल्यांकन (चरण 1/2):</b>\n\n"
-        "कृपया सबसे पहले अपना <b>प्रश्न</b> लिखकर भेजें। आप प्रश्न टाइप कर सकते हैं, उसकी फ़ोटो भेज सकते हैं या वॉयस मैसेज भी रिकॉर्ड कर सकते हैं।\n\n"
+        "कृपया सबसे पहले अपना <b>UPSC मुख्य परीक्षा का प्रश्न</b> लिखकर या वॉयस मैसेज में भेजें।\n"
+        "⚠️ <i>ध्यान दें: केवल सिविल सेवा मुख्य परीक्षा (GS 1-4, निबंध या वैकल्पिक विषय) का वास्तविक प्रश्न ही स्वीकार्य है। सामान्य बातचीत या गैर-UPSC प्रश्न स्वीकार नहीं किए जाएंगे।</i>\n\n"
         "<i>(रद्द करने के लिए <code>/cancel</code> भेजें)</i>",
         parse_mode=ParseMode.HTML
     )
@@ -1623,9 +1512,23 @@ async def handle_question_text_step(update: Update, context: ContextTypes.DEFAUL
         except Exception:
             q_content = "संलग्न फ़ोटो में दिया गया प्रश्न"
 
+    # गैर-UPSC सवाल और सामान्य चैट को रोकने वाला कड़ा फ़िल्टर
+    non_upsc_patterns = [
+        r"मेरा नाम", r"तुम्हारा नाम", r"आपका नाम", r"तुम कौन", r"आप कौन",
+        r"हेलो", r"हाय", r"hello", r"hi", r"hey", r"कैसे हो", r"क्या कर रहे",
+        r"क्या कर सकता", r"शायरी", r"मजाक", r"मौसम", r"गाना", r"लव", r"प्यार"
+    ]
+    if any(re.search(pat, q_content, re.IGNORECASE) for pat in non_upsc_patterns) or len(q_content) < 15:
+        await msg.reply_text(
+            "⚠️ <b>अमान्य प्रश्न:</b> आपने सामान्य बातचीत या गैर-UPSC वाक्य भेजा है।\n\n"
+            "कृपया <b>UPSC मुख्य परीक्षा (GS 1, 2, 3, 4, निबंध या वैकल्पिक)</b> का वास्तविक प्रश्न लिखकर या बोलकर भेजें ताकि उत्तर पुस्तिका का सही मूल्यांकन किया जा सके।",
+            parse_mode=ParseMode.HTML
+        )
+        return WAITING_QUESTION_TEXT
+
     CHECK_ANSWER_CACHE[user_id] = q_content
     await msg.reply_text(
-        f"✅ <b>प्रश्न दर्ज हो गया:</b>\n<i>\"{q_content[:150]}...\"</i>\n\n"
+        f"✅ <b>UPSC मुख्य परीक्षा प्रश्न दर्ज हुआ:</b>\n<i>\"{q_content[:180]}...\"</i>\n\n"
         "👉 <b>चरण 2/2:</b> अब अपनी लिखी हुई <b>उत्तर पुस्तिका की साफ़ फ़ोटो या PDF</b> भेजें:",
         parse_mode=ParseMode.HTML
     )
@@ -1636,17 +1539,19 @@ async def handle_answer_copy_submission(update: Update, context: ContextTypes.DE
     msg = update.message
     q_text = CHECK_ANSWER_CACHE.get(user_id, "UPSC मुख्य परीक्षा मानक प्रश्न")
     
-    wait_m = await msg.reply_text("🔍 [■■■■□□□□□□] 40% उत्तर पुस्तिका की संरचना व तर्कों की जांच जारी...", parse_mode=ParseMode.HTML)
+    wait_m = await msg.reply_text("🔍 उत्तर पुस्तिका का UPSC परीक्षक द्वारा गहन मूल्यांकन चालू है...", parse_mode=ParseMode.HTML)
 
     prompt = f"""
-आप UPSC मुख्य परीक्षा के वरिष्ठ परीक्षक (Copy Evaluator) हैं।
+आप संघ लोक सेवा आयोग (UPSC CSE Mains) के वरिष्ठ परीक्षक (Copy Evaluator) हैं।
 प्रश्न: "{q_text}"
-प्रस्तुत उत्तर पुस्तिका का निष्पक्ष, गहन और सटीक मूल्यांकन करें।
+प्रस्तुत उत्तर पुस्तिका का निष्पक्ष, गहन और मानक मूल्यांकन करें।
+
 प्रारूप:
 1. 📊 प्राप्तांक (Marks Awarded): (उदा. 6.5/10 या 9/15)
-2. 🌟 सकारात्मक पक्ष (Strengths): (भूमिका, स्पष्टता, मुख्य बिंदु)
-3. ⚠️ संरचनात्मक कमियाँ (Areas of Improvement): (प्रमाणिक डेटा, आरेख, अनुच्छेदों की कमी)
-4. 🚀 परीक्षक की मूल्य संवर्धन सलाह (Value Addition)
+2. 🌟 सकारात्मक पक्ष (Strengths): (भूमिका, तार्किकता, मुख्य बिंदु)
+3. ⚠️ संरचनात्मक कमियाँ (Areas of Improvement): (डेटा, आरेख, अनुच्छेदों की कमी)
+4. 🚀 परीक्षक की मूल्य संवर्धन सलाह (Value Addition): (आगे की राह व निष्कर्ष को बेहतर बनाने के सुझाव)
+
 केवल और केवल शुद्ध एवं गरिमापूर्ण हिंदी में उत्तर दें।
 """
     m_type = "application/pdf" if (msg.document and msg.document.file_name.lower().endswith('.pdf')) else "image/jpeg"
@@ -1656,7 +1561,6 @@ async def handle_answer_copy_submission(update: Update, context: ContextTypes.DE
         f_obj = await doc_obj.get_file()
         f_bytes = await f_obj.download_as_bytearray()
 
-        await wait_m.edit_text("🔍 [■■■■■■■□□□] 75% परीक्षक टिप्पणी व अंक तैयार हो रहे हैं...")
         eval_result = await asyncio.to_thread(call_gemini_multimodal_inline, prompt, bytes(f_bytes), m_type)
         clean_eval = clean_all_markdown_and_fix_content(eval_result)
         await wait_m.delete()
@@ -1705,7 +1609,7 @@ async def handle_ask_continuous_message(update: Update, context: ContextTypes.DE
         )
         return WAITING_ASK_SESSION
 
-    wait_msg = await update.message.reply_text("🤔 [■■■■□□□□□□] 45% UPSC परिप्रेक्ष्य में बिंदुवार विश्लेषण तैयार हो रहा है...")
+    wait_msg = await update.message.reply_text("🤔 UPSC परिप्रेक्ष्य में बिंदुवार विश्लेषण तैयार हो रहा है...")
     try:
         prompt = f"""
 आप UPSC मेंटर हैं। निम्नलिखित विषय का बिंदुवार, सटीक एवं संतुलित प्रशासनिक विश्लेषण दें:
@@ -1763,7 +1667,7 @@ async def handle_trending_type_selection(update: Update, context: ContextTypes.D
         scope_str = f"वर्ष {current_year}"
         prompt = f"वर्ष {current_year} के 9 सबसे बड़े राष्ट्रीय व वैश्विक ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
 
-    wait_m = await query.message.reply_text(f"🛰 [■■■□□□□□□□] 30% <b>{scope_str}</b> के ट्रेंडिंग मुद्दों का रडार संकलन जारी...", parse_mode=ParseMode.HTML)
+    wait_m = await query.message.reply_text(f"🛰 <b>{scope_str}</b> के ट्रेंडिंग मुद्दों का रडार संकलन जारी...", parse_mode=ParseMode.HTML)
     try:
         raw_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_lines = [re.sub(r'^\*+\s*', '', l.strip()) for l in raw_text.split('\n') if l.strip() and len(l.strip()) > 5 and not l.startswith('#')]
@@ -1815,14 +1719,14 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
 async def monthly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     months = ["October 2026", "September 2026", "August 2026", "July 2026", "June 2026", "May 2026"]
     keyboard = [[InlineKeyboardButton(f"📁 {m} संपूर्ण मासिक डाइजेस्ट", callback_data=f"genmonth_{m}")] for m in months]
-    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")] )
+    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")])
     await update.message.reply_text("📁 <b>जिस महीने का संपूर्ण UPSC मंथली कंपाइलेशन चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 @ensure_auth
 async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     years = ["2026", "2025", "2024"]
     keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक महा-संकलन (PT-365)", callback_data=f"genyear_{y}")] for y in years]
-    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")] )
+    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")])
     await update.message.reply_text("🏛️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 @ensure_auth
@@ -1838,7 +1742,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓 <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= DYNAMIC GENERATION PROCESSOR (NOTES WITH REAL STATUS) =================
+# ================= DYNAMIC GENERATION PROCESSOR (NOTES WITH SOURCES IN CAPTION) =================
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1861,7 +1765,7 @@ async def process_dynamic_generation(user_id, data, context):
         else:
             wait_m = await context.bot.send_message(
                 chat_id=user_id, 
-                text=f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■□□□□□□□□] 20% The Hindu, PIB, Vision IAS व Drishti से 360° संकलन जारी...",
+                text=f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n🔄 The Hindu, PIB, Vision IAS व Drishti से 360° संकलन जारी...",
                 parse_mode=ParseMode.HTML
             )
             prompt = f"""
@@ -1874,10 +1778,7 @@ async def process_dynamic_generation(user_id, data, context):
 4. अंत में 5 मानक अभ्यास MCQs जोड़ें। केवल शुद्ध हिंदी भाषा का प्रयोग करें।
 """
             try:
-                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■□□□□] 60% आर्थिक व पर्यावरणीय मुद्दों का विश्लेषण जारी...")
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-                
-                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■■■■□] 90% मास्टर 50% वाटरमार्क लेआउट व नेविगेशन तैयार...")
                 topic = f"दैनिक समसामयिक महा-संकलन — {target_date}"
                 filename = f"UPSC_Notes_{target_date.replace('-', '')}.html"
                 html_content = build_standalone_master_html(topic, ai_text, date_str=target_date)
@@ -1889,7 +1790,7 @@ async def process_dynamic_generation(user_id, data, context):
 
     elif data.startswith("genmonth_"):
         m_name = data.split("_")[1]
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"📁 [■■■□□□□□□□] 30% <b>{m_name}</b> का संपूर्ण विस्तृत मासिक कंपाइलेशन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await context.bot.send_message(chat_id=user_id, text=f"📁 <b>{m_name}</b> का संपूर्ण विस्तृत मासिक कंपाइलेशन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         prompt = f"माह: '{m_name}' का सम्पूर्ण और अत्यंत विस्तृत UPSC Monthly Digest तैयार करें। GS 1-4, चर्चित स्थल एवं अभ्यास प्रश्नों सहित केवल शुद्ध हिंदी में लिखें।"
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1903,7 +1804,7 @@ async def process_dynamic_generation(user_id, data, context):
 
     elif data.startswith("genyear_"):
         y_name = data.split("_")[1]
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ [■■■□□□□□□□] 30% वर्ष <b>{y_name}</b> का संपूर्ण वार्षिक महा-संकलन (PT-365 Style) तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ वर्ष <b>{y_name}</b> का संपूर्ण वार्षिक महा-संकलन (PT-365 Style) तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         prompt = f"वर्ष {y_name} का UPSC हेतु अत्यंत विस्तृत और संपूर्ण Annual Compendium (PT-365 Style) तैयार करें। केवल हिंदी में लिखें।"
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1917,7 +1818,7 @@ async def process_dynamic_generation(user_id, data, context):
 
     elif data.startswith("genweek_"):
         w_date = data.split("_")[2]
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ [■■■□□□□□□□] 30% साप्ताहिक संकलन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ साप्ताहिक संकलन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         prompt = f"सप्ताह के महत्वपूर्ण UPSC घटनाक्रमों का संपूर्ण विस्तृत रिवीजन तैयार करें। केवल हिंदी में लिखें।"
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1937,7 +1838,12 @@ async def process_dynamic_generation(user_id, data, context):
             chat_id=user_id,
             document=send_doc,
             filename=filename,
-            caption=f"📄 <b>दस्तावेज़:</b> <code>{topic}</code>\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+            caption=(
+                f"📄 <b>दस्तावेज़:</b> <code>{topic}</code>\n"
+                f"📰 <b>अधिकृत स्रोत:</b> The Hindu | Indian Express | PIB | Yojana | Vision IAS | Drishti IAS\n"
+                f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
+                f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+            ),
             parse_mode=ParseMode.HTML,
         )
 
@@ -1956,7 +1862,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if user_input == "all" and cached_list:
         raw_trend = "\n".join(cached_list)
-        wait_m = await msg.reply_text("⏳ [■■■□□□□□□□] 30% <b>सभी ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+        wait_m = await msg.reply_text("⏳ <b>सभी ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
         prompt = f"नीचे दिए गए सभी ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स तैयार करें:\n{raw_trend}\nकेवल शुद्ध हिंदी में लिखें।"
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1970,7 +1876,12 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
                 await msg.reply_document(
                     document=send_doc,
                     filename=filename,
-                    caption=f"📄 <b>ट्रेंडिंग संपूर्ण संकलन:</b> <code>{today}</code>\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                    caption=(
+                        f"📄 <b>ट्रेंडिंग संपूर्ण संकलन:</b> <code>{today}</code>\n"
+                        f"📰 <b>स्रोत:</b> The Hindu | Indian Express | PIB | Vision IAS\n"
+                        f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
+                        f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                    ),
                     parse_mode=ParseMode.HTML
                 )
             if os.path.exists(filename):
@@ -1982,7 +1893,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if re.match(r'^(\d+)(\s*,\s*\d+)*$', user_input) and cached_list:
         nums = [n.strip() for n in user_input.split(',')]
-        wait_m = await msg.reply_text(f"⏳ [■■■□□□□□□□] 30% चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विस्तृत विश्लेषण तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await msg.reply_text(f"⏳ चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विस्तृत विश्लेषण तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         raw_trend = "\n".join(cached_list)
         prompt = f"सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC हेतु 360° विश्लेषण तैयार करें:\n{raw_trend}\nकेवल हिंदी में लिखें।"
         try:
@@ -1997,7 +1908,12 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
                 await msg.reply_document(
                     document=send_doc,
                     filename=filename,
-                    caption=f"📄 <b>ट्रेंडिंग चयनित मुद्दे:</b> {', '.join(nums)} ({today})\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                    caption=(
+                        f"📄 <b>ट्रेंडिंग चयनित मुद्दे:</b> {', '.join(nums)} ({today})\n"
+                        f"📰 <b>स्रोत:</b> The Hindu | Indian Express | PIB\n"
+                        f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
+                        f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                    ),
                     parse_mode=ParseMode.HTML
                 )
             if os.path.exists(filename):
@@ -2021,7 +1937,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
     if not doc or not doc.file_name.lower().endswith(".pdf"):
         return
 
-    wait_m = await msg.reply_text("📥 [■■■□□□□□□□] 30% PDF सामग्री निकाली जा रही है व UPSC 360° HTML नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+    wait_m = await msg.reply_text("📥 PDF सामग्री निकाली जा रही है व UPSC 360° HTML नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
     try:
         f_obj = await doc.get_file()
         f_bytes = await f_obj.download_as_bytearray()
@@ -2145,7 +2061,6 @@ async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             VALUES (%s, 1, %s, NOW())
             ON CONFLICT (user_id) DO UPDATE SET is_vip = 1, vip_expiry = %s;
         """, (t_uid, expiry, expiry))
-        conn.commit()
         c.close()
         conn.close()
         user_link = f'<a href="tg://user?id={t_uid}">{t_uid}</a>'
@@ -2165,7 +2080,6 @@ async def remove_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("UPDATE users SET is_vip = 0, vip_expiry = NULL WHERE user_id = %s", (t_uid,))
-        conn.commit()
         c.close()
         conn.close()
         user_link = f'<a href="tg://user?id={t_uid}">{t_uid}</a>'
@@ -2368,7 +2282,7 @@ async def main():
     bot_app.add_handler(CommandHandler("info", info_user_cmd))
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd))
 
-    # क्विज़ कॉलबैक्स (GS और विषय फ़्लो)
+    # क्विज़ कॉलबैक्स
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_gs_choice, pattern=r"^quizgs_"))
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_sub_choice, pattern=r"^quizsub_|^quiz_back_gs"))
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_cnt_choice, pattern=r"^quizcnt_"))
@@ -2403,7 +2317,7 @@ async def main():
     )
     bot_app.add_handler(interview_conv)
 
-    # 2. उत्तर पुस्तिका 2-स्टेप चेकिंग फ़्लो
+    # 2. उत्तर पुस्तिका 2-स्टेप चेकिंग फ़्लो (UPSC प्रश्न सुरक्षा गार्ड के साथ)
     answer_check_conv = ConversationHandler(
         entry_points=[CommandHandler("checkanswer", check_answer_cmd)],
         states={
