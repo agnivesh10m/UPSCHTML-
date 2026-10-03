@@ -84,16 +84,15 @@ def is_authorized(user_id):
     return False
 
 def add_vip_user(target_uid: int, days: int):
-    expiry = get_ist_now() + psycopg2.extensions.AsIs(f"INTERVAL '{days} days'")
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("""
         INSERT INTO users (user_id, is_vip, vip_expiry, joined_at)
-        VALUES (%s, 1, NOW() + (%s || ' days')::INTERVAL, NOW())
+        VALUES (%s, 1, NOW() + INTERVAL '%s days', NOW())
         ON CONFLICT (user_id) DO UPDATE SET 
             is_vip = 1, 
-            vip_expiry = NOW() + (%s || ' days')::INTERVAL;
-    """, (target_uid, str(days), str(days)))
+            vip_expiry = NOW() + INTERVAL '%s days';
+    """, (target_uid, days, days))
     c.close()
     conn.close()
 
