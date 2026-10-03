@@ -23,16 +23,17 @@ from telegram.ext import (
 
 from config import BOT_TOKEN, ADMIN_IDS, ADMIN_NAMES, CHANNEL_LINK, CHANNEL_NAME, AUTHOR_NAME, get_ist_now
 from database import (
-    register_user, is_authorized, get_user_daf, save_user_daf,
-    get_user_full_info, save_to_archive, get_archive_by_date,
-    get_all_user_ids, get_all_users_detailed
+    get_db_connection, register_user, is_authorized, get_user_daf, save_user_daf,
+    add_vip_user, remove_vip_user, get_user_full_info, save_to_archive,
+    get_archive_by_date, get_all_user_ids, get_all_users_detailed
 )
 from ai_engine import (
     call_gemini_safely, call_gemini_multimodal_inline,
     call_gemini_audio_transcribe, download_audio_stream
 )
 from html_builder import (
-    build_standalone_master_html, build_vision_ias_interactive_portal
+    build_standalone_master_html, build_vision_ias_interactive_portal,
+    clean_all_markdown_and_fix_content
 )
 
 WAITING_CONTACT_MSG = 1
@@ -564,7 +565,6 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
     INTERVIEW_SESSION.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= UPSC MAINS SPECIAL (PYQs 2013-2026 WITH BOLD STYLING) =================
 @ensure_auth
 async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -892,7 +892,7 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
     
     lines = TRENDING_CACHE.get(user_id, [])
     if not lines:
-        await query.message.reply_text("⚠️ सत्र समाप्त हो गया है। पुनः <code>/trending</code> चलाएं।", parse_mode=ParseMode.HTML)
+        await query.message.reply_text("⚠️️ सत्र समाप्त हो गया है। पुनः <code>/trending</code> चलाएं।", parse_mode=ParseMode.HTML)
         return
 
     start_idx = target_page * 3
@@ -917,14 +917,14 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
 async def monthly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     months = ["October 2026", "September 2026", "August 2026", "July 2026", "June 2026", "May 2026"]
     keyboard = [[InlineKeyboardButton(f"📁 {m} संपूर्ण मासिक डाइजेस्ट", callback_data=f"genmonth_{m}")] for m in months]
-    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")])
+    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")] )
     await update.message.reply_text("📁 <b>जिस महीने का संपूर्ण UPSC मंथली कंपाइलेशन चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 @ensure_auth
 async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     years = ["2026", "2025", "2024"]
     keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक महा-संकलन (PT-365)", callback_data=f"genyear_{y}")] for y in years]
-    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")])
+    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")] )
     await update.message.reply_text("🏛️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 @ensure_auth
@@ -1246,16 +1246,7 @@ async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         t_uid = int(context.args[0])
         days = int(context.args[1])
-        expiry = get_ist_now() + timedelta(days=days)
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("""
-            INSERT INTO users (user_id, is_vip, vip_expiry, joined_at)
-            VALUES (%s, 1, %s, NOW())
-            ON CONFLICT (user_id) DO UPDATE SET is_vip = 1, vip_expiry = %s;
-        """, (t_uid, expiry, expiry))
-        c.close()
-        conn.close()
+        add_vip_user(t_uid, days)
         user_link = f'<a href="tg://user?id={t_uid}">{t_uid}</a>'
         await update.message.reply_text(f"✅ छात्र {user_link} को <b>{days} दिन</b> के लिए अधिकृत कर दिया गया है।", parse_mode=ParseMode.HTML)
     except Exception as e:
@@ -1270,11 +1261,7 @@ async def remove_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         t_uid = int(context.args[0])
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("UPDATE users SET is_vip = 0, vip_expiry = NULL WHERE user_id = %s", (t_uid,))
-        c.close()
-        conn.close()
+        remove_vip_user(t_uid)
         user_link = f'<a href="tg://user?id={t_uid}">{t_uid}</a>'
         await update.message.reply_text(f"🚫 छात्र {user_link} का एक्सेस रद्द कर दिया गया है।", parse_mode=ParseMode.HTML)
     except Exception as e:
