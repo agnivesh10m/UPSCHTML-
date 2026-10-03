@@ -5,3 +5,4 @@ beautifulsoup4
 pypdf
 telethon
 edge-tts
+psycopg2-binary
