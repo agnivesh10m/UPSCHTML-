@@ -43,6 +43,11 @@ API_KEYS = [
 ]
 
 ADMIN_IDS = [1745425595, 7850454902]
+ADMIN_NAMES = {
+    1745425595: "SACHIN SHARMA (मुख्य व्यवस्थापक)",
+    7850454902: "सह-व्यवस्थापक (Co-Admin)"
+}
+
 CHANNEL_LINK = "https://t.me/UPSCHTML"
 CHANNEL_NAME = "@UPSCHTML"
 AUTHOR_NAME = "SACHIN SHARMA"
@@ -62,14 +67,15 @@ DAF_NAME = 4
 DAF_STATE = 5
 DAF_COLLEGE = 6
 DAF_STATUS = 7
-DAF_OPTIONAL_ATTEMPT = 8
-DAF_QCOUNT = 9
-WAITING_INTERVIEW_VOICE = 10
-WAITING_INTERVIEW_DECISION = 11
+DAF_OPTIONAL_STEP = 8
+DAF_ATTEMPT_STEP = 9
+DAF_QCOUNT = 10
+WAITING_INTERVIEW_VOICE = 11
+WAITING_INTERVIEW_DECISION = 12
 
 # उत्तर पुस्तिका 2-स्टेप स्टेट्स
-WAITING_QUESTION_TEXT = 12
-WAITING_ANSWER_COPY = 13
+WAITING_QUESTION_TEXT = 13
+WAITING_ANSWER_COPY = 14
 
 CONTACT_SESSIONS = {}
 USER_QUIZ_SELECTIONS = {}
@@ -251,8 +257,8 @@ def get_all_users_detailed():
     except Exception:
         return []
 
-# ================= AI ENGINES WITH BACKUP POOL =================
-MODELS_TEXT = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"]
+# ================= AI ENGINES (GEMINI 3.8 / 3.5 / 3.1) =================
+MODELS_TEXT = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro"]
 
 def call_gemini_safely(prompt: str) -> str:
     if not API_KEYS:
@@ -284,7 +290,7 @@ def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str
     last_err = None
     for api_k in API_KEYS:
         client = genai.Client(api_key=api_k)
-        for m_name in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+        for m_name in ["gemini-3.8-flash", "gemini-3.5-flash-lite"]:
             try:
                 response = client.models.generate_content(
                     model=m_name,
@@ -637,8 +643,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"👋 <b>नमस्ते {user_link}!</b>\n\n"
             "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n\n"
+            "आपका पंजीकरण सुरक्षित हो गया है (स्थिति: <b>निःशुल्क सदस्य</b>)।\n\n"
             "इस पोर्टल पर UPSC CSE के 360° दैनिक नोट्स, लाइव DAF साक्षात्कार, उत्तर-पुस्तिका मूल्यांकन और विगत वर्षों के प्रश्नों (PYQs) का संग्रह उपलब्ध है।\n\n"
-            f"⚠️ <b>नोट:</b> वर्तमान में आपका खाता सक्रिय नहीं है। एक्सेस प्राप्त करने के लिए <code>/owner</code> पर संपर्क करें।\n\n"
+            f"⚠️ <b>नोट:</b> वर्तमान में प्रीमियम AI टूल्स आपके खाते पर सक्रिय नहीं हैं। एक्सेस सक्रिय करवाने हेतु <code>/owner</code> पर संपर्क करें।\n\n"
             f"📢 <b>आधिकारिक चैनल:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>",
             parse_mode=ParseMode.HTML
         )
@@ -662,11 +669,24 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/yearly</code> — वार्षिक महा-संकलन (PT-365)\n"
         "• <code>/ask</code> — 24/7 यूपीएससी मेंटरशिप सत्र\n\n"
         "💬 <b>सहायता व संपर्क:</b>\n"
+        "• <code>/help</code> — संपूर्ण उपयोग मार्गदर्शिका\n"
         "• <code>/owner</code> — सचिन शर्मा से संपर्क करें\n"
         "• <code>/cancel</code> — प्रक्रिया तुरंत रद्द करें\n\n"
         f"📢 <b>ग्रुप:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+
+async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    register_user(user.id, user.username, user.first_name)
+    help_text = (
+        f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
+        "1️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF भरने के बाद बोर्ड आपकी पृष्ठभूमि के आधार पर प्रशासनिक प्रश्न ऑडियो में पूछेगा। आप बोलकर उत्तर रिकॉर्ड करें, बोर्ड सुनकर मूल्यांकन व रिपोर्ट देगा।\n\n"
+        "2️⃣ <b>कॉपी चेकिंग (`/checkanswer`):</b> पहले प्रश्न टाइप/बोलें, फिर अपनी उत्तर पुस्तिका की फोटो या PDF भेजें।\n\n"
+        "3️⃣ <b>मुख्य परीक्षा (`/mains`):</b> PYQs (2013-2026 संपूर्ण आर्काइव) या नए संभावित प्रश्नों का चयन करें।\n\n"
+        "4️⃣ <b>क्विज़ (`/quiz`):</b> विषयवार 50, 100 या 200 प्रश्नों की स्टैंडअलोन HTML टेस्ट फाइल प्राप्त करें।"
+    )
+    await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 # ================= DAILY COMPILATION =================
 @ensure_auth
@@ -1006,12 +1026,12 @@ async def handle_daf_name_step(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return DAF_QCOUNT
 
-    if txt == "✏️️ प्रोफाइल अपडेट करें (Edit DAF)":
+    if txt == "✏️ प्रोफाइल अपडेट करें (Edit DAF)":
         await update.message.reply_text("👉 <b>चरण 1/6:</b> अपना <b>पूरा नाम</b> लिखकर भेजें:", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
         return DAF_NAME
 
     context.user_data["daf_name"] = txt
-    await update.message.reply_text("👉 <b>चरण 2/6:</b> अपना <b>गृह राज्य</b> दर्ज करें (उदा. राजस्थान, बिहार):", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("👉 <b>चरण 2/6:</b> अपना <b>गृह राज्य</b> दर्ज करें (उदा. राजस्थान, उत्तर प्रदेश):", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
     return DAF_STATE
 
 async def handle_daf_state_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1028,15 +1048,15 @@ async def handle_daf_college_step(update: Update, context: ContextTypes.DEFAULT_
 async def handle_daf_status_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["daf_status"] = update.message.text.strip()
     await update.message.reply_text("👉 <b>चरण 5/6:</b> अपना <b>वैकल्पिक विषय (Optional Subject)</b> लिखें (उदा. भूगोल, इतिहास):", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
-    return DAF_OPTIONAL_ATTEMPT
+    return DAF_OPTIONAL_STEP
 
 async def handle_daf_optional_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["daf_optional"] = update.message.text.strip()
     reply_kb = [["1st Attempt (पहला)"], ["2nd Attempt (दूसरा)"], ["3rd+ Attempt (तीसरा या अधिक)"]]
     await update.message.reply_text("👉 <b>चरण 6/6:</b> यह आपका कौन सा <b>प्रयास (Attempt)</b> है?", reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True), parse_mode=ParseMode.HTML)
-    return DAF_QCOUNT
+    return DAF_ATTEMPT_STEP
 
-async def handle_daf_finish_save(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_daf_attempt_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     attempt_txt = update.message.text.strip()
     context.user_data["daf_attempt"] = attempt_txt
@@ -1061,7 +1081,11 @@ async def handle_daf_finish_save(update: Update, context: ContextTypes.DEFAULT_T
 async def handle_daf_qcount_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     txt = update.message.text.strip()
-    cnt = 3 if "3" in txt else (5 if "5" in txt else 1)
+    cnt = 1
+    if "3" in txt:
+        cnt = 3
+    elif "5" in txt:
+        cnt = 5
 
     daf = get_user_daf(user_id)
     INTERVIEW_SESSION[user_id] = {"total": cnt, "current": 1, "daf": daf, "history": []}
@@ -1319,7 +1343,7 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
     
     lines = TRENDING_CACHE.get(user_id, [])
     if not lines:
-        await query.message.reply_text("⚠️️ सत्र समाप्त हो गया है। पुनः <code>/trending</code> चलाएं।", parse_mode=ParseMode.HTML)
+        await query.message.reply_text("⚠️ सत्र समाप्त हो गया है। पुनः <code>/trending</code> चलाएं।", parse_mode=ParseMode.HTML)
         return
 
     start_idx = target_page * 3
@@ -1706,10 +1730,17 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     rows = get_all_users_detailed()
     text = f"👥 <b>पंजीकृत सदस्य (कुल: {len(rows)})</b>\n\n"
+    
+    # ओनर आईडी प्रदर्शित करें
+    text += "👑 <b>प्रशासनिक संरक्षक (Owners):</b>\n"
+    for aid in ADMIN_IDS:
+        text += f"• <b>{ADMIN_NAMES.get(aid, 'व्यवस्थापक')}</b>: <code>{aid}</code>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━\n\n"
+
     for uid, un, fn, is_vip, exp in rows:
         user_link = f'<a href="tg://user?id={uid}">{fn or uid}</a>'
-        vip_tag = "👑 [VIP]" if is_vip == 1 else "👤 [फ्री]"
-        exp_str = f" | {exp.strftime('%d-%b-%Y')}" if (is_vip == 1 and exp) else ""
+        vip_tag = "👑 [VIP/प्रीमियम]" if is_vip == 1 else "👤 [निःशुल्क छात्र]"
+        exp_str = f" | वैधता: {exp.strftime('%d-%b-%Y')}" if (is_vip == 1 and exp) else ""
         text += f"• {vip_tag} {user_link} (<code>{uid}</code>){exp_str}\n"
 
     for part in [text[i:i+3800] for i in range(0, len(text), 3800)]:
@@ -1820,6 +1851,7 @@ async def main():
     bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     bot_app.add_handler(CommandHandler("start", start_handler))
+    bot_app.add_handler(CommandHandler("help", help_handler))
     bot_app.add_handler(CommandHandler("daily", daily_cmd))
     bot_app.add_handler(CommandHandler("quiz", quiz_cmd))
     bot_app.add_handler(CommandHandler("mains", mains_special_cmd))
@@ -1844,7 +1876,7 @@ async def main():
     bot_app.add_handler(CallbackQueryHandler(handle_broadcast_pin_choice, pattern=r"^pin_broadcast_"))
     bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click))
 
-    # 1. साक्षात्कार DAF + वॉयस + अतिरिक्त प्रश्न फ़्लो
+    # 1. साक्षात्कार DAF + वॉयस + अतिरिक्त प्रश्न फ़्लो (त्रुटिरहित स्टेट्स)
     interview_conv = ConversationHandler(
         entry_points=[CommandHandler("interview", interview_flow_start)],
         states={
@@ -1852,8 +1884,9 @@ async def main():
             DAF_STATE: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_state_step)],
             DAF_COLLEGE: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_college_step)],
             DAF_STATUS: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_status_step)],
-            DAF_OPTIONAL_ATTEMPT: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_optional_step)],
-            DAF_QCOUNT: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_finish_save)],
+            DAF_OPTIONAL_STEP: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_optional_step)],
+            DAF_ATTEMPT_STEP: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_attempt_step)],
+            DAF_QCOUNT: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_qcount_step)],
             WAITING_INTERVIEW_VOICE: [MessageHandler((filters.VOICE | filters.AUDIO) & (~filters.COMMAND), handle_interview_candidate_voice)],
             WAITING_INTERVIEW_DECISION: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_interview_decision)]
         },
