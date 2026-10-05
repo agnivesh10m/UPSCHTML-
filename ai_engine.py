@@ -7,12 +7,12 @@ from google import genai
 from google.genai import types
 from config import API_KEYS
 
+# API Keys लोड करें
 KEYS_LIST = [k.strip() for k in API_KEYS if k.strip()] if API_KEYS else [os.environ.get("GEMINI_API_KEY", "").strip()]
 current_key_idx = 0
 
-# स्थिर एवं सक्रिय मॉडल
-PRIMARY_MODEL = "gemini-2.5-flash"
-FALLBACK_MODEL = "gemini-1.5-flash"
+# google-genai SDK के लिए आधिकारिक सक्रिय मॉडल
+MODEL_NAME = "gemini-2.5-flash"
 
 def get_genai_client():
     global current_key_idx
@@ -27,79 +27,71 @@ def switch_key():
         current_key_idx = (current_key_idx + 1) % len(KEYS_LIST)
 
 def call_gemini_safely(prompt: str) -> str:
-    """main.py के लिए टेक्स्ट जेनरेशन (503/404 पर रोटेशन व रीट्राई के साथ)"""
+    """main.py के लिए टेक्स्ट जेनरेशन (ऑटो की-स्विच व रीट्राई के साथ)"""
     last_err = ""
-    models_to_try = [PRIMARY_MODEL, FALLBACK_MODEL]
-
-    for model_name in models_to_try:
-        for _ in range(max(1, len(KEYS_LIST))):
-            try:
-                client = get_genai_client()
-                resp = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt
-                )
-                if resp and resp.text:
-                    return resp.text.strip()
-            except Exception as e:
-                last_err = str(e)
-                switch_key()
-                time.sleep(0.5)
+    for _ in range(max(1, len(KEYS_LIST) * 2)):
+        try:
+            client = get_genai_client()
+            resp = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt
+            )
+            if resp and resp.text:
+                return resp.text.strip()
+        except Exception as e:
+            last_err = str(e)
+            switch_key()
+            time.sleep(1)
 
     return f"त्रुटि: {last_err}"
 
 def call_gemini_multimodal_inline(prompt: str, image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
-    """कॉपी मूल्यांकन हेतु विज़न मॉडल"""
+    """विज़न आधारित उत्तर-पुस्तिका मूल्यांकन"""
     last_err = ""
-    models_to_try = [PRIMARY_MODEL, FALLBACK_MODEL]
-
-    for model_name in models_to_try:
-        for _ in range(max(1, len(KEYS_LIST))):
-            try:
-                client = get_genai_client()
-                resp = client.models.generate_content(
-                    model=model_name,
-                    contents=[
-                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                        prompt
-                    ]
-                )
-                if resp and resp.text:
-                    return resp.text.strip()
-            except Exception as e:
-                last_err = str(e)
-                switch_key()
-                time.sleep(0.5)
+    for _ in range(max(1, len(KEYS_LIST) * 2)):
+        try:
+            client = get_genai_client()
+            resp = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                    prompt
+                ]
+            )
+            if resp and resp.text:
+                return resp.text.strip()
+        except Exception as e:
+            last_err = str(e)
+            switch_key()
+            time.sleep(1)
 
     return f"विज़न मूल्यांकन त्रुटि: {last_err}"
 
 def call_gemini_audio_transcribe(audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
-    """ऑडियो उत्तर का ट्रांसक्रिप्शन"""
+    """ऑडियो का हिंदी ट्रांसक्रिप्शन"""
     prompt = "यह छात्र का बोला हुआ ऑडियो है। इसे सुनकर केवल शुद्ध हिंदी में पूरा ट्रांसक्रिप्ट निकालें। कोई अतिरिक्त टिप्पणी न दें।"
     last_err = ""
-    models_to_try = [PRIMARY_MODEL, FALLBACK_MODEL]
-
-    for model_name in models_to_try:
-        for _ in range(max(1, len(KEYS_LIST))):
-            try:
-                client = get_genai_client()
-                resp = client.models.generate_content(
-                    model=model_name,
-                    contents=[
-                        types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                        prompt
-                    ]
-                )
-                if resp and resp.text:
-                    return resp.text.strip()
-            except Exception as e:
-                last_err = str(e)
-                switch_key()
-                time.sleep(0.5)
+    for _ in range(max(1, len(KEYS_LIST) * 2)):
+        try:
+            client = get_genai_client()
+            resp = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=[
+                    types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                    prompt
+                ]
+            )
+            if resp and resp.text:
+                return resp.text.strip()
+        except Exception as e:
+            last_err = str(e)
+            switch_key()
+            time.sleep(1)
 
     return "ऑडियो पढ़ा नहीं जा सका।"
 
 async def download_audio_stream(text: str) -> bytes:
+    """Edge-TTS ऑडियो जनरेटर"""
     clean_text = re.sub(r'[*_`#<>]', '', text)[:350]
     output_path = f"temp_stream_{os.getpid()}_{int(time.time() * 1000)}.mp3"
     try:
