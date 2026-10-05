@@ -1,11 +1,9 @@
 import os
 import re
 import time
-import json
 import asyncio
 import io
-from datetime import timedelta, datetime
-from pypdf import PdfReader
+from datetime import timedelta
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -99,29 +97,29 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n\n"
             "आपका पंजीकरण सुरक्षित हो गया है (स्थिति: <b>निःशुल्क सदस्य</b>)।\n\n"
             "इस पोर्टल पर UPSC CSE के 360° दैनिक नोट्स, लाइव DAF साक्षात्कार, उत्तर-पुस्तिका मूल्यांकन और विगत वर्षों के प्रश्नों (PYQs) का संग्रह उपलब्ध है।\n\n"
-            f"⚠ <b>नोट:</b> वर्तमान में प्रीमियम AI टूल्स आपके खाते पर सक्रिय नहीं हैं। एक्सेस सक्रिय करवाने हेतु <code>/owner</code> पर संपर्क करें।\n\n"
+            f"⚠️️ <b>नोट:</b> वर्तमान में प्रीमियम AI टूल्स आपके खाते पर सक्रिय नहीं हैं। एक्सेस सक्रिय करवाने हेतु <code>/owner</code> पर संपर्क करें।\n\n"
             f"📢 <b>आधिकारिक चैनल:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>",
             parse_mode=ParseMode.HTML
         )
         return
 
-    admin_tag = f"👑 <b>एडमिन कंट्रोल सक्रिय ({AUTHOR_NAME})</b>\n\n" if user.id in ADMIN_IDS else f"📚 <b>UPSC CSE स्मार्ट अध्ययन डेस्क ({AUTHOR_NAME})</b>\n\n"
+    admin_tag = f"👑 <b>एडमिन कंट्रोल सक्रिय ({AUTHOR_NAME})</b>\n\n" if user.id in ADMIN_IDS else "📚 <b>UPSC CSE स्मार्ट अध्ययन डेस्क</b>\n\n"
 
     msg = (
         f"👋 <b>नमस्ते {user_link}!</b>\n\n"
         f"{admin_tag}"
         "मुख्य कमांड्स:\n\n"
         "📖 <b>अध्ययन एवं नोट्स:</b>\n"
-        "• <code>/daily</code> — दैनिक 360° समसामयिक संकलन (The Hindu & PIB)\n"
-        "• <code>/weekly</code> — साप्ताहिक सारणीबद्ध रिवीजन\n"
-        "• <code>/monthly</code> — संपूर्ण मासिक योजना व कुरुक्षेत्र संकलन\n"
-        "• <code>/yearly</code> — वार्षिक महा-संकलन (PT-365 Style)\n"
+        "• <code>/daily</code> — दैनिक 360° समसामयिक संकलन\n"
         "• <code>/trending</code> — राष्ट्रीय व वैश्विक ट्रेंडिंग रडार\n"
-        "• <code>/quiz</code> — विजन IAS स्टाइल लाइव मॉक टेस्ट पोर्टल (10,000+ प्रश्न)\n"
+        "• <code>/quiz</code> — विजन IAS स्टाइल लाइव मॉक टेस्ट पोर्टल\n"
         "• <code>/mains</code> — मुख्य परीक्षा अभ्यास (PYQs 2013-2026 व मॉडल प्रश्न)\n"
-        "• <code>/checkanswer</code> — उत्तर पुस्तिका मूल्यांकन (सख्त परीक्षक द्वारा जांच)\n"
-        "• <code>/interview</code> — 1-on-1 साक्षात्कार (DAF व पुरुष वॉयस बोर्ड)\n"
-        "• <code>/ask</code> — 24/7 यूपीएससी मेंटरशिप सत्र (टेक्स्ट + वॉयस उत्तर)\n\n"
+        "• <code>/checkanswer</code> — उत्तर पुस्तिका मूल्यांकन (PYQ व मॉडल)\n"
+        "• <code>/interview</code> — 1-on-1 साक्षात्कार (DAF व वॉयस)\n"
+        "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन\n"
+        "• <code>/monthly</code> — संपूर्ण मासिक संकलन\n"
+        "• <code>/yearly</code> — वार्षिक महा-संकलन (PT-365)\n"
+        "• <code>/ask</code> — 24/7 यूपीएससी मेंटरशिप सत्र\n\n"
         "💬 <b>सहायता व संपर्क:</b>\n"
         "• <code>/help</code> — संपूर्ण उपयोग मार्गदर्शिका\n"
         "• <code>/owner</code> — सचिन शर्मा से संपर्क करें\n"
@@ -135,14 +133,10 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user.id, user.username, user.first_name)
     help_text = (
         f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
-        "1️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF भरने के बाद बोर्ड आपकी पृष्ठभूमि के आधार पर स्थितिजन्य प्रश्न पुरुष ऑडियो में पूछेगा। 1-प्रश्न त्वरित मोड में 25 अंकों में से तथा पूरे राउंड में 275 अंकों में से सख्त व यथार्थवादी मार्किंग की जाती है।\n\n"
-        "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b>\n"
-        "• <b>10,000+ से अधिक प्रश्नों का असीमित अभ्यास:</b> हर बार रीयल-टाइम में नए और अनूठे प्रश्न जनरेट होते हैं—कोई सवाल दोहराया नहीं जाता।\n"
-        "• <b>पूर्णतः UPSC CSE मानक:</b> लाइव OMR पैलेट ग्रिड, टाइमर, और 1/3 (-0.66) नेगेटिव मार्किंग। अंत में 50% वाटरमार्क वाला प्रिंटेबल स्कोरकार्ड PDF।\n\n"
-        "3️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> PYQs अथवा नए प्रश्नों के लिए अपनी कॉपी की फोटो या PDF भेजें। वरिष्ठ परीक्षक द्वारा सख्त मार्किंग (औसत 4.5–5.5/15), लिखावट पठनीयता, डायग्राम/मैप चेकिंग और अनिवार्य सुप्रीम कोर्ट केस लॉ वैल्यू-एडिशन प्राप्त करें।\n\n"
-        "4️⃣ <b>मुख्य परीक्षा अभ्यास (`/mains`):</b> 2013 से 2026 तक के PYQs व नए संभावित मॉडल प्रश्नों का 3-स्तरीय प्रशासनिक ढांचा।\n\n"
-        "5️⃣ <b>मेंटर से पूछें (`/ask`):</b> किसी भी प्रशासनिक मुद्दे पर सवाल पूछें और बिंदुवार समाधान के साथ-साथ मेंटर की आवाज़ में ऑडियो व्याख्या भी सुनें।\n\n"
-        "6️⃣ <b>दैनिक 360° समसामयिकी (`/daily`, `/weekly`, `/monthly`, `/yearly`):</b> The Hindu, PIB, नीति आयोग व PT-365 का संपूर्ण सारगर्भित संकलन।"
+        "1️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF भरने के बाद बोर्ड आपकी पृष्ठभूमि के आधार पर प्रशासनिक प्रश्न ऑडियो में पूछेगा। आप बोलकर उत्तर रिकॉर्ड करें, बोर्ड सुनकर मूल्यांकन व रिपोर्ट देगा।\n\n"
+        "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> GS-1, GS-2 व GS-3 के विषयों में से 50, 100 या 200 प्रश्नों का लाइव टेस्ट पोर्टल प्राप्त करें।\n\n"
+        "3️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> PYQ या अपने मॉडल प्रश्न का चयन करें, अंक चुनें और कॉपी की फोटो/PDF भेजें।\n\n"
+        "4️⃣ <b>मुख्य परीक्षा अभ्यास (`/mains`):</b> PYQs (2013-2026 संपूर्ण आर्काइव) या नए संभावित प्रश्नों का चयन करें।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
@@ -201,7 +195,7 @@ async def handle_quiz_gs_choice(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton("💰 भारतीय अर्थव्यवस्था व कृषि", callback_data="quizsub_economy")],
             [InlineKeyboardButton("🌿 पर्यावरण, पारिस्थितिकी व जैव विविधता", callback_data="quizsub_env")],
             [InlineKeyboardButton("🔬 विज्ञान, प्रौद्योगिकी व अंतरिक्ष", callback_data="quizsub_scitech")],
-            [InlineKeyboardButton("🛡 आंतरिक सुरक्षा व आपदा प्रबंधन", callback_data="quizsub_security")],
+            [InlineKeyboardButton("🛡️️ आंतरिक सुरक्षा व आपदा प्रबंधन", callback_data="quizsub_security")],
             [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="quiz_back_gs")]
         ]
         await query.message.edit_text("🎯 <b>चरण 2/3 (GS 3):</b> विशिष्ट विषय चुनें:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -259,20 +253,15 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
 
     prompt = f"""
 आप UPSC सिविल सेवा प्रारंभिक परीक्षा के मुख्य परीक्षक हैं।
-विषय: '{subj}' पर ठीक {cnt} अत्यंत कठिन, प्रामाणिक, और बहु-कथनात्मक बहुविकल्पीय प्रश्न तैयार करें।
-प्रत्येक प्रश्न में:
-- 1, 2, 3 कथन हों।
-- UPSC स्तर के कूट (Options) हों।
-- 'solution' में कम से कम 3-4 पंक्तियों की सटीक, तथ्यात्मक व्याख्या हो जिसमें सभी कथनों का कारण स्पष्ट हो।
-
-अनिवार्य रूप से शुद्ध JSON Array (बिना किसी अतिरिक्त मार्कडाउन कोड या गपशप के) इस प्रारूप में दें:
+विषय: '{subj}' पर ठीक {cnt} कठिन, मानक और कथन-आधारित बहुविकल्पीय प्रश्न तैयार करें।
+अनिवार्य रूप से शुद्ध JSON Array (बिना किसी अतिरिक्त मार्कडाउन कोड या व्याख्या के) इस प्रारूप में दें:
 [
   {{
     "topic": "{subj}",
     "text": "1. प्रश्न का पूर्ण विवरण और कथन...",
-    "options": ["(a) केवल 1 और 2", "(b) केवल 2 और 3", "(c) केवल 1 और 3", "(d) 1, 2 और 3"],
-    "correctAnswer": 0,
-    "solution": "<b>व्याख्या:</b> कथन 1 सही है क्योंकि... कथन 2 असत्य है क्योंकि..."
+    "options": ["(a) केवल 1", "(b) केवल 2", "(c) 1 और 2 दोनों", "(d) न तो 1, न ही 2"],
+    "correctAnswer": 2,
+    "solution": "<b>व्याख्या:</b> प्रामाणिक स्रोत सहित संपूर्ण 2-3 पंक्तियों की व्याख्या।"
   }}
 ]
 नोट: correctAnswer शून्य-आधारित इंडेक्स (0=a, 1=b, 2=c, 3=d) होना चाहिए। केवल शुद्ध हिंदी भाषा रखें।
@@ -284,16 +273,6 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
         await status_msg.edit_text("⏳ [■■■■■■■□□□] 75% विजन IAS ऑनलाइन टेस्ट पोर्टल असेंबल हो रहा है...")
         clean_json_str = re.sub(r'^```json\s*', '', raw_resp.strip(), flags=re.IGNORECASE)
         clean_json_str = re.sub(r'```$', '', clean_json_str.strip()).strip()
-
-        # JSON Parse जाँच
-        try:
-            parsed_test = json.loads(clean_json_str)
-            clean_json_str = json.dumps(parsed_test, ensure_ascii=False)
-        except Exception:
-            # अगर आंशिक रूप से JSON टूटा हो तो भी साफ़ करके डंप करें
-            match = re.search(r'\[.*\]', clean_json_str, re.DOTALL)
-            if match:
-                clean_json_str = match.group(0)
 
         test_id = f"{int(time.time()) % 100000}"
         portal_html = build_vision_ias_interactive_portal(subj, test_id, cnt, clean_json_str)
@@ -369,7 +348,7 @@ async def handle_daf_name_step(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return DAF_QCOUNT
 
-    if txt == "✏ प्रोफाइल अपडेट करें (Edit DAF)":
+    if txt == "✏️️ प्रोफाइल अपडेट करें (Edit DAF)":
         await update.message.reply_text("👉 <b>चरण 1/6:</b> अपना <b>पूरा नाम</b> लिखकर भेजें:", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
         return DAF_NAME
 
@@ -395,7 +374,7 @@ async def handle_daf_status_step(update: Update, context: ContextTypes.DEFAULT_T
 
 async def handle_daf_optional_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["daf_optional"] = update.message.text.strip()
-    reply_kb = [["🌱 Beginner / Mock (अभ्यास)"], ["1st Attempt (पहला)"], ["2nd Attempt (दूसरा)"], ["3rd+ Attempt (तीसरा या अधिक)"]]
+    reply_kb = [["1st Attempt (पहला)"], ["2nd Attempt (दूसरा)"], ["3rd+ Attempt (तीसरा या अधिक)"]]
     await update.message.reply_text("👉 <b>चरण 6/6:</b> यह आपका कौन सा <b>प्रयास (Attempt)</b> है?", reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True), parse_mode=ParseMode.HTML)
     return DAF_ATTEMPT_STEP
 
@@ -471,6 +450,7 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.HTML
         )
 
+        # बोर्ड अध्यक्ष की गंभीर पुरुष (Male) आवाज भेजना
         asyncio.create_task(send_async_voice_question(update, context, q_text, curr, tot))
 
     except Exception as e:
@@ -524,6 +504,7 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 
         await update.message.reply_text(f"🏛 <b>बोर्ड का अवलोकन ({sess['current']}/{sess['total']}):</b>\n\n{eval_resp}", parse_mode=ParseMode.HTML)
 
+        # बोर्ड का मौखिक पुरुष फीडबैक भेजना
         asyncio.create_task(send_async_voice_feedback(update, context, eval_resp))
 
         if not is_last:
@@ -533,28 +514,14 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
             status_m = await update.message.reply_text("⏳ अगले प्रश्न की तैयारी जारी है...")
             return await ask_interview_question(update, context, user_id, status_m)
         else:
-            if sess["total"] == 1:
-                score_prompt = f"""
-उम्मीदवार {name} ने 1 स्थितिजन्य प्रश्न का उत्तर दिया: "{transcribed_text}"
-सख्त यूपीएससी परीक्षक के रूप में इसका 25 में से मूल्यांकन करें:
-1. 🏆 प्राप्तांक: (X / 25 अंक) - औसत को 11-14, अच्छे को 15-18 दें। 20+ न दें।
-2. ⚖️ प्रशासनिक दृष्टिकोण (Decision Making)
-3. 💡 सुधार सुझाव
-शुद्ध हिंदी में लिखें।
-"""
-                single_eval = await asyncio.to_thread(call_gemini_safely, score_prompt)
-                await update.message.reply_text(f"📜 <b>त्वरित साक्षात्कार परिणाम पत्रक (25 अंक)</b>\n\n{single_eval}\n\n👤 <b>बोर्ड संरक्षक:</b> {AUTHOR_NAME}", parse_mode=ParseMode.HTML)
-                INTERVIEW_SESSION.pop(user_id, None)
-                return ConversationHandler.END
-            else:
-                reply_kb = [["➕ 1 और स्थितिजन्य प्रश्न दें"], ["📊 संपूर्ण परिणाम व रिपोर्ट कार्ड देखें"]]
-                await update.message.reply_text(
-                    "🎯 <b>निर्धारित साक्षात्कार राउंड पूर्ण हुआ!</b>\n\n"
-                    "क्या आप अपनी तैयारी को और परखने के लिए 1 अतिरिक्त प्रश्न देना चाहते हैं या अंतिम रिपोर्ट देखना चाहते हैं?",
-                    reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True),
-                    parse_mode=ParseMode.HTML
-                )
-                return WAITING_INTERVIEW_DECISION
+            reply_kb = [["➕ 1 और स्थितिजन्य प्रश्न दें"], ["📊 संपूर्ण परिणाम व रिपोर्ट कार्ड देखें"]]
+            await update.message.reply_text(
+                "🎯 <b>निर्धारित साक्षात्कार राउंड पूर्ण हुआ!</b>\n\n"
+                "क्या आप अपनी तैयारी को और परखने के लिए 1 अतिरिक्त प्रश्न देना चाहते हैं या अंतिम रिपोर्ट देखना चाहते हैं?",
+                reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True),
+                parse_mode=ParseMode.HTML
+            )
+            return WAITING_INTERVIEW_DECISION
 
     except Exception as e:
         await wait_m.edit_text(f"❌ वॉयस प्रोसेसिंग में त्रुटि: {e}। कृपया पुनः वॉयस भेजें।")
@@ -595,7 +562,7 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
     final_prompt = f"""
 उम्मीदवार {name} का UPSC साक्षात्कार पूर्ण हो चुका है। कुल {len(sess['history'])} प्रश्नों के उत्तर दिए गए।
 एक आधिकारिक, उच्च-स्तरीय यूपीएससी साक्षात्कार मूल्यांकन पत्रक तैयार करें:
-1. 🏆 प्राप्तांक: (275 में से अंक) - औसत 120-145, अच्छे 150-170, असाधारण 175-190
+1. 🏆 प्राप्तांक: (275 में से अंक)
 2. 🌟 मुख्य प्रशासनिक खूबियाँ (Strengths)
 3. ⚠️ सुधार योग्य क्षेत्र (Areas of Improvement)
 4. 🚀 बोर्ड की अंतिम अनुशंसा (Final Board Recommendation)
@@ -611,7 +578,7 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
     INTERVIEW_SESSION.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= UPSC MAINS SPECIAL =================
+# ================= UPSC MAINS SPECIAL (PYQs 2013-2026 WITH BOLD STYLING) =================
 @ensure_auth
 async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -619,7 +586,7 @@ async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✨ नए संभावित मॉडल प्रश्न (New Expected)", callback_data="mq_type_new")],
         [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")]
     ]
-    await update.message.reply_text("✍️️ <b>UPSC मुख्य परीक्षा (Mains) अभ्यास:</b>\nआप पुराने सभी प्रश्न देखना चाहते हैं या नए संभावित मॉडल प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) अभ्यास:</b>\nआप पुराने सभी प्रश्न देखना चाहते हैं या नए संभावित मॉडल प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def handle_mains_type_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -719,13 +686,9 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}")
 
-# ================= ADVANCED CHECK ANSWER (100% WORKING DIRECT INLINE) =================
+# ================= ADVANCED CHECK ANSWER WITH PYQ / CUSTOM MARKS SELECTION =================
 @ensure_auth
 async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data.clear()
-    uid = update.effective_user.id
-    CHECK_ANSWER_CACHE.pop(uid, None)
-
     keyboard = [
         [InlineKeyboardButton("📜 विगत वर्ष का प्रश्न (PYQ 2013-2026)", callback_data="ca_type_pyq")],
         [InlineKeyboardButton("✍️ नया / मॉडल प्रश्न (New Expected)", callback_data="ca_type_custom")]
@@ -748,19 +711,18 @@ async def handle_ca_type_choice(update: Update, context: ContextTypes.DEFAULT_TY
     CHECK_ANSWER_CACHE[user_id] = {"is_pyq": is_pyq}
 
     if is_pyq:
-        msg_text = (
-            "📜 <b>विगत वर्ष का प्रश्न (PYQ 2013-2026):</b>\n\n"
-            "कृपया अपना <b>PYQ प्रश्न</b> लिखकर, फ़ोटो में या वॉयस मैसेज में भेजें।\n"
-            "<i>(AI परीक्षक स्वतः पहचान लेगा कि यह किस वर्ष और कितने अंक [10 या 15 अंक] का प्रश्न था)</i>\n\n"
-            "रद्द करने हेतु <code>/cancel</code> लिखें।"
+        await query.message.edit_text(
+            "📜 <b>विगत वर्ष का प्रश्न (PYQ):</b>\n\n"
+            "कृपया अपना <b>PYQ प्रश्न</b> लिखकर या वॉयस मैसेज में भेजें।\n"
+            "<i>(AI परीक्षक स्वतः पहचान लेगा कि यह किस वर्ष और कितने अंक [10 या 15 अंक] का प्रश्न था)</i>",
+            parse_mode=ParseMode.HTML
         )
     else:
-        msg_text = (
+        await query.message.edit_text(
             "✍️ <b>नया / मॉडल प्रश्न:</b>\n\n"
-            "कृपया अपना <b>प्रश्न</b> लिखकर, फ़ोटो में या वॉयस मैसेज में भेजें:\n\n"
-            "रद्द करने हेतु <code>/cancel</code> लिखें।"
+            "कृपया अपना <b>प्रश्न</b> लिखकर या वॉयस मैसेज में भेजें:",
+            parse_mode=ParseMode.HTML
         )
-    await query.message.edit_text(msg_text, parse_mode=ParseMode.HTML)
     return CA_QUESTION_TEXT
 
 async def handle_ca_question_text_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -794,9 +756,15 @@ async def handle_ca_question_text_step(update: Update, context: ContextTypes.DEF
         except Exception:
             q_content = "संलग्न फ़ोटो में दिया गया प्रश्न"
 
-    if len(q_content) < 8:
+    non_upsc_patterns = [
+        r"मेरा नाम", r"तुम्हारा नाम", r"आपका नाम", r"तुम कौन", r"आप कौन",
+        r"हेलो", r"हाय", r"hello", r"hi", r"hey", r"कैसे हो", r"क्या कर रहे",
+        r"क्या कर सकता", r"शायरी", r"मजाक", r"मौसम", r"गाना", r"लव", r"प्यार"
+    ]
+    if any(re.search(pat, q_content, re.IGNORECASE) for pat in non_upsc_patterns) or len(q_content) < 15:
         await msg.reply_text(
-            "⚠️ <b>अमान्य प्रश्न:</b> कृपया UPSC मुख्य परीक्षा का वास्तविक प्रश्न भेजें।",
+            "⚠️ <b>अमान्य प्रश्न:</b> आपने सामान्य बातचीत या गैर-UPSC वाक्य भेजा है।\n\n"
+            "कृपया <b>UPSC मुख्य परीक्षा (GS 1, 2, 3, 4, निबंध या वैकल्पिक)</b> का वास्तविक प्रश्न भेजें।",
             parse_mode=ParseMode.HTML
         )
         return CA_QUESTION_TEXT
@@ -849,31 +817,30 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
     msg = update.message
     sess = CHECK_ANSWER_CACHE.get(user_id, {})
     q_text = sess.get("question", "UPSC मुख्य परीक्षा प्रश्न")
-    target_marks = sess.get("marks", "15 अंक")
+    is_pyq = sess.get("is_pyq", False)
+    target_marks = sess.get("marks", "10/15 अंक")
 
-    wait_m = await msg.reply_text("🔍 वरिष्ठ यूपीएससी परीक्षक द्वारा कॉपी का सख्त व निष्पक्ष मूल्यांकन जारी है...", parse_mode=ParseMode.HTML)
+    wait_m = await msg.reply_text("🔍 उत्तर पुस्तिका का UPSC परीक्षक द्वारा गहन मूल्यांकन जारी है...", parse_mode=ParseMode.HTML)
+
+    if is_pyq:
+        marks_instruction = "यह UPSC विगत वर्षों (2013-2026) का प्रश्न है। प्रश्न को पहचानकर उसके वास्तविक वर्ष और आधिकारिक अंकों (10 अंक या 15 अंक) के आधार पर ही सटीक अंक दें।"
+    else:
+        marks_instruction = f"उम्मीदवार द्वारा निर्धारित अंक मानदंड: {target_marks}। इसी आधार पर अंक प्रदान करें।"
 
     prompt = f"""
-आप संघ लोक सेवा आयोग (UPSC CSE Mains) के 20 वर्षों के वरिष्ठ मुख्य परीक्षक हैं।
+आप संघ लोक सेवा आयोग (UPSC CSE Mains) के वरिष्ठ परीक्षक (Copy Evaluator) हैं।
 प्रश्न: "{q_text}"
-अंक पैमाना: {target_marks}
+{marks_instruction}
 
-सख्त मूल्यांकन निर्देश:
-1. UPSC में 50-55% पर टॉपर्स बनते हैं।
-   - 15 अंकों में से औसत उत्तर को 4.5 से 5.5 अंक ही दें। उत्कृष्ट को अधिकतम 7 से 8.5 अंक दें। 10 कभी न दें।
-   - 10 अंकों में से औसत को 3 से 4 अंक और उत्कृष्ट को अधिकतम 5 से 6 अंक दें।
-2. दृश्य जांच: लिखावट की पठनीयता (Legibility) स्पष्ट करें। भारत का मानचित्र, फ्लोचार्ट या आरेख की उपस्थिति जांचें और 0.5 से 1 बोनस अंक दें।
-3. अनिवार्य वैल्यू एडिशन: बताएं कि इस उत्तर में कौन सा सुप्रीम कोर्ट केस लॉ, सरकारी समिति/आयोग रिपोर्ट, या आर्थिक डेटा अनिवार्य रूप से जोड़ा जाना चाहिए था।
+प्रस्तुत उत्तर पुस्तिका का निष्पक्ष, गहन और मानक मूल्यांकन करें।
 
 प्रारूप:
-1. 📊 प्राप्तांक (Marks Awarded): [अंक] / {target_marks}
-2. ✍️ प्रस्तुति व लिखावट पठनीयता:
-3. 🗺️ मानचित्र व आरेख विश्लेषण:
-4. 🌟 सकारात्मक पक्ष (Strengths):
-5. ⚠️ संरचनात्मक कमियाँ (Lacunae):
-6. 🚀 अनिवार्य वैल्यू एडिशन (सुप्रीम कोर्ट केस / डेटा / समितियां):
+1. 📊 प्राप्तांक (Marks Awarded): (उदा. 6/10 या 9.5/15 अंक)
+2. 🌟 सकारात्मक पक्ष (Strengths): (भूमिका, तार्किकता, मुख्य बिंदु)
+3. ⚠️ संरचनात्मक कमियाँ (Areas of Improvement): (डेटा, आरेख, अनुच्छेदों की कमी)
+4. 🚀 परीक्षक की मूल्य संवर्धन सलाह (Value Addition): (आगे की राह व निष्कर्ष को बेहतर बनाने के सुझाव)
 
-केवल शुद्ध एवं गरिमापूर्ण हिंदी में लिखें।
+केवल और केवल शुद्ध एवं गरिमापूर्ण हिंदी में उत्तर दें।
 """
     m_type = "application/pdf" if (msg.document and msg.document.file_name.lower().endswith('.pdf')) else "image/jpeg"
 
@@ -898,12 +865,12 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
     CHECK_ANSWER_CACHE.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= CONTINUOUS ASK MENTORSHIP SESSION =================
+# ================= CONTINUOUS ASK MENTORSHIP SESSION (/ask) =================
 @ensure_auth
 async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "🎓 <b>UPSC 1-on-1 मेंटरशिप सत्र सक्रिय हो गया है!</b>\n\n"
-        "आप UPSC सिविल सेवा परीक्षा से जुड़ा कोई भी सवाल लगातार पूछते रह सकते हैं। मेंटर आपको टेक्स्ट के साथ-साथ गंभीर ऑडियो व्याख्या भी प्रदान करेंगे।\n\n"
+        "आप UPSC सिविल सेवा परीक्षा (GS 1-4, करेंट अफेयर्स, वैकल्पिक विषय व निबंध) से जुड़ा कोई भी सवाल लगातार पूछते रह सकते हैं।\n\n"
         "👉 <i>सत्र समाप्त करने के लिए कभी भी <code>/cancel</code> या <code>/stop</code> भेजें।</i>",
         parse_mode=ParseMode.HTML
     )
@@ -919,48 +886,37 @@ async def handle_ask_continuous_message(update: Update, context: ContextTypes.DE
     blocked_non_upsc = [
         r"मेरा नाम", r"तुम्हारा नाम", r"आपका नाम", r"तुम कौन", r"आप कौन",
         r"हेलो", r"हाय", r"hello", r"hi", r"hey", r"कैसे हो", r"क्या कर रहे",
-        r"शायरी", r"मजाक", r"मौसम", r"गाना", r"लव", r"प्यार"
+        r"शायरी", r"मजाक", r"मौसम", r"गाना", r"लव", r"प्यार", r"गर्लफ्रेंड",
+        r"बॉयफ्रेंड", r"joke", r"time pass"
     ]
     if any(re.search(pat, user_query, re.IGNORECASE) for pat in blocked_non_upsc) or len(user_query) < 5:
         await update.message.reply_text(
             "⚠️ <b>अमान्य प्रश्न:</b> इस संबंध में हम कोई जानकारी नहीं रखते हैं।\n\n"
-            "यह डेस्क केवल <b>संघ लोक सेवा आयोग (UPSC CSE)</b> के गंभीर अकादमिक विमर्श हेतु समर्पित है। कृपया परीक्षा संबंधी विषय ही पूछें।",
+            "यह डेस्क केवल <b>संघ लोक सेवा आयोग (UPSC CSE)</b> पाठ्यक्रम के गंभीर अकादमिक विमर्श हेतु समर्पित है। कृपया परीक्षा संबंधी विषय ही पूछें।",
             parse_mode=ParseMode.HTML
         )
         return WAITING_ASK_SESSION
 
-    wait_msg = await update.message.reply_text("🤔 UPSC परिप्रेक्ष्य में बिंदुवार विश्लेषण व ऑडियो तैयार हो रहा है...")
+    wait_msg = await update.message.reply_text("🤔 UPSC परिप्रेक्ष्य में बिंदुवार विश्लेषण तैयार हो रहा है...")
     try:
         prompt = f"""
-आप UPSC मेंटर हैं। निम्नलिखित विषय का बिंदुवार, सटीक एवं संतुलित प्रशासनिक विश्लेषण अधिकतम 80-100 शब्दों में दें:
+आप UPSC मेंटर हैं। निम्नलिखित विषय का बिंदुवार, सटीक एवं संतुलित प्रशासनिक विश्लेषण दें:
 विषय: '{user_query}'
 सख्त नियम: मार्कडाउन स्टार्स का प्रयोग न करें। भाषा केवल शुद्ध हिंदी रखें।
 """
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_reply = clean_all_markdown_and_fix_content(reply_text)
 
-        await wait_msg.delete()
-        await update.message.reply_text(f"📖 <b>मेंटर समाधान:</b>\n\n{clean_reply}", parse_mode=ParseMode.HTML)
-
-        asyncio.create_task(send_async_ask_voice(update, context, clean_reply[:350]))
+        if len(clean_reply) > 3800:
+            await wait_msg.delete()
+            for p in [clean_reply[i:i+3800] for i in range(0, len(clean_reply), 3800)]:
+                await update.message.reply_text(p, parse_mode=ParseMode.HTML)
+        else:
+            await wait_msg.edit_text(clean_reply, parse_mode=ParseMode.HTML)
     except Exception as e:
         await wait_msg.edit_text(f"❌ उत्तर संकलित करने में समस्या: {e}")
         
     return WAITING_ASK_SESSION
-
-async def send_async_ask_voice(update, context, text):
-    try:
-        audio_bytes = await download_audio_stream(text)
-        if audio_bytes:
-            audio_io = io.BytesIO(audio_bytes)
-            audio_io.name = "Mentor_Voice.mp3"
-            await context.bot.send_voice(
-                chat_id=update.effective_chat.id,
-                voice=audio_io,
-                caption=f"🎙️ मेंटर की जुबानी (ऑडियो व्याख्या) | {AUTHOR_NAME}"
-            )
-    except Exception as e:
-        print(f"Ask voice skip: {e}")
 
 # ================= TRENDING RADAR =================
 @ensure_auth
@@ -1059,7 +1015,7 @@ async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     years = ["2026", "2025", "2024"]
     keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक महा-संकलन (PT-365)", callback_data=f"genyear_{y}")] for y in years]
     keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")] )
-    await update.message.reply_text("🏛 <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("🏛️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 @ensure_auth
 async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1303,47 +1259,16 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         await wait_m.edit_text(f"❌ PDF प्रोसेसिंग में त्रुटि: {e}")
 
-# ================= BROADCAST SYSTEM =================
+# ================= BROADCAST SYSTEM WITH AUTO-PIN =================
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
         return ConversationHandler.END
 
-    if update.message.reply_to_message:
-        target_msg = update.message.reply_to_message
-        all_uids = get_all_user_ids()
-        status_m = await update.message.reply_text(f"⏳ रिप्लाई ब्रॉडकास्ट भेजा जा रहा है (कुल: {len(all_uids)} छात्र)...")
-
-        succ = 0
-        sent_map = {}
-        for uid in all_uids:
-            try:
-                sent_obj = await context.bot.copy_message(chat_id=uid, from_chat_id=admin_id, message_id=target_msg.message_id)
-                sent_map[uid] = sent_obj.message_id
-                succ += 1
-                await asyncio.sleep(0.04)
-            except Exception:
-                pass
-
-        LAST_BROADCAST_DATA[admin_id] = sent_map
-        await status_m.delete()
-
-        keyboard = [
-            [InlineKeyboardButton("📌 हाँ, सभी चैट में पिन करें", callback_data="pin_broadcast_yes")],
-            [InlineKeyboardButton("❌ नहीं, सामान्य रहने दें", callback_data="pin_broadcast_no")]
-        ]
-        await update.message.reply_text(
-            f"✅ ब्रॉडकास्ट सफल: <b>{succ} / {len(all_uids)}</b> छात्रों को प्राप्त हुआ।\n\n"
-            "👉 <b>क्या आप इस संदेश को सभी छात्रों के चैट में पिन करना चाहते हैं?</b>",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.HTML
-        )
-        return ConversationHandler.END
-
     await update.message.reply_text(
         f"📢 <b>ब्रॉडकास्ट कंट्रोल रूम ({AUTHOR_NAME}):</b>\n\n"
         "सभी छात्रों को भेजा जाने वाला संदेश, इमेज या पीडीएफ भेजें:\n"
-        "<i>(रद्द करने हेतु केवल <code>/cancel</code> लिखें)</i>",
+        "<i>(रद्द करने के लिए <code>/cancel</code> भेजें)</i>",
         parse_mode=ParseMode.HTML
     )
     return WAITING_BROADCAST_MSG
@@ -1354,10 +1279,6 @@ async def execute_broadcast_step1(update: Update, context: ContextTypes.DEFAULT_
         return ConversationHandler.END
 
     b_msg = update.message
-    if b_msg.text and b_msg.text.strip().lower() == "/cancel":
-        await b_msg.reply_text("❌ ब्रॉडकास्ट रद्द कर दिया गया।")
-        return ConversationHandler.END
-
     all_uids = get_all_user_ids()
     status_m = await update.message.reply_text(f"⏳ ब्रॉडकास्ट भेजा जा रहा है (कुल: {len(all_uids)} छात्र)...")
 
@@ -1368,7 +1289,7 @@ async def execute_broadcast_step1(update: Update, context: ContextTypes.DEFAULT_
             sent_obj = await context.bot.copy_message(chat_id=uid, from_chat_id=admin_id, message_id=b_msg.message_id)
             sent_map[uid] = sent_obj.message_id
             succ += 1
-            await asyncio.sleep(0.04)
+            await asyncio.sleep(0.05)
         except Exception:
             pass
 
@@ -1409,7 +1330,7 @@ async def handle_broadcast_pin_choice(update: Update, context: ContextTypes.DEFA
 
     LAST_BROADCAST_DATA.pop(admin_id, None)
 
-# ================= ADMIN USER MANAGEMENT =================
+# ================= ADMIN USER MANAGEMENT & /info COMMAND =================
 async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
@@ -1423,23 +1344,6 @@ async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         add_vip_user(t_uid, days)
         user_link = f'<a href="tg://user?id={t_uid}">{t_uid}</a>'
         await update.message.reply_text(f"✅ छात्र {user_link} को <b>{days} दिन</b> के लिए अधिकृत कर दिया गया है।", parse_mode=ParseMode.HTML)
-
-        congrats_text = (
-            f"🌟 <b>बधाई हो! आपका UPSC SMART STUDY DESK एक्सेस सक्रिय हो गया है!</b> 🌟\n\n"
-            f"प्रिय अभ्यर्थी, मेंटर <b>{AUTHOR_NAME}</b> द्वारा आपके खाते में <b>{days} दिनों</b> का प्रीमियम अध्ययन एक्सेस सफलतापूर्वक जोड़ दिया गया है।\n\n"
-            "✨ <b>अनलॉक किए गए टूल्स:</b>\n"
-            "• 📝 <b>/checkanswer</b> — वरिष्ठ परीक्षक द्वारा सख्त मुख्य परीक्षा कॉपी मूल्यांकन\n"
-            "• 🎙️ <b>/interview</b> — बोर्ड अध्यक्ष के साथ 1-on-1 लाइव मॉक साक्षात्कार\n"
-            "• 🎯 <b>/quiz</b> — 10,000+ प्रश्नों के असीमित ऑनलाइन टेस्ट पोर्टल\n"
-            "• 📰 <b>360° समसामयिकी</b> — दैनिक, साप्ताहिक, मासिक व PT-365 एक्सेस\n"
-            "• 🎓 <b>/ask</b> — 24/7 मेंटरशिप और ऑडियो व्याख्या\n\n"
-            f"<i>पूरी निष्ठा और लगन के साथ तैयारी करें। हमारी शुभकामनाएं आपके साथ हैं!</i> 🎯🇮🇳\n\n"
-            f"📢 <b>आधिकारिक चैनल:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
-        )
-        try:
-            await context.bot.send_message(chat_id=t_uid, text=congrats_text, parse_mode=ParseMode.HTML)
-        except Exception:
-            pass
     except Exception as e:
         await update.message.reply_text(f"❌ त्रुटि: {e}")
 
