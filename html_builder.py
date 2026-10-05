@@ -1,5 +1,6 @@
 import re
 import json
+import urllib.parse
 from bs4 import BeautifulSoup
 from config import AUTHOR_NAME, CHANNEL_LINK, CHANNEL_NAME, get_ist_now
 
@@ -19,14 +20,14 @@ def create_standalone_vector_map(place_name: str) -> str:
         <circle cx="740" cy="45" r="22" fill="#ffffff" stroke="#0284c7" stroke-width="1.5"/>
         <path d="M 740 27 L 745 45 L 740 42 L 735 45 Z" fill="#ef4444"/>
         <text x="740" y="24" font-size="10" font-weight="bold" fill="#ef4444" text-anchor="middle">N</text>
-        <rect x="50" y="35" width="300" height="150" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+        <rect x="50" y="35" width="320" height="150" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
         <text x="70" y="70" font-family="'Hind', sans-serif" font-size="16" font-weight="bold" fill="#0369a1">📍 {place_name}</text>
-        <text x="70" y="102" font-family="'Hind', sans-serif" font-size="13" fill="#475569">• रणनीतिक अवस्थिति एवं जलग्रहण क्षेत्र</text>
-        <text x="70" y="128" font-family="'Hind', sans-serif" font-size="13" fill="#475569">• पारिस्थितिकी एवं संरक्षित हॉटस्पॉट</text>
-        <text x="70" y="154" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#059669">✓ UPSC मैपिंग एवं प्रीलिम्स संदर्भ</text>
-        <circle cx="560" cy="110" r="50" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
-        <circle cx="560" cy="110" r="8" fill="#ef4444"/>
-        <text x="560" y="175" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#0f172a" text-anchor="middle">प्रमुख स्थल नोड</text>
+        <text x="70" y="100" font-family="'Hind', sans-serif" font-size="13" fill="#475569">• रणनीतिक अवस्थिति एवं जलग्रहण क्षेत्र</text>
+        <text x="70" y="125" font-family="'Hind', sans-serif" font-size="13" fill="#475569">• पारिस्थितिकी एवं संरक्षित हॉटस्पॉट</text>
+        <text x="70" y="152" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#059669">✓ UPSC मैपिंग एवं प्रीलिम्स संदर्भ</text>
+        <circle cx="580" cy="110" r="50" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+        <circle cx="580" cy="110" r="8" fill="#ef4444"/>
+        <text x="580" y="175" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#0f172a" text-anchor="middle">प्रमुख स्थल नोड</text>
       </svg>
       <figcaption>🗺️ भौगोलिक एवं रणनीतिक मानचित्र: {place_name}</figcaption>
     </figure>
@@ -70,9 +71,9 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'```', '', text)
     text = re.sub(r'<figure[^>]*>[\s\S]*?<\/figure>', '', text, flags=re.IGNORECASE)
 
-    text = re.sub(r'###\s*(.*)', r'<h4 class="sub-title">\1</h4>', text)
-    text = re.sub(r'##\s*(.*)', r'<h3 class="section-title">\1</h3>', text)
-    text = re.sub(r'#\s*(.*)', r'<h2 class="section-title">\1</h2>', text)
+    text = re.sub(r'^###\s*(.*)', r'<h4 class="sub-title">\1</h4>', text, flags=re.MULTILINE)
+    text = re.sub(r'^##\s*(.*)', r'<h3 class="section-title">\1</h3>', text, flags=re.MULTILINE)
+    text = re.sub(r'^#\s*(.*)', r'<h2 class="section-title">\1</h2>', text, flags=re.MULTILINE)
 
     text = re.sub(
         r'(?:प्रश्न\s*\d*\s*[:\-]|UPSC\s*CSE\s*प्रश्न\s*[:\-])\s*(.*)',
@@ -109,11 +110,11 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
     text = re.sub(r'^[•\-\*]\s*(.*)', r'<li class="list-item">\1</li>', text, flags=re.MULTILINE)
 
-    key_locations = ["कूनो", "गांधी सागर", "मन्नार की खाड़ी", "कच्छ का रण", "होर्मुज़", "लाल सागर", "अंडमान", "पश्चिमी घाट", "लद्दाख", "ताइवान", "चाबहार"]
+    key_locations = ["कूनो", "गांधी सागर", "मन्नार की खाड़ी", "कच्छ का रण", "होर्मुज़", "लाल सागर", "अंडमान", "पश्चिमी घाट", "लद्दाख", "ताइवान", "चाबहार", "मलक्का", "बाल्टिक सागर", "काला सागर"]
     for loc in key_locations:
         if loc in text:
             vector_card = create_standalone_vector_map(loc)
-            text += f"\n<div class='map-section'><h4>🗺️ भौगोलिक एवं रणनीतिक मैपिंग</h4><p><i>(नोट: संबंधित विषय का भौगोलिक परिदृश्य नीचे प्रदर्शित है)</i></p>{vector_card}</div>"
+            text += f"\n<div class='map-section'><h4>🗺️ भौगोलिक एवं रणनीतिक मैपिंग</h4><p><i>(सत्र संदर्भ: {loc})</i></p>{vector_card}</div>"
             break
 
     return text
@@ -128,20 +129,20 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
 
     for tag in soup.find_all(['h2', 'h3']):
         title_text = tag.get_text().strip()
-        if len(title_text) > 3 and not tag.get('id'):
+        if len(title_text) > 2 and not tag.get('id'):
             sec_id = f"custom-sec-{sec_idx}"
             tag['id'] = sec_id
             clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|\d+|[:\.\-\s])+', '', title_text).strip()
-            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️️❄🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
+            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️❄🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
             if not clean_tab_name:
                 clean_tab_name = f"विषय {sec_idx}"
-            if len(clean_tab_name) > 20:
-                clean_tab_name = clean_tab_name[:18] + ".."
+            if len(clean_tab_name) > 24:
+                clean_tab_name = clean_tab_name[:22] + ".."
             nav_links += f'<a href="#{sec_id}">{clean_tab_name}</a>\n'
             sec_idx += 1
 
     final_body = str(soup)
-    overview_title = "🧭 ट्रेंडिंग समसामयिक विश्लेषण" if is_trending else "📌 सत्र विहंगावलोकन"
+    overview_title = "🧭 ट्रेंडिंग समसामयिक विश्लेषण" if is_trending else "📌 360° UPSC महा-संकलन"
 
     return f"""<!DOCTYPE html>
 <html lang="hi">
@@ -149,6 +150,8 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{topic} | {AUTHOR_NAME}</title>
+<link rel="preconnect" href="[https://fonts.googleapis.com](https://fonts.googleapis.com)">
+<link rel="preconnect" href="[https://fonts.gstatic.com](https://fonts.gstatic.com)" crossorigin>
 <link href="[https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap)" rel="stylesheet">
 <style>
 :root {{
@@ -272,7 +275,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
     <div class="overview-title">📌 {overview_title}</div>
     <p class="para"><strong>📅 संदर्भ काल:</strong> {display_date} (IST)</p>
     <p class="para"><strong>🎯 संकलन आयाम:</strong> 360° समग्र विश्लेषण, 2-कॉलम सारणी, मानक भौगोलिक मानचित्र एवं मुख्य परीक्षा उत्तर-लेखन फ्रेमवर्क।</p>
-    <p class="para"><strong>📰 अधिकृत स्रोत:</strong> The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS।</p>
+    <p class="para"><strong>📰 अधिकृत स्रोत:</strong> The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS, Sanskriti IAS।</p>
   </section>
   <div class="news-card">{final_body}</div>
 </main>
@@ -297,10 +300,13 @@ document.getElementById('searchBox').addEventListener('input', function() {{
 </body>
 </html>"""
 
-def build_vision_ias_interactive_portal(subject_title: str, test_id: str, q_count: int, questions_json: str) -> str:
-    duration_min = 60 if q_count == 50 else (120 if q_count == 100 else 180)
+def build_vision_ias_interactive_portal(subject_title: str, test_id: str, q_count: int, questions_list: list) -> str:
+    duration_min = 60 if q_count <= 50 else (120 if q_count <= 100 else 180)
+    
+    # 100% सुरक्षित एनकोडिंग ताकि जावास्क्रिप्ट कभी न टूटे
+    raw_json = json.dumps(questions_list, ensure_ascii=False)
+    encoded_json = urllib.parse.quote(raw_json)
 
-    # यह टेम्पलेट आपकी ओरिजिनल फाइल 20482_2.html के 100% समरूप है
     html_template = """<!DOCTYPE html>
 <html lang="hi">
 <head>
@@ -498,7 +504,7 @@ body { background-color: var(--bg-dark); color: var(--text-main); display: flex;
                 <div class="res-box-compact"><div class="val" id="stat-avg-time" style="color: var(--primary);">0s</div><div class="lbl">औसत/प्रश्न</div></div>
             </div>
             <div class="btn-row">
-                <button class="r-btn-small print-btn" onclick="window.print()">🖨️️ Print PDF Result (50% Watermark)</button>
+                <button class="r-btn-small print-btn" onclick="window.print()">🖨️ Print PDF Result (50% Watermark)</button>
             </div>
             <h3 style="font-size: 14px; margin-bottom: 12px; color: var(--primary);">📝 विस्तृत व्याख्या एवं समाधान</h3>
             <div id="review-container"></div>
@@ -506,7 +512,8 @@ body { background-color: var(--bg-dark); color: var(--text-main); display: flex;
     </div>
 
     <script>
-        const questions = __JSON__;
+        const rawJsonString = decodeURIComponent("__SAFE_JSON__");
+        const questions = JSON.parse(rawJsonString);
         const TOTAL_Q = questions.length;
         const MARKS_PER_CORRECT = 2.00;
         const NEGATIVE_MARK = 0.66;
@@ -650,7 +657,7 @@ body { background-color: var(--bg-dark); color: var(--text-main); display: flex;
     html_out = html_template.replace("__SUBJ__", subject_title)
     html_out = html_out.replace("__AUTH__", AUTHOR_NAME)
     html_out = html_out.replace("__TID__", test_id)
-    html_out = html_out.replace("__QCNT__", str(q_count))
+    html_out = html_out.replace("__QCNT__", str(len(questions_list)))
     html_out = html_out.replace("__DUR__", str(duration_min))
-    html_out = html_out.replace("__JSON__", questions_json)
+    html_out = html_out.replace("__SAFE_JSON__", encoded_json)
     return html_out
