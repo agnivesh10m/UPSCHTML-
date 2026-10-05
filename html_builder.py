@@ -1,4 +1,5 @@
 import re
+import json
 from bs4 import BeautifulSoup
 from config import AUTHOR_NAME, CHANNEL_LINK, CHANNEL_NAME, get_ist_now
 
@@ -131,7 +132,7 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
             sec_id = f"custom-sec-{sec_idx}"
             tag['id'] = sec_id
             clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|\d+|[:\.\-\s])+', '', title_text).strip()
-            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️❄🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
+            clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️️❄🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
             if not clean_tab_name:
                 clean_tab_name = f"विषय {sec_idx}"
             if len(clean_tab_name) > 20:
@@ -271,7 +272,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
     <div class="overview-title">📌 {overview_title}</div>
     <p class="para"><strong>📅 संदर्भ काल:</strong> {display_date} (IST)</p>
     <p class="para"><strong>🎯 संकलन आयाम:</strong> 360° समग्र विश्लेषण, 2-कॉलम सारणी, मानक भौगोलिक मानचित्र एवं मुख्य परीक्षा उत्तर-लेखन फ्रेमवर्क।</p>
-    <p class="para"><strong>📰 अधिकृत स्रोत:</strong> The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS, Sanskriti IAS।</p>
+    <p class="para"><strong>📰 अधिकृत स्रोत:</strong> The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS।</p>
   </section>
   <div class="news-card">{final_body}</div>
 </main>
@@ -299,6 +300,7 @@ document.getElementById('searchBox').addEventListener('input', function() {{
 def build_vision_ias_interactive_portal(subject_title: str, test_id: str, q_count: int, questions_json: str) -> str:
     duration_min = 60 if q_count == 50 else (120 if q_count == 100 else 180)
 
+    # यह टेम्पलेट आपकी ओरिजिनल फाइल 20482_2.html के 100% समरूप है
     html_template = """<!DOCTYPE html>
 <html lang="hi">
 <head>
@@ -496,7 +498,7 @@ body { background-color: var(--bg-dark); color: var(--text-main); display: flex;
                 <div class="res-box-compact"><div class="val" id="stat-avg-time" style="color: var(--primary);">0s</div><div class="lbl">औसत/प्रश्न</div></div>
             </div>
             <div class="btn-row">
-                <button class="r-btn-small print-btn" onclick="window.print()">🖨️ Print PDF Result (50% Watermark)</button>
+                <button class="r-btn-small print-btn" onclick="window.print()">🖨️️ Print PDF Result (50% Watermark)</button>
             </div>
             <h3 style="font-size: 14px; margin-bottom: 12px; color: var(--primary);">📝 विस्तृत व्याख्या एवं समाधान</h3>
             <div id="review-container"></div>
