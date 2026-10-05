@@ -2,19 +2,33 @@ import os
 import re
 import tempfile
 import asyncio
+import time
 import edge_tts
 from google import genai
 from google.genai import types
 from config import API_KEYS
 
-MODELS_TEXT = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro"]
+# सक्रिय व सुरक्षित मॉडल प्राथमिकता
+MODELS_TEXT = ["gemini-2.5-flash", "gemini-1.5-flash"]
+current_key_idx = 0
+
+def get_active_keys():
+    keys = [k.strip() for k in API_KEYS if k.strip()]
+    if not keys:
+        env_k = os.environ.get("GEMINI_API_KEY", "").strip()
+        if env_k:
+            keys.append(env_k)
+    return keys
 
 def call_gemini_safely(prompt: str) -> str:
-    if not API_KEYS:
+    global current_key_idx
+    keys = get_active_keys()
+    if not keys:
         raise Exception("API Key सर्वर पर सेट नहीं है।")
 
     last_err = None
-    for api_k in API_KEYS:
+    for _ in range(len(keys) * 2):
+        api_k = keys[current_key_idx % len(keys)]
         client = genai.Client(api_key=api_k)
         for m_name in MODELS_TEXT:
             try:
@@ -28,18 +42,23 @@ def call_gemini_safely(prompt: str) -> str:
                     return clean_res.strip()
             except Exception as e:
                 last_err = e
+                time.sleep(0.5)
                 continue
+        current_key_idx = (current_key_idx + 1) % len(keys)
 
-    raise Exception(f"सभी API Keys और मॉडल्स का कोटा समाप्त है: {last_err}")
+    return ""
 
 def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str) -> str:
-    if not API_KEYS:
+    global current_key_idx
+    keys = get_active_keys()
+    if not keys:
         raise Exception("API Key सर्वर पर सेट नहीं है।")
 
     last_err = None
-    for api_k in API_KEYS:
+    for _ in range(len(keys) * 2):
+        api_k = keys[current_key_idx % len(keys)]
         client = genai.Client(api_key=api_k)
-        for m_name in ["gemini-3.8-flash", "gemini-3.5-flash-lite"]:
+        for m_name in MODELS_TEXT:
             try:
                 response = client.models.generate_content(
                     model=m_name,
@@ -52,24 +71,27 @@ def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str
                     return response.text.strip()
             except Exception as e:
                 last_err = e
+                time.sleep(0.5)
                 continue
-    raise Exception(f"मल्टीमॉडल विश्लेषण में त्रुटि: {last_err}")
+        current_key_idx = (current_key_idx + 1) % len(keys)
+
+    return "मूल्यांकन करने में समस्या आई। कृपया पुनः प्रयास करें।"
 
 def call_gemini_audio_transcribe(file_bytes: bytes, mime_type: str = "audio/ogg") -> str:
     prompt = "इस ऑडियो में उम्मीदवार द्वारा बोले गए शब्दों को ध्यानपूर्वक सुनकर 100% शुद्ध हिंदी में लिखें। केवल बोले गए शब्द लिखें, कोई अन्य टिप्पणी न जोड़ें।"
-    return call_gemini_multimodal_inline(prompt, file_bytes, mime_type)
+    res = call_gemini_multimodal_inline(prompt, file_bytes, mime_type)
+    return res if res else "ऑडियो पढ़ा नहीं जा सका।"
 
 async def download_audio_stream(text: str) -> bytes:
-    """UPSC साक्षात्कार बोर्ड अध्यक्ष की गंभीर पुरुष (Male) आवाज़ - MadhurNeural"""
+    """UPSC साक्षात्कार बोर्ड अध्यक्ष एवं मेंटर की गंभीर पुरुष आवाज़ - MadhurNeural"""
     temp_path = None
     try:
-        clean_text = re.sub(r'[\*\_#`]', '', text).strip()
-        clean_text = re.sub(r'\s+', ' ', clean_text)
+        clean_text = re.sub(r'[\*\_#`<>]', '', text).strip()
+        clean_text = re.sub(r'\s+', ' ', clean_text)[:380]
         if not clean_text:
             return b""
 
-        # गंभीर पुरुष आवाज़: hi-IN-MadhurNeural
-        communicate = edge_tts.Communicate(clean_text, "hi-IN-MadhurNeural", rate="+0%", pitch="+0Hz")
+        communicate = edge_tts.Communicate(clean_text, "hi-IN-MadhurNeural", rate="-2%", pitch="+0Hz")
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
             temp_path = fp.name
