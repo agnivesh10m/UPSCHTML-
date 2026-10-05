@@ -787,50 +787,51 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}")
 
-# ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) मानचित्र, आरेख एवं वॉयस उत्तर सपोर्ट =================
+# ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) 100% फुलप्रूफ व लाइव प्रोग्रेस =================
 @ensure_auth
 async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     keyboard = [
-        [InlineKeyboardButton("📜 विगत वर्ष का प्रश्न (PYQ 2013-2026)", callback_data="ca_type_pyq")],
-        [InlineKeyboardButton("✍️ नया / मॉडल प्रश्न (New Expected)", callback_data="ca_type_custom")],
-        [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")]
+        ["📜 विगत वर्ष का प्रश्न (PYQ 2013-2026)"],
+        ["✍️ नया / मॉडल प्रश्न (New Expected)"],
+        ["🔙 वापस जाएँ (Back)"]
     ]
     await update.message.reply_text(
         "📝 <b>UPSC मुख्य परीक्षा उत्तर पुस्तिका मूल्यांकन</b>\n\n"
-        "👉 <b>चरण 1/2:</b> आप किस प्रकार के प्रश्न की जांच करवाना चाहते हैं?",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        "👉 <b>चरण 1/2:</b> आप किस प्रकार के प्रश्न की जांच करवाना चाहते हैं? (नीचे दिए गए बटन पर टैप करें):",
+        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
         parse_mode=ParseMode.HTML
     )
     return CA_CHOOSE_TYPE
 
-async def handle_ca_type_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    user_id = query.from_user.id
+async def handle_ca_type_choice_msg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    txt = update.message.text.strip()
+    user_id = update.effective_user.id
 
-    if data == "root_back":
-        await query.message.delete()
+    if "वापस जाएँ" in txt or "Back" in txt:
+        await update.message.reply_text("मुख्य मेनू पर वापस आ गए हैं।", reply_markup=ReplyKeyboardRemove())
         await start_handler(update, context)
         return ConversationHandler.END
 
-    is_pyq = (data == "ca_type_pyq")
+    is_pyq = ("PYQ" in txt or "विगत वर्ष" in txt)
     CHECK_ANSWER_CACHE[user_id] = {"is_pyq": is_pyq}
 
-    if is_pyq:
-        guide_text = (
-            "📜 <b>विगत वर्ष का प्रश्न (PYQ 2013-2026):</b>\n\n"
-            "👉 <b>कृपया अपना प्रश्न लिखकर, बोलकर (वॉयस) या फ़ोटो खींचकर भेजें:</b>\n\n"
-            "<i>💡 AI मुख्य परीक्षक प्रश्न को पहचानकर उसके वास्तविक वर्ष और आधिकारिक अंकों (10 या 15 अंक) का स्वतः निर्धारण करेगा।</i>"
-        )
-    else:
-        guide_text = (
-            "✍️ <b>नया / मॉडल प्रश्न (New Expected):</b>\n\n"
-            "👉 <b>कृपया अपना प्रश्न लिखकर, बोलकर (वॉयस) या फ़ोटो खींचकर भेजें:</b>\n\n"
-            "<i>💡 AI मुख्य परीक्षक प्रश्न की प्रकृति और शब्द-सीमा के आधार पर अंकों का स्वतः निर्धारण करेगा।</i>"
-        )
+    prompt_msg = (
+        "📜 <b>विगत वर्ष का प्रश्न (PYQ 2013-2026):</b>\n\n"
+        "👉 <b>अब अपना प्रश्न भेजें:</b>\n"
+        "• टेक्स्ट लिखकर भेजें\n"
+        "• या बोलकर वॉयस नोट रिकॉर्ड करें\n"
+        "• या प्रश्न की फ़ोटो भेजें!\n\n"
+        "<i>💡 AI मुख्य परीक्षक प्रश्न को पहचानकर उसके वास्तविक वर्ष और आधिकारिक अंकों (10 या 15 अंक) का स्वतः निर्धारण करेगा।</i>"
+    ) if is_pyq else (
+        "✍️ <b>नया / मॉडल प्रश्न (New Expected):</b>\n\n"
+        "👉 <b>अब अपना प्रश्न भेजें:</b>\n"
+        "• टेक्स्ट लिखकर भेजें\n"
+        "• या बोलकर वॉयस नोट रिकॉर्ड करें\n"
+        "• या प्रश्न की फ़ोटो भेजें!\n\n"
+        "<i>💡 AI मुख्य परीक्षक प्रश्न की प्रकृति और शब्द-सीमा के आधार पर अंकों का स्वतः निर्धारण करेगा।</i>"
+    )
 
-    await query.message.reply_text(guide_text, parse_mode=ParseMode.HTML)
+    await update.message.reply_text(prompt_msg, reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
     return CA_QUESTION_INPUT
 
 async def handle_ca_question_input_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -839,14 +840,14 @@ async def handle_ca_question_input_step(update: Update, context: ContextTypes.DE
 
     if msg.text and msg.text.strip().lower() in ["/cancel", "cancel", "रद्द"]:
         CHECK_ANSWER_CACHE.pop(user_id, None)
-        await msg.reply_text("मूल्यांकन प्रक्रिया रद्द कर दी गई।")
+        await msg.reply_text("मूल्यांकन प्रक्रिया रद्द कर दी गई।", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     q_content = ""
     if msg.text:
         q_content = msg.text.strip()
     elif msg.voice or msg.audio:
-        wait_m = await msg.reply_text("🎧 प्रश्न का ऑडियो सुना जा रहा है...")
+        wait_m = await msg.reply_text("⏳ [■■■□□□□□□□] 30% प्रश्न का ऑडियो सुना जा रहा है...")
         try:
             f_obj = await (msg.voice or msg.audio).get_file()
             f_bytes = await f_obj.download_as_bytearray()
@@ -856,7 +857,7 @@ async def handle_ca_question_input_step(update: Update, context: ContextTypes.DE
             await wait_m.edit_text(f"❌ ऑडियो पढ़ने में त्रुटि: {e}। कृपया लिखकर भेजें।")
             return CA_QUESTION_INPUT
     elif msg.photo:
-        wait_m = await msg.reply_text("🖼️ प्रश्न की फ़ोटो स्कैन की जा रही है...")
+        wait_m = await msg.reply_text("⏳ [■■■□□□□□□□] 30% प्रश्न की फ़ोटो स्कैन की जा रही है...")
         try:
             f_obj = await msg.photo[-1].get_file()
             f_bytes = await f_obj.download_as_bytearray()
@@ -878,7 +879,7 @@ async def handle_ca_question_input_step(update: Update, context: ContextTypes.DE
         "👉 <b>चरण 2/2: अब अपना उत्तर भेजें:</b>\n"
         "• अपनी लिखी हुई <b>उत्तर-पुस्तिका की साफ़ फ़ोटो या PDF</b> भेजें\n"
         "• या अपना उत्तर सीधे <b>वॉयस नोट (बोलकर)</b> रिकॉर्ड करके भेजें!\n\n"
-        "<i>💡 परीक्षक उत्तर में बने मानचित्रों, आरेखों, फ़्लोचार्ट्स, डेटा और कमियों की गहन जांच करेगा।</i>",
+        "<i>💡 मुख्य परीक्षक उत्तर में बने मानचित्रों, आरेखों, फ़्लोचार्ट्स, डेटा और कमियों की अत्यंत सख्त जांच करेगा।</i>",
         parse_mode=ParseMode.HTML
     )
     return CA_ANSWER_COPY
@@ -890,7 +891,7 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
     q_text = sess.get("question", "UPSC मुख्य परीक्षा प्रश्न")
     is_pyq = sess.get("is_pyq", False)
 
-    wait_m = await msg.reply_text("🔍 <b>संघ लोक सेवा आयोग के मुख्य परीक्षक द्वारा उत्तर (मानचित्र, आरेख व सामग्री) का गहन मूल्यांकन जारी है...</b>", parse_mode=ParseMode.HTML)
+    wait_m = await msg.reply_text("⏳ [■■□□□□□□□□] 20% उत्तर पुस्तिका प्राप्त हुई, सामग्री लोड हो रही है...", parse_mode=ParseMode.HTML)
 
     pyq_note = "यह UPSC विगत वर्षों (2013-2026) का प्रश्न है। प्रश्न को पहचानकर उसके वास्तविक वर्ष और आधिकारिक अंकों (10 अंक या 15 अंक) के आधार पर ही सटीक अंक दें।" if is_pyq else "प्रश्न के स्तर और शब्द-सीमा का स्वयं विश्लेषण करके तय करें कि यह 10 अंक का प्रश्न है या 15 अंक का।"
 
@@ -916,8 +917,9 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
 केवल और केवल शुद्ध, गरिमापूर्ण एवं अकादमिक हिंदी में उत्तर दें।
 """
     try:
+        await wait_m.edit_text("⏳ [■■■■■□□□□□] 50% हस्तलेखन, मानचित्र व तार्किक संरचना का स्कैनिंग जारी...")
+
         clean_eval = ""
-        # 1. यदि छात्र ने वॉयस में उत्तर दिया है
         if msg.voice or msg.audio:
             f_obj = await (msg.voice or msg.audio).get_file()
             f_bytes = await f_obj.download_as_bytearray()
@@ -925,8 +927,6 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
             full_prompt = f"{prompt}\n\nउम्मीदवार का मौखिक उत्तर (Transcribed Answer):\n\"{candidate_ans}\""
             eval_result = await asyncio.to_thread(call_gemini_safely, full_prompt)
             clean_eval = clean_all_markdown_and_fix_content(eval_result)
-
-        # 2. यदि छात्र ने फ़ोटो या PDF भेजी है
         else:
             m_type = "application/pdf" if (msg.document and msg.document.file_name.lower().endswith('.pdf')) else "image/jpeg"
             doc_obj = msg.document or (msg.photo[-1] if msg.photo else None)
@@ -935,6 +935,7 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
             eval_result = await asyncio.to_thread(call_gemini_multimodal_inline, prompt, bytes(f_bytes), m_type)
             clean_eval = clean_all_markdown_and_fix_content(eval_result)
 
+        await wait_m.edit_text("⏳ [■■■■■■■■■□] 90% मूल्य संवर्धन एवं अंतिम अंक तालिका तैयार हो रही है...")
         await wait_m.delete()
 
         if len(clean_eval) > 3800:
@@ -993,7 +994,7 @@ async def handle_ask_continuous_message(update: Update, context: ContextTypes.DE
         )
         return WAITING_ASK_SESSION
 
-    wait_msg = await update.message.reply_text("🤔 UPSC परिप्रेक्ष्य में बिंदुवार विश्लेषण तैयार हो रहा है...")
+    wait_msg = await update.message.reply_text("⏳ [■■■■□□□□□□] 40% UPSC परिप्रेक्ष्य में बिंदुवार विश्लेषण तैयार हो रहा है...")
     try:
         prompt = f"""
 आप UPSC मेंटर हैं। निम्नलिखित विषय का बिंदुवार, सटीक एवं संतुलित प्रशासनिक विश्लेषण दें:
@@ -1003,12 +1004,12 @@ async def handle_ask_continuous_message(update: Update, context: ContextTypes.DE
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_reply = clean_all_markdown_and_fix_content(reply_text)
 
+        await wait_msg.delete()
         if len(clean_reply) > 3800:
-            await wait_msg.delete()
             for p in [clean_reply[i:i+3800] for i in range(0, len(clean_reply), 3800)]:
                 await update.message.reply_text(p, parse_mode=ParseMode.HTML)
         else:
-            await wait_msg.edit_text(clean_reply, parse_mode=ParseMode.HTML)
+            await update.message.reply_text(clean_reply, parse_mode=ParseMode.HTML)
     except Exception as e:
         await wait_msg.edit_text(f"❌ उत्तर संकलित करने में समस्या: {e}")
         
@@ -1051,7 +1052,7 @@ async def handle_trending_type_selection(update: Update, context: ContextTypes.D
         scope_str = f"वर्ष {current_year}"
         prompt = f"वर्ष {current_year} के 9 सबसे बड़े राष्ट्रीय व वैश्विक ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
 
-    wait_m = await query.message.reply_text(f"🛰 <b>{scope_str}</b> के ट्रेंडिंग मुद्दों का रडार संकलन जारी...", parse_mode=ParseMode.HTML)
+    wait_m = await query.message.reply_text(f"🛰 [■■■■□□□□□□] 40% <b>{scope_str}</b> के ट्रेंडिंग मुद्दों का रडार संकलन जारी...", parse_mode=ParseMode.HTML)
     try:
         raw_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_lines = [re.sub(r'^\*+\s*', '', l.strip()) for l in raw_text.split('\n') if l.strip() and len(l.strip()) > 5 and not l.startswith('#')]
@@ -1131,7 +1132,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓 <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= DYNAMIC GENERATION PROCESSOR =================
+# ================= DYNAMIC GENERATION PROCESSOR (लाइव स्टेटस बार सहित) =================
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1163,7 +1164,7 @@ async def process_dynamic_generation(user_id, data, context):
         else:
             wait_m = await context.bot.send_message(
                 chat_id=user_id, 
-                text=f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n🔄 The Hindu, Indian Express, PIB, Yojana, Vision IAS व Drishti IAS से 360° संकलन जारी...",
+                text=f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■□□□□□□□□] 20% The Hindu, PIB व Drishti से डेटा संकलन प्रारंभ...",
                 parse_mode=ParseMode.HTML
             )
             prompt = f"""
@@ -1182,9 +1183,12 @@ async def process_dynamic_generation(user_id, data, context):
 भाषा केवल और केवल शुद्ध, मानक एवं अकादमिक हिंदी रखें। मार्कडाउन स्टार्स का प्रयोग न करें।
 """
             try:
+                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■□□□□] 60% 360° विश्लेषण व मैपिंग फ्रेमवर्क तैयार हो रहा है...", parse_mode=ParseMode.HTML)
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
                 topic = f"दैनिक समसामयिक महा-संकलन — {target_date}"
                 filename = f"UPSC_Notes_{target_date.replace('-', '')}.html"
+                
+                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■■■■□] 90% मास्टर HTML फाइल असेंबल हो रही है...", parse_mode=ParseMode.HTML)
                 html_content = build_standalone_master_html(topic, ai_text, date_str=target_date)
                 save_to_archive("daily", topic, html_content, target_date)
                 await wait_m.delete()
@@ -1194,7 +1198,7 @@ async def process_dynamic_generation(user_id, data, context):
 
     elif data.startswith("genmonth_"):
         m_name = data.split("_")[1]
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"📁 <b>{m_name}</b> का संपूर्ण विस्तृत मासिक कंपाइलेशन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await context.bot.send_message(chat_id=user_id, text=f"📁 <b>{m_name}</b>\n⏳ [■■■□□□□□□□] 30% मासिक डाइजेस्ट संकलित हो रहा है...", parse_mode=ParseMode.HTML)
         prompt = f"""
 माह: '{m_name}' का सम्पूर्ण, 360° और अत्यंत विस्तृत UPSC Monthly Digest तैयार करें।
 स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS।
@@ -1208,6 +1212,7 @@ async def process_dynamic_generation(user_id, data, context):
 केवल शुद्ध हिंदी में लिखें।
 """
         try:
+            await wait_m.edit_text(f"📁 <b>{m_name}</b>\n⏳ [■■■■■■■□□□] 70% GS 1-3 व प्रीलिम्स MCQs का संश्लेषण जारी...", parse_mode=ParseMode.HTML)
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
             topic = f"UPSC Monthly Digest — {m_name}"
             filename = f"UPSC_Monthly_{m_name.replace(' ', '_')}.html"
@@ -1219,7 +1224,7 @@ async def process_dynamic_generation(user_id, data, context):
 
     elif data.startswith("genyear_"):
         y_name = data.split("_")[1]
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ वर्ष <b>{y_name}</b> का संपूर्ण वार्षिक महा-संकलन (PT-365 Style) तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ वर्ष <b>{y_name}</b>\n[■■■□□□□□□□] 30% वार्षिक महा-संकलन (PT-365) तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         prompt = f"""
 वर्ष {y_name} का UPSC CSE हेतु अत्यंत विस्तृत और संपूर्ण Annual Compendium (PT-365 Style) तैयार करें।
 स्रोत: The Hindu, Indian Express, PIB, Vision IAS, Drishti IAS।
@@ -1227,6 +1232,7 @@ async def process_dynamic_generation(user_id, data, context):
 केवल शुद्ध हिंदी में लिखें।
 """
         try:
+            await wait_m.edit_text(f"⏳ वर्ष <b>{y_name}</b>\n[■■■■■■■□□□] 70% प्रमुख राष्ट्रीय व वैश्विक घटनाक्रमों का संकलन जारी...", parse_mode=ParseMode.HTML)
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
             topic = f"UPSC Annual Compendium — {y_name}"
             filename = f"UPSC_Annual_{y_name}.html"
@@ -1239,7 +1245,7 @@ async def process_dynamic_generation(user_id, data, context):
     elif data.startswith("genweek_"):
         parts = data.split("_")
         w_date = parts[2]
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ साप्ताहिक संकलन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ [■■■■□□□□□□] 40% साप्ताहिक संकलन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
         prompt = f"""
 सप्ताह संदर्भ: '{w_date}' का संपूर्ण साप्ताहिक UPSC क्विक रिवीजन नोट्स तैयार करें।
 स्रोत: The Hindu, PIB, Indian Express, Vision IAS।
@@ -1288,7 +1294,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if user_input == "all" and cached_list:
         raw_trend = "\n".join(cached_list)
-        wait_m = await msg.reply_text("⏳ <b>सभी ट्रेंडिंग मुद्दों</b> के विस्तृत 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+        wait_m = await msg.reply_text("⏳ [■■■■□□□□□□] 40% सभी ट्रेंडिंग मुद्दों के 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
         prompt = f"नीचे दिए गए सभी ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स तैयार करें:\n{raw_trend}\nकेवल शुद्ध हिंदी में लिखें।"
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
@@ -1319,7 +1325,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if re.match(r'^(\d+)(\s*,\s*\d+)*$', user_input) and cached_list:
         nums = [n.strip() for n in user_input.split(',')]
-        wait_m = await msg.reply_text(f"⏳ चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विस्तृत विश्लेषण तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+        wait_m = await msg.reply_text(f"⏳ [■■■■□□□□□□] 40% चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विश्लेषण जारी...", parse_mode=ParseMode.HTML)
         raw_trend = "\n".join(cached_list)
         prompt = f"सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC हेतु 360° विश्लेषण तैयार करें:\n{raw_trend}\nकेवल हिंदी में लिखें।"
         try:
@@ -1363,7 +1369,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
     if not doc or not doc.file_name.lower().endswith(".pdf"):
         return
 
-    wait_m = await msg.reply_text("📥 PDF सामग्री निकाली जा रही है व UPSC 360° HTML नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+    wait_m = await msg.reply_text("📥 [■■■■□□□□□□] 40% PDF सामग्री निकाली जा रही है व UPSC 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
     try:
         f_obj = await doc.get_file()
         f_bytes = await f_obj.download_as_bytearray()
@@ -1736,7 +1742,7 @@ async def main():
     answer_check_conv = ConversationHandler(
         entry_points=[CommandHandler("checkanswer", check_answer_cmd)],
         states={
-            CA_CHOOSE_TYPE: [CallbackQueryHandler(handle_ca_type_choice, pattern=r"^ca_type_|^root_back")],
+            CA_CHOOSE_TYPE: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_ca_type_choice_msg)],
             CA_QUESTION_INPUT: [MessageHandler((filters.TEXT | filters.VOICE | filters.AUDIO | filters.PHOTO) & (~filters.COMMAND), handle_ca_question_input_step)],
             CA_ANSWER_COPY: [MessageHandler((filters.PHOTO | filters.Document.ALL | filters.VOICE | filters.AUDIO) & (~filters.COMMAND), handle_ca_answer_copy_submission)]
         },
