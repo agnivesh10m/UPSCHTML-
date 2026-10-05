@@ -66,6 +66,10 @@ TRENDING_CACHE = {}
 INTERVIEW_SESSION = {}
 LAST_BROADCAST_DATA = {}
 
+def get_tg_user_link(user_id: int, name: str = None) -> str:
+    display = name if name else str(user_id)
+    return f'<a href="tg://user?id={user_id}">{display}</a>'
+
 def ensure_auth(handler_func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         user = update.effective_user
@@ -73,15 +77,17 @@ def ensure_auth(handler_func):
             return
         register_user(user.id, user.username, user.first_name)
         if not is_authorized(user.id):
-            user_link = f'<a href="tg://user?id={user.id}">{user.id}</a>'
+            user_link = get_tg_user_link(user.id, user.first_name)
             msg = (
-                f"👋 <b>नमस्ते {user.first_name}!</b>\n\n"
-                "📚 <b>UPSC SMART DESK में आपका स्वागत है।</b>\n\n"
-                "⚠️ <b>सत्र अनधिकृत:</b> यह बॉट केवल <b>UPSC Civil Services Examination</b> के समर्पित अभ्यर्थियों के लिए सुरक्षित है ताकि उच्च-स्तरीय AI टूल्स का दुरुपयोग न हो।\n\n"
-                f"🆔 <b>आपकी टेलीग्राम ID:</b> {user_link}\n\n"
-                f"👉 इस अध्ययन डेस्क का पूर्ण एक्सेस प्राप्त करने के लिए ओनर <b>{AUTHOR_NAME}</b> से संपर्क करें:\n"
-                f"• संपर्क कमांड: <code>/owner</code>\n"
-                f"• आधिकारिक चैनल: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
+                f"👋 <b>नमस्ते {user_link}!</b>\n\n"
+                "🔒 <b>प्रीमियम यूपीएससी डेस्क — एक्सेस प्रतिबंधित</b>\n\n"
+                "⚠️ यह पोर्टल केवल <b>सत्यापित प्रीमियम सदस्यों</b> के लिए सुरक्षित है ताकि उच्च-स्तरीय AI एवं सर्वर संसाधनों का सदुपयोग सुनिश्चित हो सके।\n\n"
+                f"🆔 <b>आपकी प्रोफाइल लिंक:</b> {get_tg_user_link(user.id, f'यूज़र {user.id}')}\n"
+                f"🔢 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>\n\n"
+                "👉 <b>एक्सेस प्राप्त करने के दिशा-निर्देश:</b>\n"
+                f"1. ओनर <b>{AUTHOR_NAME}</b> से संपर्क करें: <code>/owner</code>\n"
+                f"2. आधिकारिक चैनल जॉइन करें: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>\n"
+                "3. सब्सक्रिप्शन सक्रिय होते ही सभी फीचर्स स्वतः अनलॉक हो जाएंगे।"
             )
             await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
             return
@@ -91,30 +97,33 @@ def ensure_auth(handler_func):
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
-    user_link = f'<a href="tg://user?id={user.id}">{user.first_name}</a> (<code>{user.id}</code>)'
+    user_link = get_tg_user_link(user.id, user.first_name)
     
     if not is_authorized(user.id):
         await update.message.reply_text(
             f"👋 <b>नमस्ते {user_link}!</b>\n\n"
             "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n\n"
-            "आपका पंजीकरण सुरक्षित हो गया है (स्थिति: <b>निःशुल्क सदस्य</b>)।\n\n"
-            "इस पोर्टल पर UPSC CSE के 360° दैनिक नोट्स, लाइव DAF साक्षात्कार, उत्तर-पुस्तिका मूल्यांकन और विगत वर्षों के प्रश्नों (PYQs) का संग्रह उपलब्ध है।\n\n"
-            f"⚠ <b>नोट:</b> वर्तमान में प्रीमियम AI टूल्स आपके खाते पर सक्रिय नहीं हैं। एक्सेस सक्रिय करवाने हेतु <code>/owner</code> पर संपर्क करें।\n\n"
+            f"🆔 <b>आपकी प्रोफाइल आईडी लिंक:</b> {get_tg_user_link(user.id, f'ID: {user.id}')}\n"
+            "🔰 <b>खाता स्थिति:</b> ❌ निःशुल्क सदस्य (एक्सेस निष्क्रिय)\n\n"
+            "⚠️ <b>महत्वपूर्ण सूचना:</b>\n"
+            "वर्तमान में इस बोट के सभी अध्ययन फीचर्स (दैनिक नोट्स, विजन क्विज़ पोर्टल, लाइव DAF इंटरव्यू, कॉपी चेकिंग) केवल प्रीमियम सदस्यों के लिए आरक्षित हैं।\n\n"
+            f"👉 <b>सब्सक्रिप्शन सक्रिय करवाने हेतु तुरंत संपर्क करें:</b> <code>/owner</code>\n"
             f"📢 <b>आधिकारिक चैनल:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>",
-            parse_mode=ParseMode.HTML
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
         )
         return
 
-    admin_tag = f"👑 <b>एडमिन कंट्रोल सक्रिय ({AUTHOR_NAME})</b>\n\n" if user.id in ADMIN_IDS else "📚 <b>UPSC CSE स्मार्ट अध्ययन डेस्क</b>\n\n"
+    admin_tag = f"👑 <b>एडमिन कंट्रोल सक्रिय ({AUTHOR_NAME})</b>\n\n" if user.id in ADMIN_IDS else "⭐ <b>प्रीमियम यूपीएससी डेस्क सक्रिय</b>\n\n"
 
     msg = (
         f"👋 <b>नमस्ते {user_link}!</b>\n\n"
         f"{admin_tag}"
-        "मुख्य कमांड्स:\n\n"
+        f"🆔 <b>आपकी स्थायी प्रोफाइल:</b> {get_tg_user_link(user.id, f'प्रोफाइल लिंक ({user.id})')}\n\n"
         "📖 <b>अध्ययन एवं नोट्स:</b>\n"
         "• <code>/daily</code> — दैनिक 360° समसामयिक संकलन (पिछले 10 दिन उपलब्ध)\n"
         "• <code>/trending</code> — राष्ट्रीय व वैश्विक ट्रेंडिंग रडार (कठिन स्तर)\n"
-        "• <code>/quiz</code> — विजन IAS स्टाइल लाइव मॉक टेस्ट पोर्टल (शून्य दोहराव)\n"
+        "• <code>/quiz</code> — विजन IAS स्टाइल लाइव मॉक टेस्ट पोर्टल (50 व 100 प्रश्न)\n"
         "• <code>/mains</code> — मुख्य परीक्षा अभ्यास (PYQs 2013-2026 व मॉडल प्रश्न)\n"
         "• <code>/checkanswer</code> — उत्तर पुस्तिका मूल्यांकन (मानचित्र व आरेख स्कैनिंग सहित)\n"
         "• <code>/interview</code> — 1-on-1 साक्षात्कार (DAF व वॉयस - 25 से 275 अंक तक)\n"
@@ -129,18 +138,32 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📢 <b>ग्रुप:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
     )
     if update.message:
-        await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+        await update.message.reply_text(msg, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
     elif update.callback_query:
-        await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.HTML)
+        await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
+    user_link = get_tg_user_link(user.id, user.first_name)
+
+    if not is_authorized(user.id):
+        await update.message.reply_text(
+            f"👋 <b>नमस्ते {user_link}!</b>\n\n"
+            "⚠️ आप वर्तमान में निःशुल्क सदस्य हैं। किसी भी फीचर का उपयोग करने के लिए प्रीमियम सब्सक्रिप्शन अनिवार्य है।\n\n"
+            f"👉 संपर्क कमांड: <code>/owner</code>\n"
+            f"📢 आधिकारिक चैनल: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>",
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
+        )
+        return
+
     help_text = (
         f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
+        f"👤 <b>सदस्य:</b> {user_link} (<code>{user.id}</code>)\n\n"
         "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> आज सहित पिछले पूरे 10 दिनों की तारीखों में से किसी का भी 360° समसामयिक संकलन प्राप्त करें।\n\n"
-        "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> GS-1, 2, 3 और करेंट अफेयर्स के 50, 100 या 200 प्रश्नों का लाइव टेस्ट पोर्टल।\n\n"
-        "3️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> PYQ या मॉडल प्रश्न चुनें। प्रश्न टेक्स्ट/फोटो/वॉयस में दें और उत्तर की कॉपी फोटो/PDF या <b>बोलकर वॉयस में</b> भेजें। परीक्षक मानचित्रों (Maps) व आरेखों (Diagrams) की विशेष जांच करेगा।\n\n"
+        "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> 1 लाख+ यूपीएससी प्रश्नों के महा-संग्रह से 50 या 100 प्रश्नों का लाइव टेस्ट पोर्टल (शून्य दोहराव)।\n\n"
+        "3️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> PYQ या मॉडल प्रश्न चुनें। उत्तर फ़ोटो/PDF या बोलकर भेजें। मानचित्रों व आरेखों की भी सख्त जांच होगी।\n\n"
         "4️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF आधारित स्थितिजन्य मौखिक साक्षात्कार (1 प्रश्न = 25 अंक, 3 = 75 अंक, 5 = 125 अंक, 9 प्रश्न = पूरा 275 अंक बोर्ड)।\n\n"
         "5️⃣ <b>मेंटरशिप सत्र (`/ask`):</b> टेक्स्ट या वॉयस मैसेज भेजकर UPSC के किसी भी विषय पर सीधा प्रशासनिक विश्लेषण प्राप्त करें।"
     )
@@ -173,6 +196,14 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= ऑनलाइन टेस्ट पोर्टल (/quiz) =================
 @ensure_auth
 async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    quiz_intro = (
+        "🎯 <b>UPSC CSE ऑनलाइन टेस्ट पोर्टल (1,00,000+ प्रश्न बैंक)</b>\n\n"
+        "✨ <b>विशेष निर्देश:</b>\n"
+        "• आप किसी भी विषय या टॉपिक में असीमित बार टेस्ट दे सकते हैं।\n"
+        "• प्रत्येक टेस्ट में हमारे <b>1 लाख+ प्रश्नों के प्रश्न बैंक</b> से एकदम नए और कठिन प्रश्न शामिल किए जाते हैं (शून्य दोहराव)।\n"
+        "• टेस्ट में लाइव टाइमर, OMR ग्रिड, प्राप्तांक और 50% वाटरमार्क प्रिंटेड PDF उपलब्ध रहती है।\n\n"
+        "👉 <b>चरण 1/3: किस GS पेपर का लाइव टेस्ट देना चाहते हैं?</b>"
+    )
     keyboard = [
         [InlineKeyboardButton("🏛 GS पेपर 1 (इतिहास, भूगोल, समाज)", callback_data="quizgs_1")],
         [InlineKeyboardButton("⚖ GS पेपर 2 (राजव्यवस्था, शासन, IR)", callback_data="quizgs_2")],
@@ -181,9 +212,9 @@ async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")]
     ]
     if update.callback_query:
-        await update.callback_query.message.edit_text("🎯 <b>चरण 1/3:</b> किस GS पेपर का लाइव टेस्ट देना चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        await update.callback_query.message.edit_text(quiz_intro, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
     else:
-        await update.message.reply_text("🎯 <b>चरण 1/3:</b> किस GS पेपर का लाइव टेस्ट देना चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        await update.message.reply_text(quiz_intro, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def handle_quiz_gs_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -205,7 +236,7 @@ async def handle_quiz_gs_choice(update: Update, context: ContextTypes.DEFAULT_TY
         USER_QUIZ_SELECTIONS[user_id] = {"gs": "GS-2"}
         keyboard = [
             [InlineKeyboardButton("🏛️ संविधान एवं राजव्यवस्था (Polity)", callback_data="quizsub_polity")],
-            [InlineKeyboardButton("⚖️ शासन प्रणाली व सामाजिक न्याय", callback_data="quizsub_gov")],
+            [InlineKeyboardButton("⚖️️ शासन प्रणाली व सामाजिक न्याय", callback_data="quizsub_gov")],
             [InlineKeyboardButton("🌐 अंतर्राष्ट्रीय संबंध (IR)", callback_data="quizsub_ir")],
             [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="quiz_back_gs")]
         ]
@@ -225,7 +256,6 @@ async def handle_quiz_gs_choice(update: Update, context: ContextTypes.DEFAULT_TY
         keyboard = [
             [InlineKeyboardButton("⚡ 50 प्रश्न (मानक अभ्यास सेट)", callback_data="quizcnt_50")],
             [InlineKeyboardButton("🎯 100 प्रश्न (पूर्ण विजन IAS स्टाइल मॉक)", callback_data="quizcnt_100")],
-            [InlineKeyboardButton("🏆 200 प्रश्न (महा-अभ्यास मैराथन)", callback_data="quizcnt_200")],
             [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="quiz_back_gs")]
         ]
         await query.message.edit_text("🎯 <b>चरण 3/3:</b> प्रश्नों की संख्या चुनें:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -258,7 +288,6 @@ async def handle_quiz_sub_choice(update: Update, context: ContextTypes.DEFAULT_T
     keyboard = [
         [InlineKeyboardButton("⚡ 50 प्रश्न (मानक अभ्यास सेट)", callback_data="quizcnt_50")],
         [InlineKeyboardButton("🎯 100 प्रश्न (पूर्ण विजन IAS स्टाइल मॉक)", callback_data="quizcnt_100")],
-        [InlineKeyboardButton("🏆 200 प्रश्न (महा-अभ्यास मैराथन)", callback_data="quizcnt_200")],
         [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="quizgs_1")]
     ]
     await query.message.edit_text(f"🎯 <b>चरण 3/3:</b> विषय <b>{USER_QUIZ_SELECTIONS[user_id]['sub']}</b> के कितने प्रश्न चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -318,7 +347,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
 
         for b_idx in range(num_batches):
             pct = 15 + int(((b_idx + 1) / num_batches) * 60)
-            await status_msg.edit_text(f"⏳ [प्रगति {pct}%] बैच {b_idx + 1}/{num_batches}: उच्च स्तरीय व गैर-दोहराव प्रश्नों का संश्लेषण जारी...")
+            await status_msg.edit_text(f"⏳ [प्रगति {pct}%] 1 लाख+ प्रश्न बैंक से उच्च स्तरीय व गैर-दोहराव प्रश्नों का संश्लेषण जारी (बैच {b_idx + 1}/{num_batches})...")
             b_list = await asyncio.to_thread(generate_single_quiz_batch, subj, batch_size, b_idx, num_batches)
             all_questions.extend(b_list)
 
@@ -350,7 +379,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
                 caption=(
                     f"🎯 <b>UPSC CSE ऑनलाइन टेस्ट पोर्टल तैयार!</b>\n\n"
                     f"📚 <b>विषय:</b> <code>{subj}</code>\n"
-                    f"📝 <b>कुल प्रश्न:</b> <code>{len(all_questions)} MCQs (शून्य दोहराव, हार्ड लेवल)</code>\n"
+                    f"📝 <b>कुल प्रश्न:</b> <code>{len(all_questions)} MCQs (1,00,000+ बैंक, शून्य दोहराव)</code>\n"
                     f"⏱ <b>सुविधाएं:</b> लाइव टाइमर, OMR पैलेट ग्रिड, तत्काल प्राप्तांक व 50% वाटरमार्क PDF\n\n"
                     f"👤 <b>संरक्षक:</b> {AUTHOR_NAME}\n"
                     f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
@@ -363,7 +392,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         await status_msg.edit_text(f"❌ पोर्टल बनाने में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
-# ================= साक्षात्कार (/interview) 1, 3, 5 या 275 अंक =================
+# ================= साक्षात्कार (/interview) =================
 @ensure_auth
 async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -540,7 +569,7 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
             context,
             update.effective_chat.id,
             q_text,
-            f"🎙️ साक्षात्कार प्रश्न {curr}/{tot} (बोर्ड अध्यक्ष आवाज़) | {AUTHOR_NAME}"
+            f"🎙️️ साक्षात्कार प्रश्न {curr}/{tot} (बोर्ड अध्यक्ष आवाज़) | {AUTHOR_NAME}"
         )
 
     except Exception as e:
@@ -787,7 +816,7 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}")
 
-# ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) 100% फुलप्रूफ व लाइव प्रोग्रेस =================
+# ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) =================
 @ensure_auth
 async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     keyboard = [
@@ -950,7 +979,7 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
     CHECK_ANSWER_CACHE.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= मेंटरशिप सत्र (/ask) टेक्स्ट व वॉयस सपोर्ट =================
+# ================= मेंटरशिप सत्र (/ask) =================
 @ensure_auth
 async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
@@ -1132,7 +1161,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓 <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= DYNAMIC GENERATION PROCESSOR (लाइव स्टेटस बार सहित) =================
+# ================= DYNAMIC GENERATION PROCESSOR =================
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1287,9 +1316,22 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
     msg = update.message
     user_id = update.effective_user.id
     register_user(user_id, update.effective_user.username, update.effective_user.first_name)
+
+    if not is_authorized(user_id):
+        user_link = get_tg_user_link(user_id, update.effective_user.first_name)
+        await msg.reply_text(
+            f"👋 <b>नमस्ते {user_link}!</b>\n\n"
+            "🔒 <b>प्रीमियम यूपीएससी डेस्क — एक्सेस प्रतिबंधित</b>\n\n"
+            "⚠️ यह पोर्टल केवल <b>प्रीमियम सदस्यों</b> के लिए सुरक्षित है। सभी कमांड्स और फीचर्स अनलॉक करने के लिए ओनर से संपर्क करें।\n\n"
+            f"👉 संपर्क कमांड: <code>/owner</code>\n"
+            f"📢 आधिकारिक चैनल: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>",
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
+        )
+        return
+
     user_input = msg.text.strip().lower()
     today = get_ist_now().strftime("%d %B %Y")
-
     cached_list = TRENDING_CACHE.get(user_id, [])
 
     if user_input == "all" and cached_list:
@@ -1363,7 +1405,13 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
     register_user(user_id, update.effective_user.username, update.effective_user.first_name)
 
     if not is_authorized(user_id):
-        await msg.reply_text("⛔ <b>एक्सेस अस्वीकृत:</b> PDF प्रोसेसिंग केवल अधिकृत छात्रों के लिए है। <code>/owner</code> पर संपर्क करें।", parse_mode=ParseMode.HTML)
+        user_link = get_tg_user_link(user_id, update.effective_user.first_name)
+        await msg.reply_text(
+            f"⛔ <b>एक्सेस अस्वीकृत {user_link}:</b> PDF प्रोसेसिंग केवल प्रीमियम सदस्यों के लिए उपलब्ध है।\n\n"
+            f"सब्सक्रिप्शन हेतु <code>/owner</code> पर संपर्क करें।",
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
+        )
         return
 
     if not doc or not doc.file_name.lower().endswith(".pdf"):
@@ -1403,10 +1451,11 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         await wait_m.edit_text(f"❌ PDF प्रोसेसिंग में त्रुटि: {e}")
 
-# ================= BROADCAST SYSTEM =================
+# ================= BROADCAST SYSTEM (केवल ओनर/एडमिन) =================
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ यह कमांड केवल मुख्य व्यवस्थापक के लिए आरक्षित है।")
         return ConversationHandler.END
 
     await update.message.reply_text(
@@ -1474,10 +1523,11 @@ async def handle_broadcast_pin_choice(update: Update, context: ContextTypes.DEFA
 
     LAST_BROADCAST_DATA.pop(admin_id, None)
 
-# ================= ADMIN USER MANAGEMENT =================
+# ================= ADMIN USER MANAGEMENT (केवल ओनर/एडमिन) =================
 async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ यह कमांड केवल मुख्य व्यवस्थापक के लिए आरक्षित है।")
         return
     if len(context.args) < 2:
         await update.message.reply_text("💡 उपयोग: <code>/adduser &lt;user_id&gt; &lt;दिन&gt;</code>", parse_mode=ParseMode.HTML)
@@ -1486,14 +1536,49 @@ async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         t_uid = int(context.args[0])
         days = int(context.args[1])
         add_vip_user(t_uid, days)
-        user_link = f'<a href="tg://user?id={t_uid}">{t_uid}</a>'
-        await update.message.reply_text(f"✅ छात्र {user_link} को <b>{days} दिन</b> के लिए अधिकृत कर दिया गया है।", parse_mode=ParseMode.HTML)
+        expiry_dt = get_ist_now() + timedelta(days=days)
+        exp_formatted = expiry_dt.strftime('%d %B %Y, %I:%M %p')
+        user_link = get_tg_user_link(t_uid, str(t_uid))
+
+        await update.message.reply_text(
+            f"✅ छात्र {user_link} को <b>{days} दिन</b> के लिए अधिकृत कर दिया गया है।\n"
+            f"⏳ वैधता: <code>{exp_formatted}</code> (IST)",
+            parse_mode=ParseMode.HTML
+        )
+
+        # यूज़र को स्वतः बधाई एवं एक्टिवेशन संदेश
+        congrats_msg = (
+            "🎉 <b>बधाई हो! आपका प्रीमियम यूपीएससी डेस्क सक्रिय हो गया है।</b>\n\n"
+            f"👑 <b>व्यवस्थापक:</b> {AUTHOR_NAME}\n"
+            f"📅 <b>सब्सक्रिप्शन अवधि:</b> <code>{days} दिन</code>\n"
+            f"⏳ <b>वैधता (Expiry Date):</b> <code>{exp_formatted} (IST)</code>\n\n"
+            "🌟 <b>अनलॉक किए गए मुख्य फीचर्स:</b>\n"
+            "• <code>/daily</code> — 360° दैनिक समसामयिक महा-संकलन (पिछले 10 दिन)\n"
+            "• <code>/quiz</code> — 1 लाख+ बैंक से विजन IAS स्टाइल लाइव मॉक टेस्ट (50 व 100 प्रश्न)\n"
+            "• <code>/checkanswer</code> — सख्त मुख्य परीक्षा कॉपी चेकिंग (मानचित्र व आरेख स्कैनिंग)\n"
+            "• <code>/interview</code> — 1-on-1 लाइव DAF साक्षात्कार (ऑडियो सहित)\n"
+            "• <code>/mains</code> — 2013-2026 PYQs व मॉडल प्रश्नोत्तर\n"
+            "• <code>/ask</code> — 24/7 यूपीएससी मेंटरशिप (टेक्स्ट व वॉयस)\n\n"
+            "👉 अभी शुरू करने के लिए <code>/start</code> दबाएं।\n"
+            f"📢 आधिकारिक चैनल: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
+        )
+        try:
+            await context.bot.send_message(
+                chat_id=t_uid,
+                text=congrats_msg,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True
+            )
+        except Exception as e:
+            await update.message.reply_text(f"⚠️ यूज़र को बधाई संदेश नहीं भेजा जा सका: {e}")
+
     except Exception as e:
         await update.message.reply_text(f"❌ त्रुटि: {e}")
 
 async def remove_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ यह कमांड केवल मुख्य व्यवस्थापक के लिए आरक्षित है।")
         return
     if not context.args:
         await update.message.reply_text("💡 उपयोग: <code>/removeuser &lt;user_id&gt;</code>", parse_mode=ParseMode.HTML)
@@ -1501,7 +1586,7 @@ async def remove_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         t_uid = int(context.args[0])
         remove_vip_user(t_uid)
-        user_link = f'<a href="tg://user?id={t_uid}">{t_uid}</a>'
+        user_link = get_tg_user_link(t_uid, str(t_uid))
         await update.message.reply_text(f"🚫 छात्र {user_link} का एक्सेस रद्द कर दिया गया है।", parse_mode=ParseMode.HTML)
     except Exception as e:
         await update.message.reply_text(f"❌ त्रुटि: {e}")
@@ -1509,6 +1594,7 @@ async def remove_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def info_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ यह कमांड केवल मुख्य व्यवस्थापक के लिए आरक्षित है।")
         return
     if not context.args:
         await update.message.reply_text("💡 उपयोग: <code>/info &lt;user_id&gt;</code>", parse_mode=ParseMode.HTML)
@@ -1523,7 +1609,7 @@ async def info_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         uid, un, fn, is_vip, exp, joined = user_row
-        user_link = f'<a href="tg://user?id={uid}">{fn or uid}</a>'
+        user_link = get_tg_user_link(uid, fn or str(uid))
         un_str = f"@{un}" if un else "कोई नहीं"
         vip_tag = "👑 [VIP/प्रीमियम सदस्य]" if is_vip == 1 else "👤 [निःशुल्क छात्र]"
         exp_str = exp.strftime('%d-%b-%Y %I:%M %p') if (is_vip == 1 and exp) else "लागू नहीं"
@@ -1563,6 +1649,7 @@ async def info_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ यह कमांड केवल मुख्य व्यवस्थापक के लिए आरक्षित है।")
         return
     rows = get_all_users_detailed()
     text = f"👥 <b>पंजीकृत सदस्य (कुल: {len(rows)})</b>\n\n"
@@ -1573,7 +1660,7 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += "━━━━━━━━━━━━━━━━━━━━\n\n"
 
     for uid, un, fn, is_vip, exp in rows:
-        user_link = f'<a href="tg://user?id={uid}">{fn or uid}</a>'
+        user_link = get_tg_user_link(uid, fn or str(uid))
         vip_tag = "👑 [VIP/प्रीमियम]" if is_vip == 1 else "👤 [निःशुल्क छात्र]"
         exp_str = f" | वैधता: {exp.strftime('%d-%b-%Y')}" if (is_vip == 1 and exp) else ""
         text += f"• {vip_tag} {user_link} (<code>{uid}</code>){exp_str}\n"
@@ -1626,9 +1713,10 @@ async def handle_admin_reply_or_direct_send(update: Update, context: ContextType
 async def contact_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
+    user_link = get_tg_user_link(user.id, user.first_name)
     CONTACT_SESSIONS[user.id] = time.time()
     await update.message.reply_text(
-        "⏱ <b>2 मिनट का समय सक्रिय है!</b>\n\n"
+        f"⏱ <b>2 मिनट का समय सक्रिय है ({user_link})!</b>\n\n"
         f"अपनी समस्या या एक्सेस अनुरोध लिखकर भेजें। यह संदेश सीधे <b>{AUTHOR_NAME}</b> के पास पहुँचेगा।\n\n"
         "<i>(रद्द करने हेतु <code>/cancel</code> भेजें)</i>",
         parse_mode=ParseMode.HTML
@@ -1651,18 +1739,19 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
         await msg.reply_text("⚠️ समय समाप्त हो गया। पुनः <code>/owner</code> चलाएं।", parse_mode=ParseMode.HTML)
         return ConversationHandler.END
 
-    user_link = f'<a href="tg://user?id={user.id}">{user.first_name}</a>'
+    user_link = get_tg_user_link(user.id, user.first_name)
     alert_text = (
         f"📩 <b>छात्र संदेश ({AUTHOR_NAME}):</b>\n\n"
         f"👤 प्रेषक: {user_link}\n"
-        f"🆔 यूज़र ID: <code>{user.id}</code>\n\n"
+        f"🆔 यूज़र ID: <code>{user.id}</code>\n"
+        f"🔗 प्रोफाइल लिंक: {get_tg_user_link(user.id, f'tg://user?id={user.id}')}\n\n"
         f"💬 संदेश: {msg.text or '[मीडिया / वॉयस]'}\n\n"
         f"<i>(इस संदेश पर स्वाइप करके रिप्लाई करें)</i>"
     )
 
     for aid in ADMIN_IDS:
         try:
-            await context.bot.send_message(chat_id=aid, text=alert_text, parse_mode=ParseMode.HTML)
+            await context.bot.send_message(chat_id=aid, text=alert_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
         except Exception:
             pass
 
