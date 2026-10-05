@@ -259,15 +259,20 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
 
     prompt = f"""
 आप UPSC सिविल सेवा प्रारंभिक परीक्षा के मुख्य परीक्षक हैं।
-विषय: '{subj}' पर ठीक {cnt} कठिन, मानक और कथन-आधारित बहुविकल्पीय प्रश्न तैयार करें।
-अनिवार्य रूप से शुद्ध JSON Array (बिना किसी अतिरिक्त मार्कडाउन कोड या व्याख्या के) इस प्रारूप में दें:
+विषय: '{subj}' पर ठीक {cnt} अत्यंत कठिन, प्रामाणिक, और बहु-कथनात्मक बहुविकल्पीय प्रश्न तैयार करें।
+प्रत्येक प्रश्न में:
+- 1, 2, 3 कथन हों।
+- UPSC स्तर के कूट (Options) हों।
+- 'solution' में कम से कम 3-4 पंक्तियों की सटीक, तथ्यात्मक व्याख्या हो जिसमें सभी कथनों का कारण स्पष्ट हो।
+
+अनिवार्य रूप से शुद्ध JSON Array (बिना किसी अतिरिक्त मार्कडाउन कोड या गपशप के) इस प्रारूप में दें:
 [
   {{
     "topic": "{subj}",
     "text": "1. प्रश्न का पूर्ण विवरण और कथन...",
-    "options": ["(a) केवल 1", "(b) केवल 2", "(c) 1 और 2 दोनों", "(d) न तो 1, न ही 2"],
-    "correctAnswer": 2,
-    "solution": "<b>व्याख्या:</b> प्रामाणिक स्रोत सहित संपूर्ण 2-3 पंक्तियों की व्याख्या।"
+    "options": ["(a) केवल 1 और 2", "(b) केवल 2 और 3", "(c) केवल 1 और 3", "(d) 1, 2 और 3"],
+    "correctAnswer": 0,
+    "solution": "<b>व्याख्या:</b> कथन 1 सही है क्योंकि... कथन 2 असत्य है क्योंकि..."
   }}
 ]
 नोट: correctAnswer शून्य-आधारित इंडेक्स (0=a, 1=b, 2=c, 3=d) होना चाहिए। केवल शुद्ध हिंदी भाषा रखें।
@@ -280,20 +285,15 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
         clean_json_str = re.sub(r'^```json\s*', '', raw_resp.strip(), flags=re.IGNORECASE)
         clean_json_str = re.sub(r'```$', '', clean_json_str.strip()).strip()
 
-        # यदि AI से त्रुटि मिली हो तो बैकअप JSON उपयोग करें ताकि HTML क्रैश न हो
+        # JSON Parse जाँच
         try:
-            json.loads(clean_json_str)
+            parsed_test = json.loads(clean_json_str)
+            clean_json_str = json.dumps(parsed_test, ensure_ascii=False)
         except Exception:
-            backup_questions = []
-            for q_idx in range(1, cnt + 1):
-                backup_questions.append({
-                    "topic": subj,
-                    "text": f"{q_idx}. {subj} से संबंधित महत्वपूर्ण मानक प्रश्न। (UPSC CSE सेट)",
-                    "options": ["(a) केवल 1", "(b) केवल 2", "(c) 1 और 2 दोनों", "(d) न तो 1, न ही 2"],
-                    "correctAnswer": 0,
-                    "solution": f"<b>व्याख्या:</b> प्रश्न संख्या {q_idx} का आधिकारिक यूपीएससी विश्लेषण।"
-                })
-            clean_json_str = json.dumps(backup_questions, ensure_ascii=False)
+            # अगर आंशिक रूप से JSON टूटा हो तो भी साफ़ करके डंप करें
+            match = re.search(r'\[.*\]', clean_json_str, re.DOTALL)
+            if match:
+                clean_json_str = match.group(0)
 
         test_id = f"{int(time.time()) % 100000}"
         portal_html = build_vision_ias_interactive_portal(subj, test_id, cnt, clean_json_str)
@@ -619,7 +619,7 @@ async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✨ नए संभावित मॉडल प्रश्न (New Expected)", callback_data="mq_type_new")],
         [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")]
     ]
-    await update.message.reply_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) अभ्यास:</b>\nआप पुराने सभी प्रश्न देखना चाहते हैं या नए संभावित मॉडल प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("✍️️ <b>UPSC मुख्य परीक्षा (Mains) अभ्यास:</b>\nआप पुराने सभी प्रश्न देखना चाहते हैं या नए संभावित मॉडल प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def handle_mains_type_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -719,7 +719,7 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}")
 
-# ================= ADVANCED CHECK ANSWER (100% WORKING STATE FIX) =================
+# ================= ADVANCED CHECK ANSWER (100% WORKING DIRECT INLINE) =================
 @ensure_auth
 async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
@@ -748,20 +748,19 @@ async def handle_ca_type_choice(update: Update, context: ContextTypes.DEFAULT_TY
     CHECK_ANSWER_CACHE[user_id] = {"is_pyq": is_pyq}
 
     if is_pyq:
-        await query.message.edit_text(
+        msg_text = (
             "📜 <b>विगत वर्ष का प्रश्न (PYQ 2013-2026):</b>\n\n"
             "कृपया अपना <b>PYQ प्रश्न</b> लिखकर, फ़ोटो में या वॉयस मैसेज में भेजें।\n"
             "<i>(AI परीक्षक स्वतः पहचान लेगा कि यह किस वर्ष और कितने अंक [10 या 15 अंक] का प्रश्न था)</i>\n\n"
-            "रद्द करने हेतु <code>/cancel</code> लिखें।",
-            parse_mode=ParseMode.HTML
+            "रद्द करने हेतु <code>/cancel</code> लिखें।"
         )
     else:
-        await query.message.edit_text(
+        msg_text = (
             "✍️ <b>नया / मॉडल प्रश्न:</b>\n\n"
             "कृपया अपना <b>प्रश्न</b> लिखकर, फ़ोटो में या वॉयस मैसेज में भेजें:\n\n"
-            "रद्द करने हेतु <code>/cancel</code> लिखें।",
-            parse_mode=ParseMode.HTML
+            "रद्द करने हेतु <code>/cancel</code> लिखें।"
         )
+    await query.message.edit_text(msg_text, parse_mode=ParseMode.HTML)
     return CA_QUESTION_TEXT
 
 async def handle_ca_question_text_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1060,7 +1059,7 @@ async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     years = ["2026", "2025", "2024"]
     keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक महा-संकलन (PT-365)", callback_data=f"genyear_{y}")] for y in years]
     keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")] )
-    await update.message.reply_text("🏛️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("🏛 <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 @ensure_auth
 async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
