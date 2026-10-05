@@ -1,17 +1,18 @@
 import os
 import io
 import re
+import time
 import edge_tts
 from google import genai
 from google.genai import types
 from config import API_KEYS
 
-# 2 API Keys रोटेशन और फॉलबैक
-KEYS_LIST = API_KEYS if API_KEYS else [os.environ.get("GEMINI_API_KEY", "").strip()]
+KEYS_LIST = [k.strip() for k in API_KEYS if k.strip()] if API_KEYS else [os.environ.get("GEMINI_API_KEY", "").strip()]
 current_key_idx = 0
 
-# गूगल API निर्देश के अनुसार अद्यतन मॉडल
-MODEL_NAME = "gemini-3.8-flash"
+# स्थिर एवं सक्रिय मॉडल
+PRIMARY_MODEL = "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-1.5-flash"
 
 def get_genai_client():
     global current_key_idx
@@ -26,63 +27,80 @@ def switch_key():
         current_key_idx = (current_key_idx + 1) % len(KEYS_LIST)
 
 def call_gemini_safely(prompt: str) -> str:
-    """main.py के लिए टेक्स्ट जेनरेशन"""
+    """main.py के लिए टेक्स्ट जेनरेशन (503/404 पर रोटेशन व रीट्राई के साथ)"""
     last_err = ""
-    for _ in range(max(1, len(KEYS_LIST))):
-        try:
-            client = get_genai_client()
-            resp = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=prompt
-            )
-            return resp.text or ""
-        except Exception as e:
-            last_err = str(e)
-            switch_key()
+    models_to_try = [PRIMARY_MODEL, FALLBACK_MODEL]
+
+    for model_name in models_to_try:
+        for _ in range(max(1, len(KEYS_LIST))):
+            try:
+                client = get_genai_client()
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt
+                )
+                if resp and resp.text:
+                    return resp.text.strip()
+            except Exception as e:
+                last_err = str(e)
+                switch_key()
+                time.sleep(0.5)
+
     return f"त्रुटि: {last_err}"
 
 def call_gemini_multimodal_inline(prompt: str, image_bytes: bytes, mime_type: str = "image/jpeg") -> str:
-    """main.py के लिए कॉपी चेकिंग"""
+    """कॉपी मूल्यांकन हेतु विज़न मॉडल"""
     last_err = ""
-    for _ in range(max(1, len(KEYS_LIST))):
-        try:
-            client = get_genai_client()
-            resp = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[
-                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                    prompt
-                ]
-            )
-            return resp.text or ""
-        except Exception as e:
-            last_err = str(e)
-            switch_key()
+    models_to_try = [PRIMARY_MODEL, FALLBACK_MODEL]
+
+    for model_name in models_to_try:
+        for _ in range(max(1, len(KEYS_LIST))):
+            try:
+                client = get_genai_client()
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=[
+                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                        prompt
+                    ]
+                )
+                if resp and resp.text:
+                    return resp.text.strip()
+            except Exception as e:
+                last_err = str(e)
+                switch_key()
+                time.sleep(0.5)
+
     return f"विज़न मूल्यांकन त्रुटि: {last_err}"
 
 def call_gemini_audio_transcribe(audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
-    """वॉयस मैसेज का ट्रांसक्रिप्शन"""
-    prompt = "यह छात्र का बोला हुआ ऑडियो है। इसे सुनकर केवल शुद्ध हिंदी में पूरा ट्रांसक्रिप्ट (लिखा हुआ रूप) निकालें। कोई अतिरिक्त टिप्पणी न दें।"
+    """ऑडियो उत्तर का ट्रांसक्रिप्शन"""
+    prompt = "यह छात्र का बोला हुआ ऑडियो है। इसे सुनकर केवल शुद्ध हिंदी में पूरा ट्रांसक्रिप्ट निकालें। कोई अतिरिक्त टिप्पणी न दें।"
     last_err = ""
-    for _ in range(max(1, len(KEYS_LIST))):
-        try:
-            client = get_genai_client()
-            resp = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=[
-                    types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                    prompt
-                ]
-            )
-            return resp.text or ""
-        except Exception as e:
-            last_err = str(e)
-            switch_key()
+    models_to_try = [PRIMARY_MODEL, FALLBACK_MODEL]
+
+    for model_name in models_to_try:
+        for _ in range(max(1, len(KEYS_LIST))):
+            try:
+                client = get_genai_client()
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=[
+                        types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                        prompt
+                    ]
+                )
+                if resp and resp.text:
+                    return resp.text.strip()
+            except Exception as e:
+                last_err = str(e)
+                switch_key()
+                time.sleep(0.5)
+
     return "ऑडियो पढ़ा नहीं जा सका।"
 
 async def download_audio_stream(text: str) -> bytes:
-    """Edge-TTS ऑडियो जनरेटर"""
-    clean_text = re.sub(r'[*_`#<>]', '', text)[:400]
+    clean_text = re.sub(r'[*_`#<>]', '', text)[:350]
     output_path = f"temp_stream_{os.getpid()}_{int(time.time() * 1000)}.mp3"
     try:
         communicate = edge_tts.Communicate(clean_text, "hi-IN-MadhurNeural", rate="-2%")
@@ -98,7 +116,7 @@ async def download_audio_stream(text: str) -> bytes:
             os.remove(output_path)
 
 async def generate_voice_file(text: str, output_path: str):
-    clean_text = re.sub(r'[*_`#<>]', '', text)[:400]
+    clean_text = re.sub(r'[*_`#<>]', '', text)[:350]
     communicate = edge_tts.Communicate(clean_text, "hi-IN-MadhurNeural", rate="-2%")
     await communicate.save(output_path)
     return output_path
@@ -107,7 +125,7 @@ def evaluate_interview_response(candidate_daf: str, question: str, user_answer_t
     if total_q == 1:
         prompt = f"""
         आप UPSC सिविल सेवा व्यक्तित्व परीक्षण बोर्ड के अध्यक्ष हैं।
-        अभ्यर्थी मोड: {attempt_mode} | DAF: {candidate_daf}
+        अभ्यर्थी: {attempt_mode} | DAF: {candidate_daf}
         प्रश्न: {question}
         उत्तर: {user_answer_text}
         
@@ -123,7 +141,7 @@ def evaluate_interview_response(candidate_daf: str, question: str, user_answer_t
     else:
         prompt = f"""
         आप UPSC सिविल सेवा व्यक्तित्व परीक्षण बोर्ड के अध्यक्ष हैं।
-        अभ्यर्थी मोड: {attempt_mode} | DAF: {candidate_daf}
+        अभ्यर्थी: {attempt_mode} | DAF: {candidate_daf}
         प्रश्न: {question}
         उत्तर: {user_answer_text}
         
