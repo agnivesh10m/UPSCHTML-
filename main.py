@@ -77,7 +77,7 @@ def ensure_auth(handler_func):
             msg = (
                 f"👋 <b>नमस्ते {user.first_name}!</b>\n\n"
                 "📚 <b>UPSC SMART DESK में आपका स्वागत है।</b>\n\n"
-                "⚠️ <b>सत्र अनधिकृत:</b> यह बॉट केवल <b>UPSC Civil Services Examination</b> के समर्पित अभ्यर्थियों के लिए सुरक्षित है ताकि उच्च-स्तरीय AI टूल्स का दुरुपयोग न हो।\n\n"
+                "⚠️️ <b>सत्र अनधिकृत:</b> यह बॉट केवल <b>UPSC Civil Services Examination</b> के समर्पित अभ्यर्थियों के लिए सुरक्षित है ताकि उच्च-स्तरीय AI टूल्स का दुरुपयोग न हो।\n\n"
                 f"🆔 <b>आपकी टेलीग्राम ID:</b> {user_link}\n\n"
                 f"👉 इस अध्ययन डेस्क का पूर्ण एक्सेस प्राप्त करने के लिए ओनर <b>{AUTHOR_NAME}</b> से संपर्क करें:\n"
                 f"• संपर्क कमांड: <code>/owner</code>\n"
@@ -117,7 +117,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/quiz</code> — विजन IAS स्टाइल लाइव मॉक टेस्ट पोर्टल (शून्य दोहराव)\n"
         "• <code>/mains</code> — मुख्य परीक्षा अभ्यास (PYQs 2013-2026 व मॉडल प्रश्न)\n"
         "• <code>/checkanswer</code> — उत्तर पुस्तिका मूल्यांकन (सख्त व मानक UPSC परीक्षक)\n"
-        "• <code>/interview</code> — 1-on-1 साक्षात्कार (DAF व वॉयस - आनुपातिक मार्किंग)\n"
+        "• <code>/interview</code> — 1-on-1 साक्षात्कार (DAF व वॉयस - 25 से 275 अंक तक)\n"
         "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन\n"
         "• <code>/monthly</code> — संपूर्ण मासिक संकलन\n"
         "• <code>/yearly</code> — वार्षिक महा-संकलन (PT-365)\n"
@@ -140,8 +140,8 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
         "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> आज सहित पिछले पूरे 10 दिनों की तारीखों में से किसी का भी 360° समसामयिक संकलन प्राप्त करें।\n\n"
         "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> GS-1, 2, 3 और करेंट अफेयर्स के 50, 100 या 200 प्रश्नों का लाइव टेस्ट पोर्टल (शून्य दोहराव)।\n\n"
-        "3️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> प्रश्न भेजें और उत्तर-पुस्तिका की फ़ोटो या PDF भेजें। AI मुख्य परीक्षक स्वतः 10 या 15 अंक तय कर अत्यधिक सख्त व निष्पक्ष जांच करेगा।\n\n"
-        "4️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF आधारित स्थितिजन्य मौखिक साक्षात्कार (1 प्रश्न = 25 अंक, 3 = 75 अंक, 5 = 125 अंक का सख्त पैमाना)।\n\n"
+        "3️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> प्रश्न और उत्तर-पुस्तिका की फ़ोटो/PDF भेजें। AI मुख्य परीक्षक 10 या 15 अंक तय कर सख्त व निष्पक्ष जांच करेगा।\n\n"
+        "4️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF आधारित स्थितिजन्य मौखिक साक्षात्कार (1 प्रश्न = 25 अंक, 3 = 75 अंक, 5 = 125 अंक, 9 प्रश्न = पूरा 275 अंक मॉक बोर्ड)।\n\n"
         "5️⃣ <b>मेंटरशिप सत्र (`/ask`):</b> टेक्स्ट या वॉयस मैसेज भेजकर UPSC के किसी भी विषय पर सीधा प्रशासनिक विश्लेषण प्राप्त करें।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
@@ -259,7 +259,7 @@ async def handle_quiz_sub_choice(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton("⚡ 50 प्रश्न (मानक अभ्यास सेट)", callback_data="quizcnt_50")],
         [InlineKeyboardButton("🎯 100 प्रश्न (पूर्ण विजन IAS स्टाइल मॉक)", callback_data="quizcnt_100")],
         [InlineKeyboardButton("🏆 200 प्रश्न (महा-अभ्यास मैराथन)", callback_data="quizcnt_200")],
-        [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="quiz_back_gs")]
+        [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="quizgs_1")]
     ]
     await query.message.edit_text(f"🎯 <b>चरण 3/3:</b> विषय <b>{USER_QUIZ_SELECTIONS[user_id]['sub']}</b> के कितने प्रश्न चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
@@ -363,7 +363,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         await status_msg.edit_text(f"❌ पोर्टल बनाने में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
-# ================= साक्षात्कार (/interview) आनुपातिक सख्त मार्किंग =================
+# ================= साक्षात्कार (/interview) 1, 3, 5 या 275 अंक =================
 @ensure_auth
 async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -400,7 +400,12 @@ async def handle_daf_name_step(update: Update, context: ContextTypes.DEFAULT_TYP
     txt = update.message.text.strip() if update.message.text else update.effective_user.first_name
 
     if txt == "✅ इसी प्रोफाइल से साक्षात्कार दें":
-        reply_kb = [["⚡ 1 प्रश्न (क्विक टेस्ट - 25 अंक)"], ["🎯 3 प्रश्न (मानक बोर्ड - 75 अंक)"], ["🏆 5 प्रश्न (विस्तृत बोर्ड - 125 अंक)"]]
+        reply_kb = [
+            ["⚡ 1 प्रश्न (क्विक टेस्ट - 25 अंक)"],
+            ["🎯 3 प्रश्न (मानक बोर्ड - 75 अंक)"],
+            ["🏆 5 प्रश्न (विस्तृत बोर्ड - 125 अंक)"],
+            ["🏛 संपूर्ण बोर्ड इंटरव्यू (9 प्रश्न - 275 अंक)"]
+        ]
         await update.message.reply_text(
             "👉 <b>आप कितने प्रश्नों का साक्षात्कार सेट देना चाहते हैं?</b>",
             reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True),
@@ -450,7 +455,12 @@ async def handle_daf_attempt_step(update: Update, context: ContextTypes.DEFAULT_
 
     save_user_daf(user_id, name, state, college, status, opt, attempt_txt)
 
-    reply_kb = [["⚡ 1 प्रश्न (क्विक टेस्ट - 25 अंक)"], ["🎯 3 प्रश्न (मानक बोर्ड - 75 अंक)"], ["🏆 5 प्रश्न (विस्तृत बोर्ड - 125 अंक)"]]
+    reply_kb = [
+        ["⚡ 1 प्रश्न (क्विक टेस्ट - 25 अंक)"],
+        ["🎯 3 प्रश्न (मानक बोर्ड - 75 अंक)"],
+        ["🏆 5 प्रश्न (विस्तृत बोर्ड - 125 अंक)"],
+        ["🏛 संपूर्ण बोर्ड इंटरव्यू (9 प्रश्न - 275 अंक)"]
+    ]
     await update.message.reply_text(
         "✅ <b>आपकी DAF प्रोफाइल सुरक्षित कर ली गई है!</b>\n\n"
         "👉 <b>आप कितने प्रश्नों का साक्षात्कार सेट देना चाहते हैं?</b>",
@@ -462,14 +472,31 @@ async def handle_daf_attempt_step(update: Update, context: ContextTypes.DEFAULT_
 async def handle_daf_qcount_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     txt = update.message.text.strip()
+    
+    # सटीक पार्सिंग ताकि 1 प्रश्न पर 5 प्रश्न न बने
     cnt = 1
-    if "3" in txt:
-        cnt = 3
-    elif "5" in txt:
+    max_m = 25
+    if "9 प्रश्न" in txt or "275 अंक" in txt:
+        cnt = 9
+        max_m = 275
+    elif "5 प्रश्न" in txt:
         cnt = 5
+        max_m = 125
+    elif "3 प्रश्न" in txt:
+        cnt = 3
+        max_m = 75
+    elif "1 प्रश्न" in txt:
+        cnt = 1
+        max_m = 25
 
     daf = get_user_daf(user_id)
-    INTERVIEW_SESSION[user_id] = {"total": cnt, "current": 1, "daf": daf, "history": []}
+    INTERVIEW_SESSION[user_id] = {
+        "total": cnt,
+        "max_marks": max_m,
+        "current": 1,
+        "daf": daf,
+        "history": []
+    }
 
     status_m = await update.message.reply_text("🏛 <b>बोर्ड कक्ष में स्वागत है।</b> प्रश्न तैयार किया जा रहा है...", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
     return await ask_interview_question(update, context, user_id, status_m)
@@ -510,26 +537,28 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.HTML
         )
 
-        asyncio.create_task(send_async_voice_question(update, context, q_text, curr, tot))
+        # प्रश्न की ऑडियो/वॉइस अनिवार्य रूप से भेजना
+        await send_mandatory_voice(
+            context,
+            update.effective_chat.id,
+            q_text,
+            f"🎙️ साक्षात्कार प्रश्न {curr}/{tot} (बोर्ड अध्यक्ष आवाज़) | {AUTHOR_NAME}"
+        )
 
     except Exception as e:
         await update.effective_message.reply_text(f"❌ साक्षात्कार प्रश्न बनाने में समस्या: {e}")
 
     return WAITING_INTERVIEW_VOICE
 
-async def send_async_voice_question(update, context, text, curr, tot):
+async def send_mandatory_voice(context, chat_id, text, caption):
     try:
-        audio_bytes = await download_audio_stream(text)
+        audio_bytes = await download_audio_stream(text[:400])
         if audio_bytes:
             audio_io = io.BytesIO(audio_bytes)
-            audio_io.name = f"Board_Question_{curr}.mp3"
-            await context.bot.send_voice(
-                chat_id=update.effective_chat.id,
-                voice=audio_io,
-                caption=f"🎙️ साक्षात्कार प्रश्न {curr}/{tot} (बोर्ड अध्यक्ष - पुरुष आवाज़) | {AUTHOR_NAME}"
-            )
+            audio_io.name = "Board_Voice.mp3"
+            await context.bot.send_voice(chat_id=chat_id, voice=audio_io, caption=caption)
     except Exception as e:
-        print(f"Async voice skip: {e}")
+        print(f"Mandatory Voice Send Error: {e}")
 
 async def handle_interview_candidate_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
@@ -556,14 +585,20 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 उम्मीदवार {name} ने मौखिक उत्तर दिया है: "{transcribed_text}"
 राउंड: {sess['current']}/{sess['total']}
 कार्य:
-उम्मीदवार को {name} जी कहकर संबोधित करते हुए 2-3 पंक्तियों में प्रशासनिक भाषा में संतुलित मौखिक फीडबैक दें। केवल शुद्ध हिंदी लिखें।
+उम्मीदवार को {name} जी कहकर संबोधित करते हुए 2-3 पंक्तियों में प्रशासनिक भाषा में संतुलित और निष्पक्ष मौखिक फीडबैक दें। केवल शुद्ध हिंदी लिखें।
 """
         eval_resp = await asyncio.to_thread(call_gemini_safely, eval_prompt)
         await wait_m.delete()
 
         await update.message.reply_text(f"🏛 <b>बोर्ड का अवलोकन ({sess['current']}/{sess['total']}):</b>\n\n{eval_resp}", parse_mode=ParseMode.HTML)
 
-        asyncio.create_task(send_async_voice_feedback(update, context, eval_resp))
+        # फीडबैक की वॉइस अनिवार्य रूप से भेजना
+        await send_mandatory_voice(
+            context,
+            update.effective_chat.id,
+            eval_resp,
+            f"🎙️ बोर्ड अवलोकन एवं फीडबैक (अध्यक्ष) | {AUTHOR_NAME}"
+        )
 
         if not is_last:
             sess["current"] += 1
@@ -585,20 +620,6 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
         await wait_m.edit_text(f"❌ वॉयस प्रोसेसिंग में त्रुटि: {e}। कृपया पुनः वॉयस भेजें।")
         return WAITING_INTERVIEW_VOICE
 
-async def send_async_voice_feedback(update, context, text):
-    try:
-        audio_bytes = await download_audio_stream(text[:350])
-        if audio_bytes:
-            audio_io = io.BytesIO(audio_bytes)
-            audio_io.name = "Board_Feedback.mp3"
-            await context.bot.send_voice(
-                chat_id=update.effective_chat.id,
-                voice=audio_io,
-                caption=f"🎙️ बोर्ड अवलोकन एवं फीडबैक (अध्यक्ष) | {AUTHOR_NAME}"
-            )
-    except Exception as e:
-        print(f"Async feedback skip: {e}")
-
 async def handle_interview_decision(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     txt = update.message.text.strip()
@@ -611,34 +632,51 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
     if "1 और" in txt:
         sess["total"] += 1
         sess["current"] += 1
+        sess["max_marks"] = sess.get("max_marks", 25) + 25
         INTERVIEW_SESSION[user_id] = sess
         status_m = await update.message.reply_text("अगला उन्नत स्तर का प्रश्न तैयार हो रहा है...", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
         return await ask_interview_question(update, context, user_id, status_m)
 
-    wait_m = await update.message.reply_text("⏳ बोर्ड मेंबर अंतिम मूल्यांकन पत्रक तैयार कर रहे हैं...", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
+    wait_m = await update.message.reply_text("⏳ बोर्ड सदस्य अंतिम मूल्यांकन पत्रक तैयार कर रहे हैं...", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
     name = sess["daf"][0]
     total_q = len(sess['history'])
-    max_marks = total_q * 25
+    max_marks = sess.get("max_marks", total_q * 25)
 
     final_prompt = f"""
 उम्मीदवार {name} का UPSC साक्षात्कार पूर्ण हो चुका है।
 कुल प्रश्न पूछे गए: {total_q}
-अधिकतम अंक (Scale): {max_marks} अंक (प्रति प्रश्न 25 अंक के सख्त पैमाने पर)।
+अधिकतम अंक (Scale): {max_marks} अंक।
 
 कार्य:
 एक अत्यधिक सख्त, निष्पक्ष और आधिकारिक UPSC साक्षात्कार रिपोर्ट कार्ड तैयार करें।
 प्रारूप:
-1. 🏆 प्राप्तांक: (सख्त मार्किंग के अनुसार {max_marks} में से अंक दें, उदा. 13/{max_marks} या 16.5/{max_marks})
-2. 🌟 मुख्य प्रशासनिक खूबियाँ (Strengths)
-3. ⚠️ गंभीर कमियाँ एवं सुधार योग्य क्षेत्र (Areas of Improvement)
+1. 🏆 प्राप्तांक: (सख्त मार्किंग के अनुसार {max_marks} में से अंक दें, उदा. {int(max_marks*0.55)}/{max_marks} अंक)
+2. 🌟 मुख्य प्रशासनिक खूबियाँ (Strengths): भूमिका, वाणी में ठहराव, संतुलित दृष्टिकोण
+3. ⚠️️ गंभीर कमियाँ एवं सुधार योग्य क्षेत्र (Areas of Improvement): डेटा की कमी, स्थितिजन्य असमंजस
 4. 🚀 बोर्ड की अंतिम अनुशंसा (Final Board Recommendation)
 
-नोट: केवल शुद्ध हिंदी में लिखें। 275 में से मार्किंग न करें।
+केवल शुद्ध हिंदी में लिखें।
 """
     try:
         final_report = await asyncio.to_thread(call_gemini_safely, final_prompt)
         await wait_m.delete()
-        await update.message.reply_text(f"📜 <b>UPSC साक्षात्कार परिणाम पत्रक ({total_q} प्रश्न सत्र):</b>\n\n{final_report}\n\n👤 <b>बोर्ड संरक्षक:</b> {AUTHOR_NAME}", parse_mode=ParseMode.HTML)
+        
+        await update.message.reply_text(
+            f"📜 <b>UPSC साक्षात्कार परिणाम पत्रक ({total_q} प्रश्न सत्र - {max_marks} अंक):</b>\n\n"
+            f"{final_report}\n\n"
+            f"👤 <b>बोर्ड संरक्षक:</b> {AUTHOR_NAME}",
+            parse_mode=ParseMode.HTML
+        )
+
+        # रिपोर्ट कार्ड का सार अनिवार्य वॉइस में भेजना
+        summary_voice_text = f"नमस्कार {name} जी, आपके साक्षात्कार का मूल्यांकन पूर्ण हो गया है। आपका कुल स्कोर {max_marks} अंकों में से निर्धारित किया गया है। विस्तृत विश्लेषण आपके चैट पर प्रेषित है।"
+        await send_mandatory_voice(
+            context,
+            update.effective_chat.id,
+            summary_voice_text,
+            f"🎙️ साक्षात्कार परिणाम सारांश (बोर्ड अध्यक्ष) | {AUTHOR_NAME}"
+        )
+
     except Exception as e:
         await wait_m.edit_text(f"त्रुटि: {e}")
 
@@ -1525,7 +1563,6 @@ async def handle_admin_reply_or_direct_send(update: Update, context: ContextType
     if admin_id not in ADMIN_IDS:
         return
 
-    # स्वाइप रिप्लाई हैंडलिंग
     if msg.reply_to_message:
         reply_to_text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
         clean_search = re.sub(r'<[^>]+>', ' ', reply_to_text)
@@ -1546,7 +1583,6 @@ async def handle_admin_reply_or_direct_send(update: Update, context: ContextType
                 await msg.reply_text(f"❌ भेजने में त्रुटि: {e}")
                 return
 
-    # डायरेक्ट आईडी और मैसेज भेजना
     if msg.text:
         direct_match = re.match(r'^([0-9]{8,11})\s+(.*)$', msg.text.strip(), flags=re.DOTALL)
         if direct_match:
