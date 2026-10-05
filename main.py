@@ -77,7 +77,7 @@ def ensure_auth(handler_func):
             msg = (
                 f"👋 <b>नमस्ते {user.first_name}!</b>\n\n"
                 "📚 <b>UPSC SMART DESK में आपका स्वागत है।</b>\n\n"
-                "⚠️️ <b>सत्र अनधिकृत:</b> यह बॉट केवल <b>UPSC Civil Services Examination</b> के समर्पित अभ्यर्थियों के लिए सुरक्षित है ताकि उच्च-स्तरीय AI टूल्स का दुरुपयोग न हो।\n\n"
+                "⚠️ <b>सत्र अनधिकृत:</b> यह बॉट केवल <b>UPSC Civil Services Examination</b> के समर्पित अभ्यर्थियों के लिए सुरक्षित है ताकि उच्च-स्तरीय AI टूल्स का दुरुपयोग न हो।\n\n"
                 f"🆔 <b>आपकी टेलीग्राम ID:</b> {user_link}\n\n"
                 f"👉 इस अध्ययन डेस्क का पूर्ण एक्सेस प्राप्त करने के लिए ओनर <b>{AUTHOR_NAME}</b> से संपर्क करें:\n"
                 f"• संपर्क कमांड: <code>/owner</code>\n"
@@ -116,7 +116,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/trending</code> — राष्ट्रीय व वैश्विक ट्रेंडिंग रडार (कठिन स्तर)\n"
         "• <code>/quiz</code> — विजन IAS स्टाइल लाइव मॉक टेस्ट पोर्टल (शून्य दोहराव)\n"
         "• <code>/mains</code> — मुख्य परीक्षा अभ्यास (PYQs 2013-2026 व मॉडल प्रश्न)\n"
-        "• <code>/checkanswer</code> — उत्तर पुस्तिका मूल्यांकन (सख्त व मानक UPSC परीक्षक)\n"
+        "• <code>/checkanswer</code> — उत्तर पुस्तिका मूल्यांकन (मानचित्र व आरेख स्कैनिंग सहित)\n"
         "• <code>/interview</code> — 1-on-1 साक्षात्कार (DAF व वॉयस - 25 से 275 अंक तक)\n"
         "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन\n"
         "• <code>/monthly</code> — संपूर्ण मासिक संकलन\n"
@@ -139,9 +139,9 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
         "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> आज सहित पिछले पूरे 10 दिनों की तारीखों में से किसी का भी 360° समसामयिक संकलन प्राप्त करें।\n\n"
-        "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> GS-1, 2, 3 और करेंट अफेयर्स के 50, 100 या 200 प्रश्नों का लाइव टेस्ट पोर्टल (शून्य दोहराव)।\n\n"
-        "3️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> प्रश्न और उत्तर-पुस्तिका की फ़ोटो/PDF भेजें। AI मुख्य परीक्षक 10 या 15 अंक तय कर सख्त व निष्पक्ष जांच करेगा।\n\n"
-        "4️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF आधारित स्थितिजन्य मौखिक साक्षात्कार (1 प्रश्न = 25 अंक, 3 = 75 अंक, 5 = 125 अंक, 9 प्रश्न = पूरा 275 अंक मॉक बोर्ड)।\n\n"
+        "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> GS-1, 2, 3 और करेंट अफेयर्स के 50, 100 या 200 प्रश्नों का लाइव टेस्ट पोर्टल।\n\n"
+        "3️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> PYQ या मॉडल प्रश्न चुनें। प्रश्न टेक्स्ट/फोटो/वॉयस में दें और उत्तर की कॉपी फोटो/PDF या <b>बोलकर वॉयस में</b> भेजें। परीक्षक मानचित्रों (Maps) व आरेखों (Diagrams) की विशेष जांच करेगा।\n\n"
+        "4️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF आधारित स्थितिजन्य मौखिक साक्षात्कार (1 प्रश्न = 25 अंक, 3 = 75 अंक, 5 = 125 अंक, 9 प्रश्न = पूरा 275 अंक बोर्ड)।\n\n"
         "5️⃣ <b>मेंटरशिप सत्र (`/ask`):</b> टेक्स्ट या वॉयस मैसेज भेजकर UPSC के किसी भी विषय पर सीधा प्रशासनिक विश्लेषण प्राप्त करें।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
@@ -275,7 +275,7 @@ def generate_single_quiz_batch(subj: str, count: int, batch_index: int, total_ba
 1. किसी भी पूर्व प्रश्न या सामान्य कथन की पुनरावृत्ति बिल्कुल न करें। 
 2. प्रश्न The Hindu, Indian Express, PIB, Vision IAS और Drishti IAS के विश्लेषणात्मक पैटर्न पर हों।
 3. प्रत्येक प्रश्न में UPSC स्तर के 2 या 3 सूक्ष्म एवं विश्लेषणात्मक कथन हों।
-4. केवल और केवल एक शुद्ध JSON Array लौटाएं। कोई मार्कडाउन कोडब्लॉक (जैसे ```json) या अतिरिक्त वार्तालाप न लिखें।
+4. केवल और केवल एक शुद्ध JSON Array लौटाएं।
 प्रारूप:
 [
   {{
@@ -473,7 +473,6 @@ async def handle_daf_qcount_step(update: Update, context: ContextTypes.DEFAULT_T
     user_id = update.effective_user.id
     txt = update.message.text.strip()
     
-    # सटीक पार्सिंग ताकि 1 प्रश्न पर 5 प्रश्न न बने
     cnt = 1
     max_m = 25
     if "9 प्रश्न" in txt or "275 अंक" in txt:
@@ -537,7 +536,6 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.HTML
         )
 
-        # प्रश्न की ऑडियो/वॉइस अनिवार्य रूप से भेजना
         await send_mandatory_voice(
             context,
             update.effective_chat.id,
@@ -592,7 +590,6 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 
         await update.message.reply_text(f"🏛 <b>बोर्ड का अवलोकन ({sess['current']}/{sess['total']}):</b>\n\n{eval_resp}", parse_mode=ParseMode.HTML)
 
-        # फीडबैक की वॉइस अनिवार्य रूप से भेजना
         await send_mandatory_voice(
             context,
             update.effective_chat.id,
@@ -652,7 +649,7 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
 प्रारूप:
 1. 🏆 प्राप्तांक: (सख्त मार्किंग के अनुसार {max_marks} में से अंक दें, उदा. {int(max_marks*0.55)}/{max_marks} अंक)
 2. 🌟 मुख्य प्रशासनिक खूबियाँ (Strengths): भूमिका, वाणी में ठहराव, संतुलित दृष्टिकोण
-3. ⚠️️ गंभीर कमियाँ एवं सुधार योग्य क्षेत्र (Areas of Improvement): डेटा की कमी, स्थितिजन्य असमंजस
+3. ⚠️ गंभीर कमियाँ एवं सुधार योग्य क्षेत्र (Areas of Improvement): डेटा की कमी, स्थितिजन्य असमंजस
 4. 🚀 बोर्ड की अंतिम अनुशंसा (Final Board Recommendation)
 
 केवल शुद्ध हिंदी में लिखें।
@@ -668,7 +665,6 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
             parse_mode=ParseMode.HTML
         )
 
-        # रिपोर्ट कार्ड का सार अनिवार्य वॉइस में भेजना
         summary_voice_text = f"नमस्कार {name} जी, आपके साक्षात्कार का मूल्यांकन पूर्ण हो गया है। आपका कुल स्कोर {max_marks} अंकों में से निर्धारित किया गया है। विस्तृत विश्लेषण आपके चैट पर प्रेषित है।"
         await send_mandatory_voice(
             context,
@@ -791,12 +787,13 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}")
 
-# ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) =================
+# ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) मानचित्र, आरेख एवं वॉयस उत्तर सपोर्ट =================
 @ensure_auth
 async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     keyboard = [
         [InlineKeyboardButton("📜 विगत वर्ष का प्रश्न (PYQ 2013-2026)", callback_data="ca_type_pyq")],
-        [InlineKeyboardButton("✍️ नया / मॉडल प्रश्न (New Expected)", callback_data="ca_type_custom")]
+        [InlineKeyboardButton("✍️ नया / मॉडल प्रश्न (New Expected)", callback_data="ca_type_custom")],
+        [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")]
     ]
     await update.message.reply_text(
         "📝 <b>UPSC मुख्य परीक्षा उत्तर पुस्तिका मूल्यांकन</b>\n\n"
@@ -812,30 +809,35 @@ async def handle_ca_type_choice(update: Update, context: ContextTypes.DEFAULT_TY
     data = query.data
     user_id = query.from_user.id
 
+    if data == "root_back":
+        await query.message.delete()
+        await start_handler(update, context)
+        return ConversationHandler.END
+
     is_pyq = (data == "ca_type_pyq")
     CHECK_ANSWER_CACHE[user_id] = {"is_pyq": is_pyq}
 
     if is_pyq:
-        await query.message.edit_text(
-            "📜 <b>विगत वर्ष का प्रश्न (PYQ):</b>\n\n"
-            "👉 <b>कृपया अपना प्रश्न लिखकर या वॉयस मैसेज में भेजें:</b>\n"
-            "<i>(परीक्षक प्रश्न को पहचानकर उसके वास्तविक वर्ष और आधिकारिक अंकों [10 या 15 अंक] का स्वतः निर्धारण करेगा)</i>",
-            parse_mode=ParseMode.HTML
+        guide_text = (
+            "📜 <b>विगत वर्ष का प्रश्न (PYQ 2013-2026):</b>\n\n"
+            "👉 <b>कृपया अपना प्रश्न लिखकर, बोलकर (वॉयस) या फ़ोटो खींचकर भेजें:</b>\n\n"
+            "<i>💡 AI मुख्य परीक्षक प्रश्न को पहचानकर उसके वास्तविक वर्ष और आधिकारिक अंकों (10 या 15 अंक) का स्वतः निर्धारण करेगा।</i>"
         )
     else:
-        await query.message.edit_text(
-            "✍️ <b>नया / मॉडल प्रश्न:</b>\n\n"
-            "👉 <b>कृपया अपना प्रश्न लिखकर या वॉयस मैसेज में भेजें:</b>\n"
-            "<i>(परीक्षक प्रश्न के स्तर और शब्द-सीमा के आधार पर अंकों का स्वतः निर्धारण करेगा)</i>",
-            parse_mode=ParseMode.HTML
+        guide_text = (
+            "✍️ <b>नया / मॉडल प्रश्न (New Expected):</b>\n\n"
+            "👉 <b>कृपया अपना प्रश्न लिखकर, बोलकर (वॉयस) या फ़ोटो खींचकर भेजें:</b>\n\n"
+            "<i>💡 AI मुख्य परीक्षक प्रश्न की प्रकृति और शब्द-सीमा के आधार पर अंकों का स्वतः निर्धारण करेगा।</i>"
         )
+
+    await query.message.reply_text(guide_text, parse_mode=ParseMode.HTML)
     return CA_QUESTION_INPUT
 
 async def handle_ca_question_input_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_id = update.effective_user.id
     msg = update.message
 
-    if msg.text and msg.text.strip().lower() == "/cancel":
+    if msg.text and msg.text.strip().lower() in ["/cancel", "cancel", "रद्द"]:
         CHECK_ANSWER_CACHE.pop(user_id, None)
         await msg.reply_text("मूल्यांकन प्रक्रिया रद्द कर दी गई।")
         return ConversationHandler.END
@@ -851,10 +853,10 @@ async def handle_ca_question_input_step(update: Update, context: ContextTypes.DE
             q_content = await asyncio.to_thread(call_gemini_audio_transcribe, bytes(f_bytes), "audio/ogg")
             await wait_m.delete()
         except Exception as e:
-            await wait_m.edit_text(f"❌ ऑडियो पढ़ने में त्रुटि: {e}। कृपया टेक्स्ट में लिखें।")
+            await wait_m.edit_text(f"❌ ऑडियो पढ़ने में त्रुटि: {e}। कृपया लिखकर भेजें।")
             return CA_QUESTION_INPUT
     elif msg.photo:
-        wait_m = await msg.reply_text("🖼️ प्रश्न की फ़ोटो पढ़ी जा रही है...")
+        wait_m = await msg.reply_text("🖼️ प्रश्न की फ़ोटो स्कैन की जा रही है...")
         try:
             f_obj = await msg.photo[-1].get_file()
             f_bytes = await f_obj.download_as_bytearray()
@@ -863,7 +865,7 @@ async def handle_ca_question_input_step(update: Update, context: ContextTypes.DE
         except Exception:
             q_content = "संलग्न फ़ोटो में दिया गया प्रश्न"
 
-    if len(q_content) < 5:
+    if len(q_content) < 4:
         await msg.reply_text("⚠️ <b>कृपया एक वैध UPSC मुख्य परीक्षा का प्रश्न दर्ज करें।</b>", parse_mode=ParseMode.HTML)
         return CA_QUESTION_INPUT
 
@@ -873,8 +875,10 @@ async def handle_ca_question_input_step(update: Update, context: ContextTypes.DE
 
     await msg.reply_text(
         f"✅ <b>प्रश्न सफलतापूर्वक दर्ज हुआ:</b>\n<i>\"{q_content[:200]}...\"</i>\n\n"
-        "👉 <b>चरण 2/2:</b> अब अपनी लिखी हुई <b>उत्तर पुस्तिका की साफ़ फ़ोटो या PDF</b> भेजें:\n"
-        "<i>(परीक्षक अंकों का स्वतः निर्धारण करके अत्यंत सख्त व निष्पक्ष जांच करेगा)</i>",
+        "👉 <b>चरण 2/2: अब अपना उत्तर भेजें:</b>\n"
+        "• अपनी लिखी हुई <b>उत्तर-पुस्तिका की साफ़ फ़ोटो या PDF</b> भेजें\n"
+        "• या अपना उत्तर सीधे <b>वॉयस नोट (बोलकर)</b> रिकॉर्ड करके भेजें!\n\n"
+        "<i>💡 परीक्षक उत्तर में बने मानचित्रों, आरेखों, फ़्लोचार्ट्स, डेटा और कमियों की गहन जांच करेगा।</i>",
         parse_mode=ParseMode.HTML
     )
     return CA_ANSWER_COPY
@@ -886,7 +890,7 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
     q_text = sess.get("question", "UPSC मुख्य परीक्षा प्रश्न")
     is_pyq = sess.get("is_pyq", False)
 
-    wait_m = await msg.reply_text("🔍 <b>संघ लोक सेवा आयोग के वरिष्ठ परीक्षक द्वारा उत्तर पुस्तिका का अत्यंत गहन एवं सख्त मूल्यांकन जारी है...</b>", parse_mode=ParseMode.HTML)
+    wait_m = await msg.reply_text("🔍 <b>संघ लोक सेवा आयोग के मुख्य परीक्षक द्वारा उत्तर (मानचित्र, आरेख व सामग्री) का गहन मूल्यांकन जारी है...</b>", parse_mode=ParseMode.HTML)
 
     pyq_note = "यह UPSC विगत वर्षों (2013-2026) का प्रश्न है। प्रश्न को पहचानकर उसके वास्तविक वर्ष और आधिकारिक अंकों (10 अंक या 15 अंक) के आधार पर ही सटीक अंक दें।" if is_pyq else "प्रश्न के स्तर और शब्द-सीमा का स्वयं विश्लेषण करके तय करें कि यह 10 अंक का प्रश्न है या 15 अंक का।"
 
@@ -895,27 +899,42 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
 प्रश्न: "{q_text}"
 {pyq_note}
 
-सख्त मूल्यांकन नियम:
+सख्त मूल्यांकन निर्देश:
 1. प्रश्न के मानक के आधार पर कुल अंक (10 अंक या 15 अंक) स्वयं निर्धारित करें।
-2. अत्यंत सख्त और वास्तविक UPSC मानकों पर मूल्यांकन करें। साधारण या सतही उत्तरों पर 30-40% से अधिक अंक बिल्कुल न दें।
-3. प्रारूप:
+2. अत्यंत सख्त और वास्तविक UPSC मानकों पर निष्पक्ष जांच करें (साधारण उत्तर पर 30-40% से अधिक अंक न दें)।
+3. आरेख एवं मानचित्र (Diagrams & Maps) का विशेष मूल्यांकन:
+   - उत्तर में यदि फ़्लोचार्ट, वेन डायग्राम या भारत/विश्व का मानचित्र बनाया गया है, तो उसकी सटीकता की जांच करें।
+   - यदि प्रश्न में भौगोलिक, सामरिक या आर्थिक स्थल शामिल हैं और छात्र ने मानचित्र/डायग्राम नहीं बनाया है, तो स्पष्ट लिखें कि यहाँ कौन सा मानचित्र या फ़्लोचार्ट अनिवार्य था और उसके लिए कितने अंक काटे गए हैं।
+4. प्रारूप:
    - 🎯 निर्धारित अंक पैमाना: (उदा. 10 अंक / 150 शब्द या 15 अंक / 250 शब्द)
    - 📊 प्राप्तांक (Marks Awarded): (उदा. 3.5 / 10 अंक या 5.5 / 15 अंक)
-   - 🌟 सकारात्मक पक्ष (Strengths): (भूमिका, संरचना, मुख्य बिंदु)
-   - ⚠️ गंभीर संरचनात्मक कमियाँ (Areas of Improvement): (डेटा, आरेख, संवैधानिक अनुच्छेदों और प्रामाणिक समितियों के संदर्भ की कमी)
+   - 🌟 सकारात्मक पक्ष (Strengths): (भूमिका, संरचना, प्रासंगिक बिंदु)
+   - 🗺️ मानचित्र व आरेख विश्लेषण (Maps & Diagrams): (चित्रों की उपस्थिति, सटीकता अथवा गैर-मौजूदगी पर टिप्पणी)
+   - ⚠️ गंभीर संरचनात्मक कमियाँ (Areas of Improvement): (डेटा, केस लॉ, अनुच्छेद, आयोगों की सिफारिशों का अभाव)
    - 🚀 परीक्षक की मूल्य संवर्धन सलाह (Value Addition): (आगे की राह व संतुलित निष्कर्ष को टॉपर स्तर का बनाने के सुझाव)
 
-केवल शुद्ध, गरिमापूर्ण एवं अकादमिक हिंदी में उत्तर दें।
+केवल और केवल शुद्ध, गरिमापूर्ण एवं अकादमिक हिंदी में उत्तर दें।
 """
-    m_type = "application/pdf" if (msg.document and msg.document.file_name.lower().endswith('.pdf')) else "image/jpeg"
-
     try:
-        doc_obj = msg.document or (msg.photo[-1] if msg.photo else None)
-        f_obj = await doc_obj.get_file()
-        f_bytes = await f_obj.download_as_bytearray()
+        clean_eval = ""
+        # 1. यदि छात्र ने वॉयस में उत्तर दिया है
+        if msg.voice or msg.audio:
+            f_obj = await (msg.voice or msg.audio).get_file()
+            f_bytes = await f_obj.download_as_bytearray()
+            candidate_ans = await asyncio.to_thread(call_gemini_audio_transcribe, bytes(f_bytes), "audio/ogg")
+            full_prompt = f"{prompt}\n\nउम्मीदवार का मौखिक उत्तर (Transcribed Answer):\n\"{candidate_ans}\""
+            eval_result = await asyncio.to_thread(call_gemini_safely, full_prompt)
+            clean_eval = clean_all_markdown_and_fix_content(eval_result)
 
-        eval_result = await asyncio.to_thread(call_gemini_multimodal_inline, prompt, bytes(f_bytes), m_type)
-        clean_eval = clean_all_markdown_and_fix_content(eval_result)
+        # 2. यदि छात्र ने फ़ोटो या PDF भेजी है
+        else:
+            m_type = "application/pdf" if (msg.document and msg.document.file_name.lower().endswith('.pdf')) else "image/jpeg"
+            doc_obj = msg.document or (msg.photo[-1] if msg.photo else None)
+            f_obj = await doc_obj.get_file()
+            f_bytes = await f_obj.download_as_bytearray()
+            eval_result = await asyncio.to_thread(call_gemini_multimodal_inline, prompt, bytes(f_bytes), m_type)
+            clean_eval = clean_all_markdown_and_fix_content(eval_result)
+
         await wait_m.delete()
 
         if len(clean_eval) > 3800:
@@ -925,7 +944,7 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
             await msg.reply_text(clean_eval, parse_mode=ParseMode.HTML)
 
     except Exception as e:
-        await wait_m.edit_text(f"❌ मूल्यांकन में त्रुटि: {e}। कृपया साफ़ फ़ोटो या PDF भेजें।")
+        await wait_m.edit_text(f"❌ मूल्यांकन में त्रुटि: {e}। कृपया साफ़ फ़ोटो, PDF या वॉयस मैसेज भेजें।")
 
     CHECK_ANSWER_CACHE.pop(user_id, None)
     return ConversationHandler.END
@@ -1717,9 +1736,9 @@ async def main():
     answer_check_conv = ConversationHandler(
         entry_points=[CommandHandler("checkanswer", check_answer_cmd)],
         states={
-            CA_CHOOSE_TYPE: [CallbackQueryHandler(handle_ca_type_choice, pattern=r"^ca_type_")],
+            CA_CHOOSE_TYPE: [CallbackQueryHandler(handle_ca_type_choice, pattern=r"^ca_type_|^root_back")],
             CA_QUESTION_INPUT: [MessageHandler((filters.TEXT | filters.VOICE | filters.AUDIO | filters.PHOTO) & (~filters.COMMAND), handle_ca_question_input_step)],
-            CA_ANSWER_COPY: [MessageHandler((filters.PHOTO | filters.Document.ALL) & (~filters.COMMAND), handle_ca_answer_copy_submission)]
+            CA_ANSWER_COPY: [MessageHandler((filters.PHOTO | filters.Document.ALL | filters.VOICE | filters.AUDIO) & (~filters.COMMAND), handle_ca_answer_copy_submission)]
         },
         fallbacks=[CommandHandler("cancel", global_cancel)],
         allow_reentry=True
