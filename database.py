@@ -51,6 +51,7 @@ def init_db():
                 home_district TEXT,
                 home_village TEXT,
                 college_name TEXT,
+                stream_name TEXT,
                 graduation_status TEXT,
                 optional_subject TEXT,
                 hobby TEXT,
@@ -66,9 +67,9 @@ def init_db():
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
         """)
-        # यदि पुरानी टेबल में नए कॉलम न हों तो जोड़ें
         c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS home_district TEXT;")
         c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS home_village TEXT;")
+        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS stream_name TEXT;")
         c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS hobby TEXT;")
         c.close()
         conn.close()
@@ -116,8 +117,6 @@ def is_authorized(user_id):
         return True
     
     now = get_ist_now()
-    
-    # 1. डेटाबेस से समय की सटीक जांच (Time-based exact check)
     conn = get_db_connection()
     if conn:
         try:
@@ -130,7 +129,6 @@ def is_authorized(user_id):
                     if exp:
                         exp_tz = exp.astimezone(now.tzinfo)
                         if now <= exp_tz:
-                            # अभी वैध है
                             if user_id in MEMORY_USERS:
                                 MEMORY_USERS[user_id]["is_vip"] = 1
                                 MEMORY_USERS[user_id]["vip_expiry"] = exp_tz
@@ -138,7 +136,6 @@ def is_authorized(user_id):
                             conn.close()
                             return True
                         else:
-                            # समय समाप्त - तुरंत डी-एक्टिवेट करें
                             c.execute("UPDATE users SET is_vip = 0, vip_expiry = NULL WHERE user_id = %s", (user_id,))
                             if user_id in MEMORY_USERS:
                                 MEMORY_USERS[user_id]["is_vip"] = 0
@@ -155,7 +152,6 @@ def is_authorized(user_id):
         except Exception:
             pass
 
-    # 2. बैकअप मेमोरी चेक
     mem = MEMORY_USERS.get(user_id)
     if mem and mem.get("is_vip") == 1:
         exp = mem.get("vip_expiry")
@@ -214,13 +210,18 @@ def remove_vip_user(target_uid: int):
 def get_user_daf(user_id):
     if user_id in MEMORY_DAF:
         d = MEMORY_DAF[user_id]
-        return (d["name"], d["home_state"], d.get("home_district", "लागू नहीं"), d.get("home_village", "लागू नहीं"), d["college_name"], d["graduation_status"], d["optional_subject"], d.get("hobby", "लागू नहीं"), d["attempt_number"])
+        return (
+            d["name"], d["home_state"], d.get("home_district", "लागू नहीं"),
+            d.get("home_village", "लागू नहीं"), d["college_name"],
+            d.get("stream_name", "सामान्य अध्ययन"), d["graduation_status"],
+            d["optional_subject"], d.get("hobby", "लागू नहीं"), d["attempt_number"]
+        )
     
     conn = get_db_connection()
     if conn:
         try:
             c = conn.cursor()
-            c.execute("SELECT name, home_state, home_district, home_village, college_name, graduation_status, optional_subject, hobby, attempt_number FROM user_daf WHERE user_id = %s", (user_id,))
+            c.execute("SELECT name, home_state, home_district, home_village, college_name, stream_name, graduation_status, optional_subject, hobby, attempt_number FROM user_daf WHERE user_id = %s", (user_id,))
             row = c.fetchone()
             c.close()
             conn.close()
@@ -228,18 +229,19 @@ def get_user_daf(user_id):
                 MEMORY_DAF[user_id] = {
                     "name": row[0], "home_state": row[1], "home_district": row[2] or "लागू नहीं",
                     "home_village": row[3] or "लागू नहीं", "college_name": row[4],
-                    "graduation_status": row[5], "optional_subject": row[6],
-                    "hobby": row[7] or "लागू नहीं", "attempt_number": row[8]
+                    "stream_name": row[5] or "सामान्य अध्ययन", "graduation_status": row[6],
+                    "optional_subject": row[7], "hobby": row[8] or "लागू नहीं",
+                    "attempt_number": row[9]
                 }
                 return row
         except Exception:
             pass
     return None
 
-def save_user_daf(user_id, name, home_state, home_district, home_village, college, status, opt_sub, hobby, attempt):
+def save_user_daf(user_id, name, home_state, home_district, home_village, college, stream, status, opt_sub, hobby, attempt):
     MEMORY_DAF[user_id] = {
         "name": name, "home_state": home_state, "home_district": home_district,
-        "home_village": home_village, "college_name": college,
+        "home_village": home_village, "college_name": college, "stream_name": stream,
         "graduation_status": status, "optional_subject": opt_sub,
         "hobby": hobby, "attempt_number": attempt
     }
@@ -248,20 +250,21 @@ def save_user_daf(user_id, name, home_state, home_district, home_village, colleg
         try:
             c = conn.cursor()
             c.execute("""
-                INSERT INTO user_daf (user_id, name, home_state, home_district, home_village, college_name, graduation_status, optional_subject, hobby, attempt_number, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                INSERT INTO user_daf (user_id, name, home_state, home_district, home_village, college_name, stream_name, graduation_status, optional_subject, hobby, attempt_number, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 ON CONFLICT (user_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     home_state = EXCLUDED.home_state,
                     home_district = EXCLUDED.home_district,
                     home_village = EXCLUDED.home_village,
                     college_name = EXCLUDED.college_name,
+                    stream_name = EXCLUDED.stream_name,
                     graduation_status = EXCLUDED.graduation_status,
                     optional_subject = EXCLUDED.optional_subject,
                     hobby = EXCLUDED.hobby,
                     attempt_number = EXCLUDED.attempt_number,
                     updated_at = NOW();
-            """, (user_id, name, home_state, home_district, home_village, college, status, opt_sub, hobby, attempt))
+            """, (user_id, name, home_state, home_district, home_village, college, stream, status, opt_sub, hobby, attempt))
             c.close()
             conn.close()
         except Exception:
@@ -274,7 +277,7 @@ def get_user_full_info(user_id):
             c = conn.cursor()
             c.execute("SELECT user_id, username, first_name, is_vip, vip_expiry, joined_at FROM users WHERE user_id = %s", (user_id,))
             user_row = c.fetchone()
-            c.execute("SELECT name, home_state, home_district, home_village, college_name, graduation_status, optional_subject, hobby, attempt_number, updated_at FROM user_daf WHERE user_id = %s", (user_id,))
+            c.execute("SELECT name, home_state, home_district, home_village, college_name, stream_name, graduation_status, optional_subject, hobby, attempt_number, updated_at FROM user_daf WHERE user_id = %s", (user_id,))
             daf_row = c.fetchone()
             c.close()
             conn.close()
@@ -289,7 +292,7 @@ def get_user_full_info(user_id):
         d_row = None
         if user_id in MEMORY_DAF:
             d = MEMORY_DAF[user_id]
-            d_row = (d["name"], d["home_state"], d.get("home_district"), d.get("home_village"), d["college_name"], d["graduation_status"], d["optional_subject"], d.get("hobby"), d["attempt_number"], get_ist_now())
+            d_row = (d["name"], d["home_state"], d.get("home_district"), d.get("home_village"), d["college_name"], d.get("stream_name"), d["graduation_status"], d["optional_subject"], d.get("hobby"), d["attempt_number"], get_ist_now())
         return u_row, d_row
     return None, None
 
@@ -355,7 +358,6 @@ def get_all_users_detailed():
             rows = c.fetchall()
             for r in rows:
                 uid, un, fn, is_vip, exp = r
-                # लाइव एक्सपायरी सत्यापन
                 if is_vip == 1 and exp and now > exp.astimezone(now.tzinfo):
                     is_vip = 0
                     c.execute("UPDATE users SET is_vip = 0, vip_expiry = NULL WHERE user_id = %s", (uid,))
