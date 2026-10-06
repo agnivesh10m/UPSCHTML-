@@ -297,44 +297,62 @@ async def handle_quiz_sub_choice(update: Update, context: ContextTypes.DEFAULT_T
     ]
     await query.message.edit_text(f"🎯 <b>चरण 3/3:</b> विषय <b>{USER_QUIZ_SELECTIONS[user_id]['sub']}</b> के कितने प्रश्न चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-def generate_single_quiz_batch(subj: str, count: int, batch_index: int, total_batches: int) -> list:
+def robust_json_cleaner(raw_text: str) -> list:
+    """अत्यंत मजबूत क्लीनर जो किसी भी टूटे हुए JSON को सुरक्षित रूप से निकालता है"""
+    clean = re.sub(r'```(?:json)?', '', raw_text, flags=re.IGNORECASE).strip()
+    
+    # सबसे बाहरी ब्रैकेट खोजना
+    start = clean.find('[')
+    end = clean.rfind(']')
+    if start != -1 and end != -1 and end > start:
+        clean = clean[start:end+1]
+    
+    # सामान्य JSON त्रुटियों को ठीक करना
+    clean = re.sub(r',\s*\]', ']', clean)
+    clean = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', clean)
+    
+    try:
+        data = json.loads(clean)
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    
+    # फ़ॉलबैक: ऑब्जेक्ट-बाय-ऑब्जेक्ट सुरक्षित एक्सट्रैक्शन
+    items = []
+    pattern = re.compile(r'\{[^{}]*"topic"[^{}]*"text"[^{}]*"options"[^{}]*"correctAnswer"[^{}]*"solution"[^{}]*\}', re.DOTALL)
+    for m in pattern.finditer(clean):
+        try:
+            obj = json.loads(m.group(0))
+            items.append(obj)
+        except Exception:
+            continue
+    return items
+
+def generate_single_quiz_batch(subj: str, count: int, batch_index: int = 0) -> list:
     random_seed = random.randint(100000, 999999)
     prompt = f"""
-आप संघ लोक सेवा आयोग (UPSC CSE Prelims) के मुख्य प्रश्न-निर्माता हैं।
-विषय: '{subj}'
-बैच: {batch_index + 1} of {total_batches} (सीड संदर्भ: {random_seed})
-कार्य: ठीक {count} उच्च स्तरीय, अत्यंत कठिन, मानक और कथन-आधारित बहुविकल्पीय प्रश्न (MCQs) तैयार करें।
+आप UPSC CSE Prelims के मुख्य परीक्षक हैं।
+विषय: '{subj}' (सीड: {random_seed}, बैच: {batch_index + 1})
+कार्य: ठीक {count} अत्यंत कठिन, मानक एवं कथन-आधारित बहुविकल्पीय प्रश्न (MCQs) तैयार करें।
 
-सख्त निर्देश (UPSC कठिन स्तर एवं शून्य पुनरावृत्ति):
-1. किसी भी पूर्व प्रश्न या सामान्य कथन की पुनरावृत्ति बिल्कुल न करें। 
-2. प्रश्न The Hindu, Indian Express, PIB, Vision IAS और Drishti IAS के विश्लेषणात्मक पैटर्न पर हों।
-3. प्रत्येक प्रश्न में UPSC स्तर के 2 या 3 सूक्ष्म एवं विश्लेषणात्मक कथन हों।
-4. केवल और केवल एक शुद्ध JSON Array लौटाएं।
-प्रारूप:
+अनिवार्य नियम:
+1. प्रश्न The Hindu, Indian Express, PIB व Vision IAS के पैटर्न पर हों।
+2. शून्य पुनरावृत्ति।
+3. केवल और केवल शुद्ध JSON Array आउटपुट दें:
 [
   {{
     "topic": "{subj}",
-    "text": "प्रश्न का पूरा विवरण और कथन...",
+    "text": "1. प्रश्न का विवरण व 2-3 विश्लेषणात्मक कथन...",
     "options": ["(a) केवल 1", "(b) केवल 2", "(c) 1 और 2 दोनों", "(d) न तो 1, न ही 2"],
     "correctAnswer": 2,
-    "solution": "<b>व्याख्या:</b> प्रामाणिक स्रोत सहित संपूर्ण 2-3 पंक्तियों की आधिकारिक व्याख्या।"
+    "solution": "<b>व्याख्या:</b> स्रोत सहित प्रामाणिक 2-3 पंक्तियों की आधिकारिक व्याख्या।"
   }}
 ]
-नोट: correctAnswer 0, 1, 2, या 3 होना चाहिए। भाषा शुद्ध हिंदी हो।
+नोट: correctAnswer 0, 1, 2 या 3 हो। भाषा शुद्ध हिंदी रखें। आंतरिक कोट्स को एस्केप करें।
 """
     raw_resp = call_gemini_safely(prompt)
-    clean = re.sub(r'^```json\s*', '', raw_resp.strip(), flags=re.IGNORECASE)
-    clean = re.sub(r'^```\s*', '', clean.strip(), flags=re.IGNORECASE)
-    clean = re.sub(r'```$', '', clean.strip()).strip()
-    
-    m = re.search(r'\[\s*\{.*\}\s*\]', clean, re.DOTALL)
-    if m:
-        clean = m.group(0)
-    
-    data = json.loads(clean)
-    if isinstance(data, list):
-        return data
-    return []
+    return robust_json_cleaner(raw_resp)
 
 async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -343,29 +361,42 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     user_id = query.from_user.id
     subj = USER_QUIZ_SELECTIONS.get(user_id, {}).get("sub", "सामान्य अध्ययन")
 
-    status_msg = await query.message.reply_text(f"⏳ [■□□□□□□□□□] 10% UPSC प्रश्न बैंक संकलन प्रारंभ ({cnt} प्रश्न)...")
+    status_msg = await query.message.reply_text("⏳ [■□□□□□□□□□] 10% UPSC टेस्ट डेस्क प्रारंभ हो रहा है...")
 
     try:
-        batch_size = 25
-        num_batches = max(1, cnt // batch_size)
         all_questions = []
-
-        for b_idx in range(num_batches):
-            pct = 15 + int(((b_idx + 1) / num_batches) * 60)
-            await status_msg.edit_text(f"⏳ [प्रगति {pct}%] 1 लाख+ प्रश्न बैंक से उच्च स्तरीय व गैर-दोहराव प्रश्नों का संश्लेषण जारी (बैच {b_idx + 1}/{num_batches})...")
-            b_list = await asyncio.to_thread(generate_single_quiz_batch, subj, batch_size, b_idx, num_batches)
-            all_questions.extend(b_list)
+        
+        if cnt == 50:
+            await status_msg.edit_text("⏳ [■■■□□□□□□□] 30% 1 लाख+ बैंक से 50 कठिन प्रश्नों का संश्लेषण जारी...")
+            q_batch = await asyncio.to_thread(generate_single_quiz_batch, subj, 50, 0)
+            if not q_batch or len(q_batch) < 15:
+                # यदि एक बार में कम आए तो 25+25 में बैकअप
+                await status_msg.edit_text("⏳ [■■■■■□□□□□] 50% प्रश्नों का बैकअप संश्लेषण जारी...")
+                b1 = await asyncio.to_thread(generate_single_quiz_batch, subj, 25, 1)
+                b2 = await asyncio.to_thread(generate_single_quiz_batch, subj, 25, 2)
+                all_questions = b1 + b2
+            else:
+                all_questions = q_batch
+        else: # 100 प्रश्न
+            await status_msg.edit_text("⏳ [■■■□□□□□□□] 30% बैच 1/2: प्रथम 50 प्रश्नों का संश्लेषण जारी...")
+            b1 = await asyncio.to_thread(generate_single_quiz_batch, subj, 50, 1)
+            await status_msg.edit_text("⏳ [■■■■■■□□□□] 60% बैच 2/2: द्वितीय 50 प्रश्नों का संश्लेषण जारी...")
+            b2 = await asyncio.to_thread(generate_single_quiz_batch, subj, 50, 2)
+            all_questions = b1 + b2
 
         if not all_questions:
-            raise Exception("प्रश्नों का संश्लेषण नहीं हो सका।")
+            raise Exception("प्रश्नों की संरचना संकलित नहीं हो सकी। कृपया एक बार पुनः प्रयास करें।")
 
-        await status_msg.edit_text("⏳ [■■■■■■■■■□] 85% ऑनलाइन टेस्ट पोर्टल असेंबल किया जा रहा है...")
+        await status_msg.edit_text("⏳ [■■■■■■■■□□] 80% प्रश्नों की उत्तर कुंजी व नंबरिंग व्यवस्थित हो रही है...")
 
+        # 1 से N तक सटीक नंबरिंग
         for idx, q in enumerate(all_questions):
             q_text = q.get("text", "")
-            q_text = re.sub(r'^\d+\.\s*', '', q_text)
+            q_text = re.sub(r'^\d+\.\s*', '', q_text).strip()
             q["text"] = f"{idx + 1}. {q_text}"
             q["topic"] = subj
+
+        await status_msg.edit_text("⏳ [■■■■■■■■■□] 95% विजन IAS ऑनलाइन टेस्ट पोर्टल असेंबल हो रहा है...")
 
         test_id = f"{int(time.time()) % 100000}"
         portal_html = build_vision_ias_interactive_portal(subj, test_id, len(all_questions), all_questions)
@@ -397,7 +428,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         await status_msg.edit_text(f"❌ पोर्टल बनाने में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
-# ================= साक्षात्कार (/interview) 10-चरणीय अलग-अलग DAF =================
+# ================= साक्षात्कार (/interview) 10-चरणीय DAF =================
 @ensure_auth
 async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -616,7 +647,6 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.HTML
         )
 
-        # संपूर्ण प्रश्न की 100% पूरी वॉइस (बिना किसी ट्रंकेशन के)
         await send_mandatory_voice(
             context,
             update.effective_chat.id,
@@ -631,7 +661,6 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
 
 async def send_mandatory_voice(context, chat_id, text, caption):
     try:
-        # बिना किसी सीमा के पूरा टेक्स्ट ऑडियो में भेजना
         audio_bytes = await download_audio_stream(text)
         if audio_bytes:
             audio_io = io.BytesIO(audio_bytes)
@@ -672,7 +701,6 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
 
         await update.message.reply_text(f"🏛 <b>बोर्ड का अवलोकन ({sess['current']}/{sess['total']}):</b>\n\n{eval_resp}", parse_mode=ParseMode.HTML)
 
-        # संपूर्ण फीडबैक की पूरी वॉइस भेजना
         await send_mandatory_voice(
             context,
             update.effective_chat.id,
@@ -1173,7 +1201,7 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
 
     nav_btns = []
     if target_page > 0:
-        nav_btns.append(InlineKeyboardButton(f"◀️️ पेज {target_page}/3", callback_data=f"trpage_{target_page - 1}"))
+        nav_btns.append(InlineKeyboardButton(f"◀️ पेज {target_page}/3", callback_data=f"trpage_{target_page - 1}"))
     if end_idx < len(lines):
         nav_btns.append(InlineKeyboardButton(f"पेज {target_page + 2}/3 ▶️", callback_data=f"trpage_{target_page + 1}"))
 
