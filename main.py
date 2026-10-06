@@ -125,11 +125,11 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👋 <b>नमस्ते {user_link}!</b>\n\n"
         f"{admin_tag}"
         f"🆔 <b>आपकी स्थायी प्रोफाइल:</b> {get_tg_user_link(user.id, f'प्रोफाइल लिंक ({user.id})')}\n\n"
-        "📖 <b>अध्ययन एवं नोट्स:</b>\n"
-        "• <code>/daily</code> — दैनिक 360° समसामयिक संकलन (पिछले 10 दिन उपलब्ध)\n"
+        "📖 <b>अध्ययन एवं नोट्स (पाठ्यक्रम मैपिंग सहित):</b>\n"
+        "• <code>/daily</code> — दैनिक 360° समसामयिक संकलन (सिलेबस टॉपिक टैग्स)\n"
         "• <code>/trending</code> — राष्ट्रीय व वैश्विक ट्रेंडिंग रडार (कठिन स्तर)\n"
         "• <code>/quiz</code> — विजन IAS स्टाइल लाइव मॉक टेस्ट पोर्टल (50 व 100 प्रश्न)\n"
-        "• <code>/mains</code> — मुख्य परीक्षा अभ्यास (PYQs 2013-2026 व मॉडल प्रश्न)\n"
+        "• <code>/mains</code> — मुख्य परीक्षा अभ्यास (2013-2026 संपूर्ण PYQs व मॉडल प्रश्न)\n"
         "• <code>/checkanswer</code> — उत्तर पुस्तिका मूल्यांकन (मानचित्र व आरेख स्कैनिंग सहित)\n"
         "• <code>/interview</code> — 1-on-1 साक्षात्कार (DAF व वॉयस - 25 से 275 अंक तक)\n"
         "• <code>/weekly</code> — साप्ताहिक क्विक रिवीजन\n"
@@ -166,11 +166,12 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
         f"👤 <b>सदस्य:</b> {user_link} (<code>{user.id}</code>)\n\n"
-        "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> आज सहित पिछले पूरे 10 दिनों की तारीखों में से किसी का भी 360° समसामयिक संकलन प्राप्त करें।\n\n"
+        "1️⃣ <b>दैनिक व आवधिक नोट्स (`/daily`, `/weekly`, `/monthly`):</b> प्रत्येक मुद्दे पर GS पेपर व सिलेबस टॉपिक का स्पष्ट उल्लेख।\n\n"
         "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> 1 लाख+ प्रश्नों के बैंक से 50 या 100 प्रश्नों का लाइव टेस्ट पोर्टल (शून्य दोहराव)।\n\n"
-        "3️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> PYQ या मॉडल प्रश्न चुनें। उत्तर फ़ोटो/PDF या बोलकर भेजें। मानचित्रों व आरेखों की भी सख्त जांच होगी।\n\n"
-        "4️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF (जिला, गांव, कॉलेज, स्ट्रीम, हॉबी आधारित) मौखिक साक्षात्कार (1 प्रश्न = 25 अंक, 3 = 75 अंक, 5 = 125 अंक, 9 प्रश्न = पूरा 275 अंक बोर्ड)।\n\n"
-        "5️⃣ <b>मेंटरशिप सत्र (`/ask`):</b> टेक्स्ट या वॉयस मैसेज भेजकर UPSC के किसी भी विषय पर सीधा प्रशासनिक विश्लेषण प्राप्त करें।"
+        "3️⃣ <b>मुख्य परीक्षा अभ्यास (`/mains`):</b> 2013 से 2026 तक के सभी मुख्य परीक्षा PYQs का संपूर्ण संग्रह एवं मॉडल उत्तर ढांचा।\n\n"
+        "4️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> PYQ या मॉडल प्रश्न चुनें। फ़ोटो/PDF या वॉयस उत्तर भेजें। मानचित्रों व आरेखों की भी सख्त जांच होगी।\n\n"
+        "5️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF आधारित मौखिक साक्षात्कार (1, 3, 5 या पूरे 9 प्रश्न/275 अंक का मॉक बोर्ड)।\n\n"
+        "6️⃣ <b>मेंटरशिप सत्र (`/ask`):</b> टेक्स्ट या वॉयस मैसेज भेजकर UPSC के किसी भी विषय पर सीधा प्रशासनिक विश्लेषण प्राप्त करें।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
@@ -193,7 +194,7 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")])
     await update.message.reply_text(
-        "📅 <b>UPSC दैनिक 360° महा-संकलन:</b>\nजिस तारीख का पूरा विश्लेषण चाहिए, उसका चयन करें (पिछले 10 दिन):",
+        "📅 <b>UPSC दैनिक 360° महा-संकलन (पाठ्यक्रम टैग्स सहित):</b>\nजिस तारीख का पूरा विश्लेषण चाहिए, उसका चयन करें (पिछले 10 दिन):",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.HTML
     )
@@ -298,16 +299,12 @@ async def handle_quiz_sub_choice(update: Update, context: ContextTypes.DEFAULT_T
     await query.message.edit_text(f"🎯 <b>चरण 3/3:</b> विषय <b>{USER_QUIZ_SELECTIONS[user_id]['sub']}</b> के कितने प्रश्न चाहते हैं?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 def robust_json_cleaner(raw_text: str) -> list:
-    """अत्यंत मजबूत क्लीनर जो किसी भी टूटे हुए JSON को सुरक्षित रूप से निकालता है"""
     clean = re.sub(r'```(?:json)?', '', raw_text, flags=re.IGNORECASE).strip()
-    
-    # सबसे बाहरी ब्रैकेट खोजना
     start = clean.find('[')
     end = clean.rfind(']')
     if start != -1 and end != -1 and end > start:
         clean = clean[start:end+1]
     
-    # सामान्य JSON त्रुटियों को ठीक करना
     clean = re.sub(r',\s*\]', ']', clean)
     clean = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', clean)
     
@@ -318,13 +315,11 @@ def robust_json_cleaner(raw_text: str) -> list:
     except Exception:
         pass
     
-    # फ़ॉलबैक: ऑब्जेक्ट-बाय-ऑब्जेक्ट सुरक्षित एक्सट्रैक्शन
     items = []
     pattern = re.compile(r'\{[^{}]*"topic"[^{}]*"text"[^{}]*"options"[^{}]*"correctAnswer"[^{}]*"solution"[^{}]*\}', re.DOTALL)
     for m in pattern.finditer(clean):
         try:
-            obj = json.loads(m.group(0))
-            items.append(obj)
+            items.append(json.loads(m.group(0)))
         except Exception:
             continue
     return items
@@ -349,7 +344,7 @@ def generate_single_quiz_batch(subj: str, count: int, batch_index: int = 0) -> l
     "solution": "<b>व्याख्या:</b> स्रोत सहित प्रामाणिक 2-3 पंक्तियों की आधिकारिक व्याख्या।"
   }}
 ]
-नोट: correctAnswer 0, 1, 2 या 3 हो। भाषा शुद्ध हिंदी रखें। आंतरिक कोट्स को एस्केप करें।
+नोट: correctAnswer 0, 1, 2 या 3 हो। भाषा शुद्ध हिंदी रखें।
 """
     raw_resp = call_gemini_safely(prompt)
     return robust_json_cleaner(raw_resp)
@@ -365,31 +360,28 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
 
     try:
         all_questions = []
-        
         if cnt == 50:
-            await status_msg.edit_text("⏳ [■■■□□□□□□□] 30% 1 लाख+ बैंक से 50 कठिन प्रश्नों का संश्लेषण जारी...")
+            await status_msg.edit_text("⏳ [■■■□□□□□□□] 35% 1 लाख+ बैंक से 50 कठिन प्रश्नों का संश्लेषण जारी...")
             q_batch = await asyncio.to_thread(generate_single_quiz_batch, subj, 50, 0)
             if not q_batch or len(q_batch) < 15:
-                # यदि एक बार में कम आए तो 25+25 में बैकअप
-                await status_msg.edit_text("⏳ [■■■■■□□□□□] 50% प्रश्नों का बैकअप संश्लेषण जारी...")
+                await status_msg.edit_text("⏳ [■■■■■□□□□□] 55% प्रश्नों का बैकअप संश्लेषण जारी...")
                 b1 = await asyncio.to_thread(generate_single_quiz_batch, subj, 25, 1)
                 b2 = await asyncio.to_thread(generate_single_quiz_batch, subj, 25, 2)
                 all_questions = b1 + b2
             else:
                 all_questions = q_batch
-        else: # 100 प्रश्न
+        else:
             await status_msg.edit_text("⏳ [■■■□□□□□□□] 30% बैच 1/2: प्रथम 50 प्रश्नों का संश्लेषण जारी...")
             b1 = await asyncio.to_thread(generate_single_quiz_batch, subj, 50, 1)
-            await status_msg.edit_text("⏳ [■■■■■■□□□□] 60% बैच 2/2: द्वितीय 50 प्रश्नों का संश्लेषण जारी...")
+            await status_msg.edit_text("⏳ [■■■■■■□□□□] 65% बैच 2/2: द्वितीय 50 प्रश्नों का संश्लेषण जारी...")
             b2 = await asyncio.to_thread(generate_single_quiz_batch, subj, 50, 2)
             all_questions = b1 + b2
 
         if not all_questions:
-            raise Exception("प्रश्नों की संरचना संकलित नहीं हो सकी। कृपया एक बार पुनः प्रयास करें।")
+            raise Exception("प्रश्नों की संरचना संकलित नहीं हो सकी।")
 
-        await status_msg.edit_text("⏳ [■■■■■■■■□□] 80% प्रश्नों की उत्तर कुंजी व नंबरिंग व्यवस्थित हो रही है...")
+        await status_msg.edit_text("⏳ [■■■■■■■■□□] 85% प्रश्नों की उत्तर कुंजी व नंबरिंग व्यवस्थित हो रही है...")
 
-        # 1 से N तक सटीक नंबरिंग
         for idx, q in enumerate(all_questions):
             q_text = q.get("text", "")
             q_text = re.sub(r'^\d+\.\s*', '', q_text).strip()
@@ -790,15 +782,15 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
     INTERVIEW_SESSION.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= मुख्य परीक्षा अभ्यास (/mains) =================
+# ================= मुख्य परीक्षा अभ्यास (/mains) - 2013-2026 संपूर्ण PYQs =================
 @ensure_auth
 async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("📜 विगत वर्षों के प्रश्न (PYQs 2013-2026 Complete)", callback_data="mq_type_pyq")],
+        [InlineKeyboardButton("📜 विगत वर्षों के प्रश्न (PYQs 2013-2026 Complete Archive)", callback_data="mq_type_pyq")],
         [InlineKeyboardButton("✨ नए संभावित मॉडल प्रश्न (New Expected)", callback_data="mq_type_new")],
         [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")]
     ]
-    await update.message.reply_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) अभ्यास:</b>\nआप पुराने सभी प्रश्न देखना चाहते हैं या नए संभावित मॉडल प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("✍️ <b>UPSC मुख्य परीक्षा (Mains) अभ्यास:</b>\nआप 2013 से 2026 के वास्तविक PYQs देखना चाहते हैं या नए मॉडल प्रश्न?", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def handle_mains_type_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -836,7 +828,7 @@ async def handle_mains_gs_choice(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton("🏆 5 प्रश्न", callback_data="mq_cnt_5")]
     ]
     if is_pyq:
-        keyboard.append([InlineKeyboardButton("📚 2013-2026 तक के सभी मुख्य PYQs (Complete Set)", callback_data="mq_cnt_all")])
+        keyboard.append([InlineKeyboardButton("📚 2013-2026 तक के सभी मुख्य PYQs (संपूर्ण आर्काइव)", callback_data="mq_cnt_all")])
     else:
         keyboard.append([InlineKeyboardButton("📚 10 प्रश्नों का संभावित मेगा सेट", callback_data="mq_cnt_10")])
 
@@ -850,53 +842,95 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
     user_id = query.from_user.id
 
     cnt_raw = data.replace("mq_cnt_", "")
-    cnt_desc = "2013 से 2026 तक के सभी मुख्य PYQs" if cnt_raw == "all" else f"{cnt_raw} प्रश्न"
-    
     sel = MAINS_SELECTIONS.get(user_id, {"q_type": "new", "gs": "2"})
     is_pyq = (sel.get("q_type") == "pyq")
     gs_paper = f"सामान्य अध्ययन - {sel.get('gs')}"
 
-    wait_m = await query.message.reply_text(f"⏳ <b>{gs_paper}</b> के {cnt_desc} उत्तर-लेखन मॉड्यूल तैयार हो रहे हैं...", parse_mode=ParseMode.HTML)
+    wait_m = await query.message.reply_text("⏳ [■■□□□□□□□□] 20% UPSC मुख्य परीक्षा प्रश्न बैंक से डेटा संकलन प्रारंभ...")
 
-    tag_instruction = "2013 से 2026 तक इस विषय में पूछे गए प्रश्नों को शामिल करें। प्रत्येक प्रश्न पर उसका वर्ष, पेपर और अंक स्पष्ट लिखें (उदा. [UPSC CSE 2023 / GS " + sel.get('gs') + " / 15 अंक])." if is_pyq else "प्रत्येक प्रश्न पर लिखें: [मॉडल प्रश्न / GS " + sel.get('gs') + " / 15 अंक]."
+    try:
+        combined_text = ""
+        
+        # यदि 2013-2026 संपूर्ण PYQ मांगा गया है तो 3 स्लॉट्स में बिना कटे पूरा संग्रह तैयार करना
+        if is_pyq and cnt_raw == "all":
+            await wait_m.edit_text("⏳ [■■■■□□□□□□] 40% भाग 1/3: वर्ष 2026 से 2022 तक के PYQs का संकलन जारी...")
+            p1 = f"""
+UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 2026, 2025, 2024, 2023 एवं 2022 के सभी प्रमुख प्रश्नों का संपूर्ण संकलन करें।
+प्रत्येक प्रश्न पर स्पष्ट टैग: [UPSC CSE वर्ष / GS {sel.get('gs')} / अंक]।
+ढांचा: 📌 भूमिका, 📊 मुख्य विश्लेषणात्मक आयाम (3 बिंदु), 🚀 आगे की राह, ⚖️ संतुलित प्रशासनिक निष्कर्ष।
+केवल शुद्ध हिंदी में लिखें।
+"""
+            r1 = await asyncio.to_thread(call_gemini_safely, p1)
 
-    prompt = f"""
+            await wait_m.edit_text("⏳ [■■■■■■□□□□] 65% भाग 2/3: वर्ष 2021 से 2017 तक के PYQs का संकलन जारी...")
+            p2 = f"""
+UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 2021, 2020, 2019, 2018 एवं 2017 के सभी प्रमुख प्रश्नों का संपूर्ण संकलन करें।
+प्रत्येक प्रश्न पर स्पष्ट टैग: [UPSC CSE वर्ष / GS {sel.get('gs')} / अंक]।
+ढांचा: 📌 भूमिका, 📊 मुख्य विश्लेषणात्मक आयाम (3 बिंदु), 🚀 आगे की राह, ⚖️ संतुलित प्रशासनिक निष्कर्ष।
+केवल शुद्ध हिंदी में लिखें।
+"""
+            r2 = await asyncio.to_thread(call_gemini_safely, p2)
+
+            await wait_m.edit_text("⏳ [■■■■■■■■□□] 85% भाग 3/3: वर्ष 2016 से 2013 तक के PYQs का संकलन जारी...")
+            p3 = f"""
+UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 2016, 2015, 2014 एवं 2013 के सभी प्रमुख प्रश्नों का संपूर्ण संकलन करें।
+प्रत्येक प्रश्न पर स्पष्ट टैग: [UPSC CSE वर्ष / GS {sel.get('gs')} / अंक]।
+ढांचा: 📌 भूमिका, 📊 मुख्य विश्लेषणात्मक आयाम (3 बिंदु), 🚀 आगे की राह, ⚖️️ संतुलित प्रशासनिक निष्कर्ष।
+केवल शुद्ध हिंदी में लिखें।
+"""
+            r3 = await asyncio.to_thread(call_gemini_safely, p3)
+            combined_text = f"{r1}\n\n<hr style='border:2px solid #0284c7; margin:30px 0;'>\n\n{r2}\n\n<hr style='border:2px solid #0284c7; margin:30px 0;'>\n\n{r3}"
+            topic = f"UPSC CSE {gs_paper} — संपूर्ण PYQs महा-संग्रह (2013 से 2026)"
+
+        else:
+            cnt_desc = f"{cnt_raw} प्रश्न"
+            await wait_m.edit_text(f"⏳ [■■■■■■□□□□] 60% {gs_paper} के {cnt_desc} मॉडल उत्तर-लेखन मॉड्यूल का संश्लेषण जारी...")
+            tag_inst = f"[UPSC CSE PYQ / GS {sel.get('gs')} / 15 अंक]" if is_pyq else f"[संभावित मॉडल प्रश्न / GS {sel.get('gs')} / 15 अंक]"
+            p_single = f"""
 आप UPSC मुख्य परीक्षा के शीर्ष विशेषज्ञ हैं।
-विषय: {gs_paper} के {cnt_desc} उत्तर-लेखन मॉड्यूल तैयार करें।
-{tag_instruction}
+विषय: {gs_paper} के {cnt_desc} उच्च-स्तरीय उत्तर-लेखन मॉड्यूल तैयार करें।
+टैग निर्देश: प्रत्येक प्रश्न पर लिखें: {tag_inst}
 
-सख्त नियम (कठिन व विश्लेषणात्मक UPSC स्तर):
-1. प्रत्येक प्रश्न को स्पष्ट शीर्षक में रखें।
-2. विस्तृत उत्तर-लेखन ढांचा दें:
-   - प्रश्न का पूरा विवरण व [वर्ष / पेपर टैग]
-   - 📌 भूमिका (Introduction): प्रामाणिक संवैधानिक संदर्भ या सामयिक परिदृश्य
-   - 📊 मुख्य विश्लेषणात्मक आयाम (Body): 3 स्पष्ट उप-शीर्षक, आंकड़े और कमेटियों के संदर्भ
+सख्त नियम:
+1. पाठ्यक्रम संदर्भ: प्रत्येक प्रश्न के साथ संबंधित GS पेपर एवं आधिकारिक सिलेबस टॉपिक भी स्पष्ट मेंशन करें।
+2. विस्तृत उत्तर ढांचा:
+   - 📌 भूमिका (Introduction)
+   - 📊 मुख्य विश्लेषणात्मक आयाम (Body): 3 स्पष्ट उप-शीर्षक
    - 🚀 आगे की राह (Way Forward)
    - ⚖️ संतुलित प्रशासनिक निष्कर्ष
-भाषा केवल शुद्ध हिंदी रखें। मार्कडाउन स्टार्स का प्रयोग न करें।
+भाषा केवल शुद्ध हिंदी रखें।
 """
-    try:
-        resp = await asyncio.to_thread(call_gemini_safely, prompt)
-        topic = f"UPSC Mains Module — GS {sel.get('gs')} ({cnt_desc})"
+            combined_text = await asyncio.to_thread(call_gemini_safely, p_single)
+            topic = f"UPSC Mains Module — GS {sel.get('gs')} ({cnt_desc})"
+
+        await wait_m.edit_text("⏳ [■■■■■■■■■□] 95% 360° मास्टर HTML फाइल असेंबल हो रही है...")
         filename = f"UPSC_Mains_GS{sel.get('gs')}_{cnt_raw}.html"
-        html_out = build_standalone_master_html(topic, resp)
+        html_out = build_standalone_master_html(topic, combined_text)
 
         with open(filename, "wb") as f:
             f.write(html_out.encode("utf-8"))
+
+        await wait_m.edit_text("⏳ [■■■■■■■■■■] 100% मुख्य परीक्षा मॉड्यूल तैयार!")
 
         with open(filename, "rb") as send_doc:
             await context.bot.send_document(
                 chat_id=user_id,
                 document=send_doc,
                 filename=filename,
-                caption=f"📝 <b>UPSC मुख्य परीक्षा संग्रह:</b> <code>{topic}</code>\n👤 <b>संचालक:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                caption=(
+                    f"📝 <b>UPSC मुख्य परीक्षा संग्रह:</b> <code>{topic}</code>\n"
+                    f"🎯 <b>कवरेज:</b> 2013-2026 संपूर्ण आधिकारिक प्रश्न एवं मॉडल उत्तर-ढांचा\n"
+                    f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
+                    f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                ),
                 parse_mode=ParseMode.HTML
             )
         if os.path.exists(filename):
             os.remove(filename)
         await wait_m.delete()
+
     except Exception as e:
-        await wait_m.edit_text(f"❌ त्रुटि: {e}")
+        await wait_m.edit_text(f"❌ त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
 # ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) =================
 @ensure_auth
@@ -1110,7 +1144,9 @@ async def handle_ask_continuous_message(update: Update, context: ContextTypes.DE
         prompt = f"""
 आप UPSC मेंटर हैं। निम्नलिखित विषय का बिंदुवार, सटीक एवं संतुलित प्रशासनिक विश्लेषण दें:
 विषय: '{user_query}'
-सख्त नियम: मार्कडाउन स्टार्स का प्रयोग न करें। भाषा केवल शुद्ध हिंदी रखें।
+सख्त नियम:
+- संबंधित GS पेपर एवं आधिकारिक सिलेबस उप-विषय (Micro-Topic) स्पष्ट मेंशन करें।
+- मार्कडाउन स्टार्स का प्रयोग न करें। भाषा केवल शुद्ध हिंदी रखें।
 """
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
         clean_reply = clean_all_markdown_and_fix_content(reply_text)
@@ -1155,13 +1191,13 @@ async def handle_trending_type_selection(update: Update, context: ContextTypes.D
 
     if tr_type == "daily":
         scope_str = f"आज ({today})"
-        prompt = f"आज {today} के संदर्भ में UPSC CSE परीक्षा हेतु 9 सबसे महत्वपूर्ण ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
+        prompt = f"आज {today} के संदर्भ में UPSC CSE परीक्षा हेतु 9 सबसे महत्वपूर्ण ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. [GS पेपर / सिलेबस टॉपिक] - मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
     elif tr_type == "monthly":
         scope_str = f"माह ({current_month})"
-        prompt = f"माह {current_month} के 9 सबसे महत्वपूर्ण नीतिगत, अंतर्राष्ट्रीय एवं पर्यावरणीय ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
+        prompt = f"माह {current_month} के 9 सबसे महत्वपूर्ण नीतिगत, अंतर्राष्ट्रीय एवं पर्यावरणीय ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. [GS पेपर / सिलेबस टॉपिक] - मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
     else:
         scope_str = f"वर्ष {current_year}"
-        prompt = f"वर्ष {current_year} के 9 सबसे बड़े राष्ट्रीय व वैश्विक ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
+        prompt = f"वर्ष {current_year} के 9 सबसे बड़े राष्ट्रीय व वैश्विक ट्रेंडिंग मुद्दे प्रत्येक पंक्ति में '1. [GS पेपर / सिलेबस टॉपिक] - मुद्दा नाम - 2 पंक्ति सारांश' के प्रारूप में लिखें। केवल हिंदी में लिखें।"
 
     wait_m = await query.message.reply_text(f"🛰 [■■■■□□□□□□] 40% <b>{scope_str}</b> के ट्रेंडिंग मुद्दों का रडार संकलन जारी...", parse_mode=ParseMode.HTML)
     try:
@@ -1243,7 +1279,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓 <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= DYNAMIC GENERATION PROCESSOR =================
+# ================= DYNAMIC GENERATION PROCESSOR (सिलेबस टैगिंग सहित) =================
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1282,19 +1318,22 @@ async def process_dynamic_generation(user_id, data, context):
 तारीख: "{target_date}" के लिए संपूर्ण, 360° और अत्यंत विस्तृत UPSC समसामयिक महा-संकलन तैयार करें।
 अनिवार्य अधिकृत स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS, Sanskriti IAS।
 
-सख्त निर्देश (कोई भी महत्वपूर्ण विषय नहीं छूटना चाहिए):
-1. 'GS-1' (कला, संस्कृति, इतिहास, भूगोल एवं समाज): दिन के सभी घटनाक्रम व भौगोलिक स्थल।
-2. 'GS-2' (संविधान, राजव्यवस्था, सामाजिक न्याय, शासन व अंतर्राष्ट्रीय संबंध): सभी न्यायिक निर्णय, अधिनियम, विधेयक, द्विपक्षीय वार्ताएं।
-3. 'GS-3' (अर्थव्यवस्था, कृषि, पर्यावरण, जैव विविधता, विज्ञान एवं प्रौद्योगिकी, आंतरिक सुरक्षा): आर्थिक नीतियां, डेटा, नई खोज, प्रजातियां।
-4. 'चर्चित स्थान (Places in News)': राष्ट्रीय एवं अंतर्राष्ट्रीय स्थलों का विवरण।
-5. 'तुलनात्मक सारणी': प्रमुख मुद्दों पर 2-कॉलम तालिका शुद्ध HTML (<div class="table-box"><table>...</table></div>) में दें।
-6. 'मुख्य परीक्षा उत्तर-लेखन प्रश्न': भूमिका, मुख्य विश्लेषणात्मक आयाम, आगे की राह और संतुलित निष्कर्ष सहित।
-7. 'प्रारंभिक परीक्षा अभ्यास MCQs': 5 मानक, कथन-आधारित प्रश्न आधिकारिक व्याख्या सहित।
+सख्त निर्देश (पाठ्यक्रम मैपिंग अनिवार्य):
+1. प्रत्येक खबर/मुद्दे के ऊपर एक स्पष्ट सिलेबस बॉक्स दें:
+   - 📑 संबंधित पेपर: (उदा. सामान्य अध्ययन - II)
+   - 🎯 आधिकारिक पाठ्यक्रम विषय: (उदा. 'शासन व्यवस्था, पारदर्शिता एवं जवाबदेही')
+2. 'GS-1' (कला, संस्कृति, इतिहास, भूगोल एवं समाज): दिन के सभी घटनाक्रम व भौगोलिक स्थल।
+3. 'GS-2' (संविधान, राजव्यवस्था, सामाजिक न्याय, शासन व अंतर्राष्ट्रीय संबंध): सभी न्यायिक निर्णय, अधिनियम, विधेयक, द्विपक्षीय वार्ताएं।
+4. 'GS-3' (अर्थव्यवस्था, कृषि, पर्यावरण, जैव विविधता, विज्ञान एवं प्रौद्योगिकी, आंतरिक सुरक्षा): आर्थिक नीतियां, डेटा, नई खोज, प्रजातियां।
+5. 'चर्चित स्थान (Places in News)': राष्ट्रीय एवं अंतर्राष्ट्रीय स्थलों का विवरण।
+6. 'तुलनात्मक सारणी': प्रमुख मुद्दों पर 2-कॉलम तालिका शुद्ध HTML (<div class="table-box"><table>...</table></div>) में दें।
+7. 'मुख्य परीक्षा उत्तर-लेखन प्रश्न': भूमिका, मुख्य विश्लेषणात्मक आयाम, आगे की राह और संतुलित निष्कर्ष सहित।
+8. 'प्रारंभिक परीक्षा अभ्यास MCQs': 5 मानक, कथन-आधारित प्रश्न आधिकारिक व्याख्या सहित।
 
-भाषा केवल और केवल शुद्ध, मानक एवं अकादमिक हिंदी रखें। मार्कडाउन स्टार्स का प्रयोग न करें।
+भाषा केवल और केवल शुद्ध, मानक एवं अकादमिक हिंदी रखें।
 """
             try:
-                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■□□□□] 60% 360° विश्लेषण व मैपिंग फ्रेमवर्क तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■□□□□] 60% पाठ्यक्रम मैपिंग, 360° विश्लेषण व मैपिंग फ्रेमवर्क तैयार हो रहा है...", parse_mode=ParseMode.HTML)
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
                 topic = f"दैनिक समसामयिक महा-संकलन — {target_date}"
                 filename = f"UPSC_Notes_{target_date.replace('-', '')}.html"
@@ -1314,7 +1353,7 @@ async def process_dynamic_generation(user_id, data, context):
 माह: '{m_name}' का सम्पूर्ण, 360° और अत्यंत विस्तृत UPSC Monthly Digest तैयार करें।
 स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS।
 
-शामिल किए जाने वाले अनिवार्य भाग:
+प्रत्येक खंड में संबंधित GS पेपर (1, 2, 3) एवं आधिकारिक यूपीएससी सिलेबस टॉपिक का स्पष्ट उल्लेख करें:
 - GS-1: इतिहास, समाज, भूगोल व पर्यावरण से जुड़े बड़े मुद्दे
 - GS-2: राजव्यवस्था, नीतियां, संवैधानिक विवाद व अंतर्राष्ट्रीय संबंध
 - GS-3: आर्थिक संकेतक, नई योजनाएं, पर्यावरण सम्मेलन व विज्ञान-प्रौद्योगिकी
@@ -1339,6 +1378,7 @@ async def process_dynamic_generation(user_id, data, context):
         prompt = f"""
 वर्ष {y_name} का UPSC CSE हेतु अत्यंत विस्तृत और संपूर्ण Annual Compendium (PT-365 Style) तैयार करें।
 स्रोत: The Hindu, Indian Express, PIB, Vision IAS, Drishti IAS।
+प्रत्येक विषय पर GS पेपर और सिलेबस टॉपिक स्पष्ट मेंशन करें।
 पूरे वर्ष के सर्वाधिक महत्वपूर्ण नीतिगत, न्यायिक, पर्यावरणीय, वैज्ञानिक और सामरिक घटनाक्रमों का 360° विश्लेषण दें।
 केवल शुद्ध हिंदी में लिखें।
 """
@@ -1360,7 +1400,7 @@ async def process_dynamic_generation(user_id, data, context):
         prompt = f"""
 सप्ताह संदर्भ: '{w_date}' का संपूर्ण साप्ताहिक UPSC क्विक रिवीजन नोट्स तैयार करें।
 स्रोत: The Hindu, PIB, Indian Express, Vision IAS।
-प्रत्येक GS पेपर (1, 2, 3) के सप्ताह भर के सबसे निर्णायक बिंदु, चर्चित स्थान और 5 अभ्यास प्रश्न शामिल करें।
+प्रत्येक GS पेपर (1, 2, 3) के सप्ताह भर के सबसे निर्णायक बिंदु, सिलेबस टैग्स, चर्चित स्थान और 5 अभ्यास प्रश्न शामिल करें।
 केवल शुद्ध हिंदी में लिखें।
 """
         try:
@@ -1384,6 +1424,7 @@ async def process_dynamic_generation(user_id, data, context):
             caption=(
                 f"📄 <b>दस्तावेज़:</b> <code>{topic}</code>\n"
                 f"📰 <b>अधिकृत स्रोत:</b> The Hindu | Indian Express | PIB | Yojana | Vision IAS | Drishti IAS\n"
+                f"🎯 <b>सुविधा:</b> यूपीएससी सिलेबस एवं माइक्रो-टॉपिक मैपिंग शामिल\n"
                 f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
                 f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
             ),
@@ -1419,7 +1460,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
     if user_input == "all" and cached_list:
         raw_trend = "\n".join(cached_list)
         wait_m = await msg.reply_text("⏳ [■■■■□□□□□□] 40% सभी ट्रेंडिंग मुद्दों के 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
-        prompt = f"नीचे दिए गए सभी ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स तैयार करें:\n{raw_trend}\nकेवल शुद्ध हिंदी में लिखें।"
+        prompt = f"नीचे दिए गए सभी ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स सिलेबस टैग्स सहित तैयार करें:\n{raw_trend}\nकेवल शुद्ध हिंदी में लिखें।"
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
             topic = f"UPSC Trending Radar All Topics — {today}"
@@ -1451,7 +1492,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
         nums = [n.strip() for n in user_input.split(',')]
         wait_m = await msg.reply_text(f"⏳ [■■■■□□□□□□] 40% चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विश्लेषण जारी...", parse_mode=ParseMode.HTML)
         raw_trend = "\n".join(cached_list)
-        prompt = f"सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC हेतु 360° विश्लेषण तैयार करें:\n{raw_trend}\nकेवल हिंदी में लिखें।"
+        prompt = f"सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC हेतु 360° विश्लेषण सिलेबस मैपिंग सहित तैयार करें:\n{raw_trend}\nकेवल हिंदी में लिखें।"
         try:
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
             topic = f"UPSC Trending Topics {', '.join(nums)} — {today}"
@@ -1512,7 +1553,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
                 pdf_text += t + "\n"
 
         clean_title = doc.file_name.replace(".pdf", "")[:35]
-        prompt = f"नीचे दी गई PDF सामग्री का UPSC सिविल सेवा स्तर पर 360° अध्ययन नोट्स शुद्ध HTML सारणी व मेन्स फ्रेमवर्क सहित तैयार करें:\n{pdf_text[:4500]}\nकेवल हिंदी भाषा का प्रयोग करें।"
+        prompt = f"नीचे दी गई PDF सामग्री का UPSC सिविल सेवा स्तर पर 360° अध्ययन नोट्स सिलेबस टैगिंग, शुद्ध HTML सारणी व मेन्स फ्रेमवर्क सहित तैयार करें:\n{pdf_text[:4500]}\nकेवल हिंदी भाषा का प्रयोग करें।"
         ai_notes = await asyncio.to_thread(call_gemini_safely, prompt)
         html_out = build_standalone_master_html(clean_title, ai_notes)
 
@@ -1634,11 +1675,11 @@ async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📅 <b>सब्सक्रिप्शन अवधि:</b> <code>{days} दिन</code>\n"
             f"⏳ <b>वैधता (Expiry Date):</b> <code>{exp_formatted} (IST)</code>\n\n"
             "🌟 <b>अनलॉक किए गए मुख्य फीचर्स:</b>\n"
-            "• <code>/daily</code> — 360° दैनिक समसामयिक महा-संकलन (पिछले 10 दिन)\n"
+            "• <code>/daily</code> — 360° दैनिक समसामयिक महा-संकलन (सिलेबस टैग्स सहित)\n"
             "• <code>/quiz</code> — 1 लाख+ बैंक से विजन IAS स्टाइल लाइव मॉक टेस्ट (50 व 100 प्रश्न)\n"
+            "• <code>/mains</code> — 2013-2026 संपूर्ण PYQs व मॉडल उत्तर-ढांचा\n"
             "• <code>/checkanswer</code> — सख्त मुख्य परीक्षा कॉपी चेकिंग (मानचित्र व आरेख स्कैनिंग)\n"
             "• <code>/interview</code> — 1-on-1 लाइव DAF साक्षात्कार (ऑडियो सहित)\n"
-            "• <code>/mains</code> — 2013-2026 PYQs व मॉडल प्रश्नोत्तर\n"
             "• <code>/ask</code> — 24/7 यूपीएससी मेंटरशिप (टेक्स्ट व वॉयस)\n\n"
             "👉 अभी शुरू करने के लिए <code>/start</code> दबाएं।\n"
             f"📢 आधिकारिक चैनल: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
