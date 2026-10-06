@@ -5,6 +5,7 @@ import json
 import asyncio
 import io
 import random
+import html
 from datetime import timedelta
 from pypdf import PdfReader
 from telegram import (
@@ -46,17 +47,20 @@ WAITING_ASK_SESSION = 3
 
 DAF_NAME = 4
 DAF_STATE = 5
-DAF_COLLEGE = 6
-DAF_STATUS = 7
-DAF_OPTIONAL_STEP = 8
-DAF_ATTEMPT_STEP = 9
-DAF_QCOUNT = 10
-WAITING_INTERVIEW_VOICE = 11
-WAITING_INTERVIEW_DECISION = 12
+DAF_DISTRICT = 6
+DAF_VILLAGE = 7
+DAF_COLLEGE = 8
+DAF_STATUS = 9
+DAF_OPTIONAL_STEP = 10
+DAF_HOBBY = 11
+DAF_ATTEMPT_STEP = 12
+DAF_QCOUNT = 13
+WAITING_INTERVIEW_VOICE = 14
+WAITING_INTERVIEW_DECISION = 15
 
-CA_CHOOSE_TYPE = 13
-CA_QUESTION_INPUT = 14
-CA_ANSWER_COPY = 15
+CA_CHOOSE_TYPE = 16
+CA_QUESTION_INPUT = 17
+CA_ANSWER_COPY = 18
 
 CONTACT_SESSIONS = {}
 USER_QUIZ_SELECTIONS = {}
@@ -67,8 +71,8 @@ INTERVIEW_SESSION = {}
 LAST_BROADCAST_DATA = {}
 
 def get_tg_user_link(user_id: int, name: str = None) -> str:
-    display = name if name else str(user_id)
-    return f'<a href="tg://user?id={user_id}">{display}</a>'
+    clean_name = html.escape(name) if name else str(user_id)
+    return f'<a href="tg://user?id={user_id}">{clean_name}</a>'
 
 def ensure_auth(handler_func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
@@ -82,7 +86,7 @@ def ensure_auth(handler_func):
                 f"👋 <b>नमस्ते {user_link}!</b>\n\n"
                 "🔒 <b>प्रीमियम यूपीएससी डेस्क — एक्सेस प्रतिबंधित</b>\n\n"
                 "⚠️ यह पोर्टल केवल <b>सत्यापित प्रीमियम सदस्यों</b> के लिए सुरक्षित है ताकि उच्च-स्तरीय AI एवं सर्वर संसाधनों का सदुपयोग सुनिश्चित हो सके।\n\n"
-                f"🆔 <b>आपकी प्रोफाइल लिंक:</b> {get_tg_user_link(user.id, f'यूज़र {user.id}')}\n"
+                f"🆔 <b>आपकी प्रोफाइल आईडी लिंक:</b> {get_tg_user_link(user.id, f'ID: {user.id}')}\n"
                 f"🔢 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>\n\n"
                 "👉 <b>एक्सेस प्राप्त करने के दिशा-निर्देश:</b>\n"
                 f"1. ओनर <b>{AUTHOR_NAME}</b> से संपर्क करें: <code>/owner</code>\n"
@@ -162,9 +166,9 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
         f"👤 <b>सदस्य:</b> {user_link} (<code>{user.id}</code>)\n\n"
         "1️⃣ <b>दैनिक नोट्स (`/daily`):</b> आज सहित पिछले पूरे 10 दिनों की तारीखों में से किसी का भी 360° समसामयिक संकलन प्राप्त करें।\n\n"
-        "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> 1 लाख+ यूपीएससी प्रश्नों के महा-संग्रह से 50 या 100 प्रश्नों का लाइव टेस्ट पोर्टल (शून्य दोहराव)।\n\n"
+        "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> 1 लाख+ प्रश्नों के बैंक से 50 या 100 प्रश्नों का लाइव टेस्ट पोर्टल (शून्य दोहराव)।\n\n"
         "3️⃣ <b>उत्तर-पुस्तिका मूल्यांकन (`/checkanswer`):</b> PYQ या मॉडल प्रश्न चुनें। उत्तर फ़ोटो/PDF या बोलकर भेजें। मानचित्रों व आरेखों की भी सख्त जांच होगी।\n\n"
-        "4️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF आधारित स्थितिजन्य मौखिक साक्षात्कार (1 प्रश्न = 25 अंक, 3 = 75 अंक, 5 = 125 अंक, 9 प्रश्न = पूरा 275 अंक बोर्ड)।\n\n"
+        "4️⃣ <b>लाइव साक्षात्कार (`/interview`):</b> DAF (जिला, गांव, हॉबी आधारित) मौखिक साक्षात्कार (1 प्रश्न = 25 अंक, 3 = 75 अंक, 5 = 125 अंक, 9 प्रश्न = पूरा 275 अंक बोर्ड)।\n\n"
         "5️⃣ <b>मेंटरशिप सत्र (`/ask`):</b> टेक्स्ट या वॉयस मैसेज भेजकर UPSC के किसी भी विषय पर सीधा प्रशासनिक विश्लेषण प्राप्त करें।"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
@@ -236,7 +240,7 @@ async def handle_quiz_gs_choice(update: Update, context: ContextTypes.DEFAULT_TY
         USER_QUIZ_SELECTIONS[user_id] = {"gs": "GS-2"}
         keyboard = [
             [InlineKeyboardButton("🏛️ संविधान एवं राजव्यवस्था (Polity)", callback_data="quizsub_polity")],
-            [InlineKeyboardButton("⚖️️ शासन प्रणाली व सामाजिक न्याय", callback_data="quizsub_gov")],
+            [InlineKeyboardButton("⚖ शासन प्रणाली व सामाजिक न्याय", callback_data="quizsub_gov")],
             [InlineKeyboardButton("🌐 अंतर्राष्ट्रीय संबंध (IR)", callback_data="quizsub_ir")],
             [InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="quiz_back_gs")]
         ]
@@ -392,7 +396,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         await status_msg.edit_text(f"❌ पोर्टल बनाने में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
-# ================= साक्षात्कार (/interview) =================
+# ================= साक्षात्कार (/interview) वास्तविक DAF =================
 @ensure_auth
 async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -401,24 +405,27 @@ async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYP
     daf = get_user_daf(user_id)
     if not daf or not daf[0]:
         await update.message.reply_text(
-            f"🏛 <b>UPSC साक्षात्कार बोर्ड (Personality Test)</b>\n\n"
-            f"नमस्ते <b>{user.first_name} जी</b>! बोर्ड कक्ष में प्रवेश से पहले हमें आपकी पृष्ठभूमि का संक्षिप्त विवरण चाहिए ताकि मूल्यांकन आपकी वास्तविक स्थिति के अनुसार हो सके।\n\n"
-            "👉 <b>चरण 1/6:</b> कृपया अपना <b>पूरा नाम</b> लिखकर भेजें:",
+            f"🏛 <b>UPSC साक्षात्कार बोर्ड (Personality Test - DAF Entry)</b>\n\n"
+            f"नमस्ते <b>{user.first_name} जी</b>! बोर्ड कक्ष में प्रवेश से पहले हमें आपकी पृष्ठभूमि का आधिकारिक DAF विवरण चाहिए ताकि बोर्ड मेंबर आपके गृह क्षेत्र, कॉलेज व रुचि से सीधे सवाल पूछ सकें।\n\n"
+            "👉 <b>चरण 1/9:</b> कृपया अपना <b>पूरा नाम</b> लिखकर भेजें:",
             parse_mode=ParseMode.HTML,
             reply_markup=ReplyKeyboardRemove()
         )
         return DAF_NAME
 
-    name, home_state, college, status, opt_sub, attempt = daf
-    reply_kb = [["✅ इसी प्रोफाइल से साक्षात्कार दें"], ["✏️ प्रोफाइल अपडेट करें (Edit DAF)"]]
+    name, home_state, home_district, home_village, college, status, opt_sub, hobby, attempt = daf
+    reply_kb = [["✅ इसी DAF प्रोफाइल से साक्षात्कार दें"], ["✏️ DAF अपडेट करें (Edit DAF)"]]
     await update.message.reply_text(
-        f"🏛 <b>आपकी पूर्व दर्ज साक्षात्कार प्रोफाइल:</b>\n\n"
+        f"🏛 <b>आपकी पूर्व दर्ज यूपीएससी DAF प्रोफाइल:</b>\n\n"
         f"👤 <b>नाम:</b> {name}\n"
         f"📍 <b>गृह राज्य:</b> {home_state}\n"
+        f"🏙️ <b>गृह जिला:</b> {home_district}\n"
+        f"🏡 <b>गांव/कस्बा:</b> {home_village}\n"
         f"🏫 <b>कॉलेज:</b> {college}\n"
-        f"🎓 <b>स्थिति:</b> {status}\n"
+        f"🎓 <b>ग्रेजुएशन स्थिति:</b> {status}\n"
         f"📚 <b>वैकल्पिक विषय:</b> {opt_sub}\n"
-        f"🎯 <b>प्रयास संख्या:</b> {attempt}\n\n"
+        f"🎨 <b>हॉबी / अभिरुचि:</b> {hobby}\n"
+        f"🎯 <b>तैयारी / प्रयास:</b> {attempt}\n\n"
         "👉 कृपया विकल्प चुनें:",
         reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True),
         parse_mode=ParseMode.HTML
@@ -428,7 +435,7 @@ async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYP
 async def handle_daf_name_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     txt = update.message.text.strip() if update.message.text else update.effective_user.first_name
 
-    if txt == "✅ इसी प्रोफाइल से साक्षात्कार दें":
+    if txt == "✅ इसी DAF प्रोफाइल से साक्षात्कार दें":
         reply_kb = [
             ["⚡ 1 प्रश्न (क्विक टेस्ट - 25 अंक)"],
             ["🎯 3 प्रश्न (मानक बोर्ड - 75 अंक)"],
@@ -442,34 +449,54 @@ async def handle_daf_name_step(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return DAF_QCOUNT
 
-    if txt == "✏️ प्रोफाइल अपडेट करें (Edit DAF)":
-        await update.message.reply_text("👉 <b>चरण 1/6:</b> अपना <b>पूरा नाम</b> लिखकर भेजें:", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
+    if txt == "✏️ DAF अपडेट करें (Edit DAF)":
+        await update.message.reply_text("👉 <b>चरण 1/9:</b> अपना <b>पूरा नाम</b> लिखकर भेजें:", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
         return DAF_NAME
 
     context.user_data["daf_name"] = txt
-    await update.message.reply_text("👉 <b>चरण 2/6:</b> अपना <b>गृह राज्य</b> दर्ज करें (उदा. राजस्थान, उत्तर प्रदेश):", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("👉 <b>चरण 2/9:</b> अपना <b>गृह राज्य (Home State)</b> दर्ज करें (उदा. राजस्थान, उत्तर प्रदेश):", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
     return DAF_STATE
 
 async def handle_daf_state_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["daf_state"] = update.message.text.strip()
-    await update.message.reply_text("👉 <b>चरण 3/6:</b> अपने <b>कॉलेज / विश्वविद्यालय</b> का नाम लिखें:", parse_mode=ParseMode.HTML)
+    await update.message.reply_text("👉 <b>चरण 3/9:</b> अपना <b>गृह जिला (Home District)</b> लिखें (उदा. कोटपूतली-बहरोड़, अलवर, प्रयागराज):", parse_mode=ParseMode.HTML)
+    return DAF_DISTRICT
+
+async def handle_daf_district_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["daf_district"] = update.message.text.strip()
+    await update.message.reply_text("👉 <b>चरण 4/9:</b> अपने <b>गांव / कस्बे / शहर</b> का नाम लिखें:", parse_mode=ParseMode.HTML)
+    return DAF_VILLAGE
+
+async def handle_daf_village_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["daf_village"] = update.message.text.strip()
+    await update.message.reply_text("👉 <b>चरण 5/9:</b> अपने <b>कॉलेज / विश्वविद्यालय</b> और स्ट्रीम (उदा. B.A., B.Sc.) का नाम लिखें:", parse_mode=ParseMode.HTML)
     return DAF_COLLEGE
 
 async def handle_daf_college_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["daf_college"] = update.message.text.strip()
     reply_kb = [["🎓 स्नातक पूर्ण (Completed)"], ["⏳ अध्ययनरत (Running / Final Year)"]]
-    await update.message.reply_text("👉 <b>चरण 4/6:</b> कॉलेज की वर्तमान स्थिति क्या है?", reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("👉 <b>चरण 6/9:</b> कॉलेज की वर्तमान स्थिति क्या है?", reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True), parse_mode=ParseMode.HTML)
     return DAF_STATUS
 
 async def handle_daf_status_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["daf_status"] = update.message.text.strip()
-    await update.message.reply_text("👉 <b>चरण 5/6:</b> अपना <b>वैकल्पिक विषय (Optional Subject)</b> लिखें (उदा. भूगोल, इतिहास):", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("👉 <b>चरण 7/9:</b> अपना <b>वैकल्पिक विषय (Optional Subject)</b> लिखें (उदा. भूगोल, इतिहास, राजनीति विज्ञान):", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
     return DAF_OPTIONAL_STEP
 
 async def handle_daf_optional_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["daf_optional"] = update.message.text.strip()
-    reply_kb = [["1st Attempt (पहला)"], ["2nd Attempt (दूसरा)"], ["3rd+ Attempt (तीसरा या अधिक)"]]
-    await update.message.reply_text("👉 <b>चरण 6/6:</b> यह आपका कौन सा <b>प्रयास (Attempt)</b> है?", reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("👉 <b>चरण 8/9:</b> अपनी <b>हॉबी / अभिरुचि (Hobby)</b> लिखें (उदा. डायरी लेखन, योग, ग्रामीण खेती, क्रिकेट):", parse_mode=ParseMode.HTML)
+    return DAF_HOBBY
+
+async def handle_daf_hobby_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["daf_hobby"] = update.message.text.strip()
+    reply_kb = [
+        ["🎯 सिर्फ तैयारी कर रहा हूँ (Preparation Phase)"],
+        ["1st Attempt (पहला प्रयास)"],
+        ["2nd Attempt (दूसरा प्रयास)"],
+        ["3rd+ Attempt (तीसरा या अधिक)"]
+    ]
+    await update.message.reply_text("👉 <b>चरण 9/9:</b> आपकी <b>तैयारी या प्रयास (Attempt Status)</b> की वर्तमान स्थिति क्या है?", reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True), parse_mode=ParseMode.HTML)
     return DAF_ATTEMPT_STEP
 
 async def handle_daf_attempt_step(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -478,11 +505,14 @@ async def handle_daf_attempt_step(update: Update, context: ContextTypes.DEFAULT_
 
     name = context.user_data.get("daf_name", update.effective_user.first_name)
     state = context.user_data.get("daf_state", "राजस्थान")
+    dist = context.user_data.get("daf_district", "गृह जिला")
+    vill = context.user_data.get("daf_village", "गृह क्षेत्र")
     college = context.user_data.get("daf_college", "विश्वविद्यालय")
     status = context.user_data.get("daf_status", "पूर्ण")
     opt = context.user_data.get("daf_optional", "सामान्य अध्ययन")
+    hobby = context.user_data.get("daf_hobby", "अध्ययन")
 
-    save_user_daf(user_id, name, state, college, status, opt, attempt_txt)
+    save_user_daf(user_id, name, state, dist, vill, college, status, opt, hobby, attempt_txt)
 
     reply_kb = [
         ["⚡ 1 प्रश्न (क्विक टेस्ट - 25 अंक)"],
@@ -491,7 +521,7 @@ async def handle_daf_attempt_step(update: Update, context: ContextTypes.DEFAULT_
         ["🏛 संपूर्ण बोर्ड इंटरव्यू (9 प्रश्न - 275 अंक)"]
     ]
     await update.message.reply_text(
-        "✅ <b>आपकी DAF प्रोफाइल सुरक्षित कर ली गई है!</b>\n\n"
+        "✅ <b>आपकी 9-चरणीय यूपीएससी DAF प्रोफाइल सुरक्षित कर ली गई है!</b>\n\n"
         "👉 <b>आप कितने प्रश्नों का साक्षात्कार सेट देना चाहते हैं?</b>",
         reply_markup=ReplyKeyboardMarkup(reply_kb, one_time_keyboard=True, resize_keyboard=True),
         parse_mode=ParseMode.HTML
@@ -533,21 +563,24 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
     sess = INTERVIEW_SESSION.get(user_id)
     curr = sess["current"]
     tot = sess["total"]
-    name, state, college, status, opt_sub, attempt = sess["daf"]
+    name, state, dist, vill, college, status, opt_sub, hobby, attempt = sess["daf"]
 
     prompt = f"""
 आप UPSC साक्षात्कार बोर्ड के अध्यक्ष हैं।
-उम्मीदवार विवरण:
+उम्मीदवार विवरण (DAF Data):
 - नाम: {name}
 - गृह राज्य: {state}
-- कॉलेज: {college} ({status})
+- गृह जिला: {dist}
+- गृह गांव/कस्बा: {vill}
+- कॉलेज व स्ट्रीम: {college} ({status})
 - वैकल्पिक विषय: {opt_sub}
-- प्रयास: {attempt}
+- हॉबी / अभिरुचि: {hobby}
+- तैयारी स्थिति/प्रयास: {attempt}
 - राउंड: {curr}/{tot} (कठिनाई स्तर: {curr * 2}/10)
 
 सख्त निर्देश:
 - सीधे '{name} जी' कहकर संबोधित करें।
-- शुद्ध हिंदी में 3-4 पंक्तियों का अत्यंत गंभीर, प्रशासनिक स्थितिजन्य प्रश्न पूछें जिसमें निर्णय-क्षमता की वास्तविक परीक्षा हो।
+- उम्मीदवार के जिले ({dist}), गांव ({vill}), वैकल्पिक विषय ({opt_sub}) या हॉबी ({hobby}) को आधार बनाकर 3-4 पंक्तियों का अत्यंत गंभीर, प्रशासनिक स्थितिजन्य प्रश्न पूछें जिसमें निर्णय-क्षमता की वास्तविक परीक्षा हो।
 - कोई अंग्रेजी शब्द या सिस्टम निर्देश न लिखें।
 """
     try:
@@ -569,7 +602,7 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
             context,
             update.effective_chat.id,
             q_text,
-            f"🎙️️ साक्षात्कार प्रश्न {curr}/{tot} (बोर्ड अध्यक्ष आवाज़) | {AUTHOR_NAME}"
+            f"🎙️ साक्षात्कार प्रश्न {curr}/{tot} (बोर्ड अध्यक्ष आवाज़) | {AUTHOR_NAME}"
         )
 
     except Exception as e:
@@ -699,7 +732,7 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
             context,
             update.effective_chat.id,
             summary_voice_text,
-            f"🎙️ साक्षात्कार परिणाम सारांश (बोर्ड अध्यक्ष) | {AUTHOR_NAME}"
+            f"🎙️️ साक्षात्कार परिणाम सारांश (बोर्ड अध्यक्ष) | {AUTHOR_NAME}"
         )
 
     except Exception as e:
@@ -1038,7 +1071,7 @@ async def handle_ask_continuous_message(update: Update, context: ContextTypes.DE
             for p in [clean_reply[i:i+3800] for i in range(0, len(clean_reply), 3800)]:
                 await update.message.reply_text(p, parse_mode=ParseMode.HTML)
         else:
-            await update.message.reply_text(clean_reply, parse_mode=ParseMode.HTML)
+            await wait_msg.edit_text(clean_reply, parse_mode=ParseMode.HTML)
     except Exception as e:
         await wait_msg.edit_text(f"❌ उत्तर संकलित करने में समस्या: {e}")
         
@@ -1451,7 +1484,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         await wait_m.edit_text(f"❌ PDF प्रोसेसिंग में त्रुटि: {e}")
 
-# ================= BROADCAST SYSTEM (केवल ओनर/एडमिन) =================
+# ================= BROADCAST SYSTEM =================
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
@@ -1523,7 +1556,7 @@ async def handle_broadcast_pin_choice(update: Update, context: ContextTypes.DEFA
 
     LAST_BROADCAST_DATA.pop(admin_id, None)
 
-# ================= ADMIN USER MANAGEMENT (केवल ओनर/एडमिन) =================
+# ================= ADMIN USER MANAGEMENT =================
 async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
@@ -1546,7 +1579,6 @@ async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML
         )
 
-        # यूज़र को स्वतः बधाई एवं एक्टिवेशन संदेश
         congrats_msg = (
             "🎉 <b>बधाई हो! आपका प्रीमियम यूपीएससी डेस्क सक्रिय हो गया है।</b>\n\n"
             f"👑 <b>व्यवस्थापक:</b> {AUTHOR_NAME}\n"
@@ -1627,15 +1659,18 @@ async def info_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         if daf_row and daf_row[0]:
-            name, state, college, status, opt_sub, attempt, updated = daf_row
+            name, state, dist, vill, college, status, opt_sub, hobby, attempt, updated = daf_row
             info_text += (
                 f"🏛 <b>दर्ज DAF (साक्षात्कार प्रोफाइल):</b>\n"
                 f"• <b>पूरा नाम:</b> {name}\n"
                 f"• <b>गृह राज्य:</b> {state}\n"
-                f"• <b>कॉलेज/यूनिवर्सिटी:</b> {college}\n"
+                f"• <b>गृह जिला:</b> {dist}\n"
+                f"• <b>गांव/कस्बा:</b> {vill}\n"
+                f"• <b>कॉलेज/स्ट्रीम:</b> {college}\n"
                 f"• <b>ग्रेजुएशन स्थिति:</b> {status}\n"
                 f"• <b>वैकल्पिक विषय:</b> {opt_sub}\n"
-                f"• <b>प्रयास संख्या:</b> {attempt}\n"
+                f"• <b>हॉबी:</b> {hobby}\n"
+                f"• <b>तैयारी/प्रयास:</b> {attempt}\n"
                 f"• <b>अंतिम अपडेट:</b> {updated.strftime('%d-%b-%Y') if updated else 'N/A'}"
             )
         else:
@@ -1660,13 +1695,15 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += "━━━━━━━━━━━━━━━━━━━━\n\n"
 
     for uid, un, fn, is_vip, exp in rows:
-        user_link = get_tg_user_link(uid, fn or str(uid))
+        display_name = fn.strip() if (fn and fn.strip()) else str(uid)
+        user_link = get_tg_user_link(uid, display_name)
+        id_link = get_tg_user_link(uid, str(uid))
         vip_tag = "👑 [VIP/प्रीमियम]" if is_vip == 1 else "👤 [निःशुल्क छात्र]"
         exp_str = f" | वैधता: {exp.strftime('%d-%b-%Y')}" if (is_vip == 1 and exp) else ""
-        text += f"• {vip_tag} {user_link} (<code>{uid}</code>){exp_str}\n"
+        text += f"• {vip_tag} {user_link} ({id_link}){exp_str}\n"
 
     for part in [text[i:i+3800] for i in range(0, len(text), 3800)]:
-        await update.message.reply_text(part, parse_mode=ParseMode.HTML)
+        await update.message.reply_text(part, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 # ================= ADMIN DIRECT REPLIES (स्वाइप रिप्लाई फिक्स) =================
 async def handle_admin_reply_or_direct_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1815,9 +1852,12 @@ async def main():
         states={
             DAF_NAME: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_name_step)],
             DAF_STATE: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_state_step)],
+            DAF_DISTRICT: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_district_step)],
+            DAF_VILLAGE: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_village_step)],
             DAF_COLLEGE: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_college_step)],
             DAF_STATUS: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_status_step)],
             DAF_OPTIONAL_STEP: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_optional_step)],
+            DAF_HOBBY: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_hobby_step)],
             DAF_ATTEMPT_STEP: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_attempt_step)],
             DAF_QCOUNT: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_daf_qcount_step)],
             WAITING_INTERVIEW_VOICE: [MessageHandler((filters.VOICE | filters.AUDIO) & (~filters.COMMAND), handle_interview_candidate_voice)],
