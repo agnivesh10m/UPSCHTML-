@@ -75,6 +75,13 @@ def get_tg_user_link(user_id: int, name: str = None) -> str:
     clean_name = html.escape(name) if name else str(user_id)
     return f'<a href="tg://user?id={user_id}">{clean_name}</a>'
 
+def get_free_user_access_markup(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"📋 अपनी ID कॉपी करें ({user_id})", callback_data=f"copyid_{user_id}")],
+        [InlineKeyboardButton("💬 ओनर से संपर्क करें", url=f"https://t.me/Avigat1210")],
+        [InlineKeyboardButton("📢 आधिकारिक चैनल जॉइन करें", url=CHANNEL_LINK)]
+    ])
+
 def ensure_auth(handler_func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         user = update.effective_user
@@ -87,17 +94,26 @@ def ensure_auth(handler_func):
                 f"👋 <b>नमस्ते {user_link}!</b>\n\n"
                 "🔒 <b>प्रीमियम यूपीएससी डेस्क — एक्सेस प्रतिबंधित</b>\n\n"
                 "⚠️ यह पोर्टल केवल <b>सत्यापित प्रीमियम सदस्यों</b> के लिए सुरक्षित है ताकि उच्च-स्तरीय AI एवं सर्वर संसाधनों का सदुपयोग सुनिश्चित हो सके।\n\n"
-                f"🆔 <b>आपकी प्रोफाइल आईडी लिंक:</b> {get_tg_user_link(user.id, f'ID: {user.id}')}\n"
-                f"🔢 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>\n\n"
+                f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>\n"
+                f"🔗 <b>प्रोफाइल लिंक:</b> {get_tg_user_link(user.id, f'यूज़र {user.id}')}\n\n"
                 "👉 <b>एक्सेस प्राप्त करने के दिशा-निर्देश:</b>\n"
-                f"1. ओनर <b>{AUTHOR_NAME}</b> से संपर्क करें: <code>/owner</code>\n"
-                f"2. आधिकारिक चैनल जॉइन करें: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>\n"
-                "3. सब्सक्रिप्शन सक्रिय होते ही सभी फीचर्स स्वतः अनलॉक हो जाएंगे।"
+                "1. नीचे दिए गए बटन पर टैप करके अपनी ID कॉपी करें।\n"
+                f"2. ओनर <b>{AUTHOR_NAME}</b> (@Avigat1210) को भेजकर सब्सक्रिप्शन सक्रिय करवाएं।"
             )
-            await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            await update.effective_message.reply_text(
+                msg, 
+                parse_mode=ParseMode.HTML, 
+                disable_web_page_preview=True,
+                reply_markup=get_free_user_access_markup(user.id)
+            )
             return
         return await handler_func(update, context, *args, **kwargs)
     return wrapper
+
+async def copy_id_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    uid = query.data.replace("copyid_", "")
+    await query.answer(f"आपकी टेलीग्राम ID: {uid} (कॉपी करने हेतु ऊपर कोड पर टैप करें)", show_alert=True)
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -108,14 +124,14 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"👋 <b>नमस्ते {user_link}!</b>\n\n"
             "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n\n"
-            f"🆔 <b>आपकी प्रोफाइल आईडी लिंक:</b> {get_tg_user_link(user.id, f'ID: {user.id}')}\n"
+            f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>\n"
             "🔰 <b>खाता स्थिति:</b> ❌ निःशुल्क सदस्य (एक्सेस निष्क्रिय)\n\n"
             "⚠️ <b>महत्वपूर्ण सूचना:</b>\n"
-            "वर्तमान में इस बोट के सभी अध्ययन फीचर्स (दैनिक नोट्स, विजन क्विज़ पोर्टल, लाइव DAF इंटरव्यू, कॉपी चेकिंग) केवल प्रीमियम सदस्यों के लिए आरक्षित हैं।\n\n"
-            f"👉 <b>सब्सक्रिप्शन सक्रिय करवाने हेतु तुरंत संपर्क करें:</b> <code>/owner</code>\n"
-            f"📢 <b>आधिकारिक चैनल:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>",
+            "वर्तमान में इस बोट के सभी अध्ययन फीचर्स (दैनिक 360° नोट्स, विजन क्विज़ पोर्टल, लाइव DAF इंटरव्यू, कॉपी चेकिंग) केवल प्रीमियम सदस्यों के लिए आरक्षित हैं।\n\n"
+            f"👉 <b>सब्सक्रिप्शन सक्रिय करवाने हेतु नीचे दिए बटन से संपर्क करें:</b>",
             parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=get_free_user_access_markup(user.id)
         )
         return
 
@@ -156,10 +172,10 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"👋 <b>नमस्ते {user_link}!</b>\n\n"
             "⚠️ आप वर्तमान में निःशुल्क सदस्य हैं। किसी भी फीचर का उपयोग करने के लिए प्रीमियम सब्सक्रिप्शन अनिवार्य है।\n\n"
-            f"👉 संपर्क कमांड: <code>/owner</code>\n"
-            f"📢 आधिकारिक चैनल: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>",
+            f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>",
             parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=get_free_user_access_markup(user.id)
         )
         return
 
@@ -782,7 +798,7 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
     INTERVIEW_SESSION.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= मुख्य परीक्षा अभ्यास (/mains) - 2013-2026 संपूर्ण PYQs =================
+# ================= मुख्य परीक्षा अभ्यास (/mains) =================
 @ensure_auth
 async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -850,8 +866,6 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
 
     try:
         combined_text = ""
-        
-        # यदि 2013-2026 संपूर्ण PYQ मांगा गया है तो 3 स्लॉट्स में बिना कटे पूरा संग्रह तैयार करना
         if is_pyq and cnt_raw == "all":
             await wait_m.edit_text("⏳ [■■■■□□□□□□] 40% भाग 1/3: वर्ष 2026 से 2022 तक के PYQs का संकलन जारी...")
             p1 = f"""
@@ -875,7 +889,7 @@ UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 20
             p3 = f"""
 UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 2016, 2015, 2014 एवं 2013 के सभी प्रमुख प्रश्नों का संपूर्ण संकलन करें।
 प्रत्येक प्रश्न पर स्पष्ट टैग: [UPSC CSE वर्ष / GS {sel.get('gs')} / अंक]।
-ढांचा: 📌 भूमिका, 📊 मुख्य विश्लेषणात्मक आयाम (3 बिंदु), 🚀 आगे की राह, ⚖️️ संतुलित प्रशासनिक निष्कर्ष।
+ढांचा: 📌 भूमिका, 📊 मुख्य विश्लेषणात्मक आयाम (3 बिंदु), 🚀 आगे की राह, ⚖️ संतुलित प्रशासनिक निष्कर्ष।
 केवल शुद्ध हिंदी में लिखें।
 """
             r3 = await asyncio.to_thread(call_gemini_safely, p3)
@@ -1251,14 +1265,14 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
 async def monthly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     months = ["October 2026", "September 2026", "August 2026", "July 2026", "June 2026", "May 2026"]
     keyboard = [[InlineKeyboardButton(f"📁 {m} संपूर्ण मासिक डाइजेस्ट", callback_data=f"genmonth_{m}")] for m in months]
-    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")] )
+    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back") ] )
     await update.message.reply_text("📁 <b>जिस महीने का संपूर्ण UPSC मंथली कंपाइलेशन चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 @ensure_auth
 async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     years = ["2026", "2025", "2024"]
     keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक महा-संकलन (PT-365)", callback_data=f"genyear_{y}")] for y in years]
-    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")] )
+    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back") ] )
     await update.message.reply_text("🏛️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 @ensure_auth
@@ -1279,7 +1293,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓 <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= DYNAMIC GENERATION PROCESSOR (सिलेबस टैगिंग सहित) =================
+# ================= DYNAMIC GENERATION PROCESSOR (ऑप्टिमाइज़्ड प्रॉम्प्ट - नो स्टकिंग) =================
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1311,39 +1325,34 @@ async def process_dynamic_generation(user_id, data, context):
         else:
             wait_m = await context.bot.send_message(
                 chat_id=user_id, 
-                text=f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■□□□□□□□□] 20% The Hindu, PIB व Drishti से डेटा संकलन प्रारंभ...",
+                text=f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■□□□□□□□□] 20% The Hindu, PIB व Vision IAS से डेटा संकलन प्रारंभ...",
                 parse_mode=ParseMode.HTML
             )
             prompt = f"""
-तारीख: "{target_date}" के लिए संपूर्ण, 360° और अत्यंत विस्तृत UPSC समसामयिक महा-संकलन तैयार करें।
-अनिवार्य अधिकृत स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS, Sanskriti IAS।
+तारीख: "{target_date}" के लिए संपूर्ण, 360° और विश्लेषणात्मक UPSC समसामयिक महा-संकलन तैयार करें।
+स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS।
 
-सख्त निर्देश (पाठ्यक्रम मैपिंग अनिवार्य):
-1. प्रत्येक खबर/मुद्दे के ऊपर एक स्पष्ट सिलेबस बॉक्स दें:
-   - 📑 संबंधित पेपर: (उदा. सामान्य अध्ययन - II)
-   - 🎯 आधिकारिक पाठ्यक्रम विषय: (उदा. 'शासन व्यवस्था, पारदर्शिता एवं जवाबदेही')
-2. 'GS-1' (कला, संस्कृति, इतिहास, भूगोल एवं समाज): दिन के सभी घटनाक्रम व भौगोलिक स्थल।
-3. 'GS-2' (संविधान, राजव्यवस्था, सामाजिक न्याय, शासन व अंतर्राष्ट्रीय संबंध): सभी न्यायिक निर्णय, अधिनियम, विधेयक, द्विपक्षीय वार्ताएं।
-4. 'GS-3' (अर्थव्यवस्था, कृषि, पर्यावरण, जैव विविधता, विज्ञान एवं प्रौद्योगिकी, आंतरिक सुरक्षा): आर्थिक नीतियां, डेटा, नई खोज, प्रजातियां।
-5. 'चर्चित स्थान (Places in News)': राष्ट्रीय एवं अंतर्राष्ट्रीय स्थलों का विवरण।
-6. 'तुलनात्मक सारणी': प्रमुख मुद्दों पर 2-कॉलम तालिका शुद्ध HTML (<div class="table-box"><table>...</table></div>) में दें।
-7. 'मुख्य परीक्षा उत्तर-लेखन प्रश्न': भूमिका, मुख्य विश्लेषणात्मक आयाम, आगे की राह और संतुलित निष्कर्ष सहित।
-8. 'प्रारंभिक परीक्षा अभ्यास MCQs': 5 मानक, कथन-आधारित प्रश्न आधिकारिक व्याख्या सहित।
-
-भाषा केवल और केवल शुद्ध, मानक एवं अकादमिक हिंदी रखें।
+अनिवार्य निर्देश (सिलेबस मैपिंग):
+1. प्रत्येक मुख्य खबर पर सिलेबस बॉक्स दें:
+   - 📑 संबंधित पेपर: (उदा. GS-2 / GS-3)
+   - 🎯 आधिकारिक पाठ्यक्रम विषय: (उदा. 'बुनियादी ढांचा', 'संवैधानिक संशोधन', 'जैव विविधता')
+2. GS-1 से GS-3 के सभी प्रमुख घटनाक्रम, तुलनात्मक 2-कॉलम तालिकाएँ, और चर्चित भौगोलिक स्थल शामिल करें।
+3. अंत में 1 मेन्स मॉडल प्रश्न ढांचा और 5 मानक अभ्यास MCQs दें।
+भाषा केवल शुद्ध और गंभीर हिंदी रखें।
 """
             try:
-                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■□□□□] 60% पाठ्यक्रम मैपिंग, 360° विश्लेषण व मैपिंग फ्रेमवर्क तैयार हो रहा है...", parse_mode=ParseMode.HTML)
+                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■□□□□] 60% पाठ्यक्रम मैपिंग व 360° विश्लेषण का संश्लेषण जारी...", parse_mode=ParseMode.HTML)
                 ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
+                
+                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■■■■□] 90% मास्टर HTML फाइल असेंबल हो रही है...", parse_mode=ParseMode.HTML)
                 topic = f"दैनिक समसामयिक महा-संकलन — {target_date}"
                 filename = f"UPSC_Notes_{target_date.replace('-', '')}.html"
                 
-                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■■■■□] 90% मास्टर HTML फाइल असेंबल हो रही है...", parse_mode=ParseMode.HTML)
                 html_content = build_standalone_master_html(topic, ai_text, date_str=target_date)
                 save_to_archive("daily", topic, html_content, target_date)
                 await wait_m.delete()
             except Exception as e:
-                await wait_m.edit_text(f"❌ त्रुटि: {e}")
+                await wait_m.edit_text(f"❌ त्रुटि: {e}। कृपया पुनः प्रयास करें।")
                 return
 
     elif data.startswith("genmonth_"):
@@ -1354,10 +1363,8 @@ async def process_dynamic_generation(user_id, data, context):
 स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS।
 
 प्रत्येक खंड में संबंधित GS पेपर (1, 2, 3) एवं आधिकारिक यूपीएससी सिलेबस टॉपिक का स्पष्ट उल्लेख करें:
-- GS-1: इतिहास, समाज, भूगोल व पर्यावरण से जुड़े बड़े मुद्दे
-- GS-2: राजव्यवस्था, नीतियां, संवैधानिक विवाद व अंतर्राष्ट्रीय संबंध
-- GS-3: आर्थिक संकेतक, नई योजनाएं, पर्यावरण सम्मेलन व विज्ञान-प्रौद्योगिकी
-- चर्चित स्थल एवं मानचित्रण
+- GS-1, GS-2 व GS-3 के बड़े नीतिगत व आर्थिक मुद्दे
+- चर्चित स्थल एवं मैपिंग
 - 10 मानक प्रीलिम्स MCQs व्याख्या सहित।
 केवल शुद्ध हिंदी में लिखें।
 """
@@ -1379,7 +1386,6 @@ async def process_dynamic_generation(user_id, data, context):
 वर्ष {y_name} का UPSC CSE हेतु अत्यंत विस्तृत और संपूर्ण Annual Compendium (PT-365 Style) तैयार करें।
 स्रोत: The Hindu, Indian Express, PIB, Vision IAS, Drishti IAS।
 प्रत्येक विषय पर GS पेपर और सिलेबस टॉपिक स्पष्ट मेंशन करें।
-पूरे वर्ष के सर्वाधिक महत्वपूर्ण नीतिगत, न्यायिक, पर्यावरणीय, वैज्ञानिक और सामरिक घटनाक्रमों का 360° विश्लेषण दें।
 केवल शुद्ध हिंदी में लिखें।
 """
         try:
@@ -1446,10 +1452,10 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
             f"👋 <b>नमस्ते {user_link}!</b>\n\n"
             "🔒 <b>प्रीमियम यूपीएससी डेस्क — एक्सेस प्रतिबंधित</b>\n\n"
             "⚠️ यह पोर्टल केवल <b>प्रीमियम सदस्यों</b> के लिए सुरक्षित है। सभी कमांड्स और फीचर्स अनलॉक करने के लिए ओनर से संपर्क करें।\n\n"
-            f"👉 संपर्क कमांड: <code>/owner</code>\n"
-            f"📢 आधिकारिक चैनल: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>",
+            f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user_id}</code>",
             parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=get_free_user_access_markup(user_id)
         )
         return
 
@@ -1531,9 +1537,10 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
         user_link = get_tg_user_link(user_id, update.effective_user.first_name)
         await msg.reply_text(
             f"⛔ <b>एक्सेस अस्वीकृत {user_link}:</b> PDF प्रोसेसिंग केवल प्रीमियम सदस्यों के लिए उपलब्ध है।\n\n"
-            f"सब्सक्रिप्शन हेतु <code>/owner</code> पर संपर्क करें।",
+            f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user_id}</code>",
             parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True
+            disable_web_page_preview=True,
+            reply_markup=get_free_user_access_markup(user_id)
         )
         return
 
@@ -1574,16 +1581,51 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         await wait_m.edit_text(f"❌ PDF प्रोसेसिंग में त्रुटि: {e}")
 
-# ================= BROADCAST SYSTEM =================
-async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+# ================= BROADCAST SYSTEM (स्वाइप रिप्लाई से डायरेक्ट ब्रॉडकास्ट सपोर्ट) =================
+async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
         await update.message.reply_text("⛔ यह कमांड केवल मुख्य व्यवस्थापक के लिए आरक्षित है।")
         return ConversationHandler.END
 
+    msg = update.message
+    # यदि एडमिन ने किसी संदेश पर स्वाइप करके रिप्लाई में सीधे /broadcast लिखा है:
+    if msg.reply_to_message:
+        target_msg = msg.reply_to_message
+        all_uids = get_all_user_ids()
+        status_m = await msg.reply_text(f"⏳ स्वाइप संदेश का डायरेक्ट ब्रॉडकास्ट जारी (कुल: {len(all_uids)} छात्र)...")
+        
+        succ = 0
+        sent_map = {}
+        for uid in all_uids:
+            try:
+                sent_obj = await context.bot.copy_message(chat_id=uid, from_chat_id=admin_id, message_id=target_msg.message_id)
+                sent_map[uid] = sent_obj.message_id
+                succ += 1
+                await asyncio.sleep(0.04)
+            except Exception:
+                pass
+
+        LAST_BROADCAST_DATA[admin_id] = sent_map
+        await status_m.delete()
+
+        keyboard = [
+            [InlineKeyboardButton("📌 हाँ, सभी चैट में पिन करें", callback_data="pin_broadcast_yes")],
+            [InlineKeyboardButton("❌ नहीं, सामान्य रहने दें", callback_data="pin_broadcast_no")]
+        ]
+        await msg.reply_text(
+            f"✅ डायरेक्ट ब्रॉडकास्ट सफल: <b>{succ} / {len(all_uids)}</b> छात्रों को संदेश प्राप्त हुआ।\n\n"
+            "👉 <b>क्या आप इस संदेश को सभी छात्रों के चैट में पिन (Pin) करना चाहते हैं?</b>",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+        return ConversationHandler.END
+
+    # यदि सादा /broadcast भेजा है तो स्टेप-बाय-स्टेप इनपुट मांगना
     await update.message.reply_text(
         f"📢 <b>ब्रॉडकास्ट कंट्रोल रूम ({AUTHOR_NAME}):</b>\n\n"
         "सभी छात्रों को भेजा जाने वाला संदेश, इमेज या पीडीएफ भेजें:\n"
+        "<i>(टिप: आप किसी भी पुराने मैसेज/वीडियो पर स्वाइप करके रिप्लाई में सीधे <code>/broadcast</code> लिखकर भी भेज सकते हैं!)</i>\n"
         "<i>(रद्द करने के लिए <code>/cancel</code> भेजें)</i>",
         parse_mode=ParseMode.HTML
     )
@@ -1605,7 +1647,7 @@ async def execute_broadcast_step1(update: Update, context: ContextTypes.DEFAULT_
             sent_obj = await context.bot.copy_message(chat_id=uid, from_chat_id=admin_id, message_id=b_msg.message_id)
             sent_map[uid] = sent_obj.message_id
             succ += 1
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.04)
         except Exception:
             pass
 
@@ -1756,8 +1798,7 @@ async def info_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"• <b>गृह राज्य:</b> {state}\n"
                 f"• <b>गृह जिला:</b> {dist}\n"
                 f"• <b>गांव/कस्बा:</b> {vill}\n"
-                f"• <b>कॉलेज:</b> {college}\n"
-                f"• <b>स्नातक स्ट्रीम:</b> {stream}\n"
+                f"• <b>कॉलेज/स्ट्रीम:</b> {college} ({stream})\n"
                 f"• <b>ग्रेजुएशन स्थिति:</b> {status}\n"
                 f"• <b>वैकल्पिक विषय:</b> {opt_sub}\n"
                 f"• <b>हॉबी:</b> {hobby}\n"
@@ -1772,26 +1813,48 @@ async def info_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ विवरण निकालने में त्रुटि: {e}")
 
+# ================= LIST USERS (प्रीमियम और फ्री यूज़र्स का स्पष्ट विभाजन) =================
 async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
         await update.message.reply_text("⛔ यह कमांड केवल मुख्य व्यवस्थापक के लिए आरक्षित है।")
         return
+        
     rows = get_all_users_detailed()
-    text = f"👥 <b>पंजीकृत सदस्य (कुल: {len(rows)})</b>\n\n"
     
-    text += "👑 <b>प्रशासनिक संरक्षक (Owners):</b>\n"
-    for aid in ADMIN_IDS:
-        text += f"• <b>{ADMIN_NAMES.get(aid, 'व्यवस्थापक')}</b>: <code>{aid}</code>\n"
-    text += "━━━━━━━━━━━━━━━━━━━━\n\n"
-
+    vip_users = []
+    free_users = []
+    
     for uid, un, fn, is_vip, exp in rows:
         display_name = fn.strip() if (fn and fn.strip()) else str(uid)
         user_link = get_tg_user_link(uid, display_name)
         id_link = get_tg_user_link(uid, str(uid))
-        vip_tag = "👑 [VIP/प्रीमियम]" if is_vip == 1 else "👤 [निःशुल्क छात्र]"
-        exp_str = f" | वैधता: {exp.strftime('%d-%b-%Y')}" if (is_vip == 1 and exp) else ""
-        text += f"• {vip_tag} {user_link} ({id_link}){exp_str}\n"
+        
+        if is_vip == 1:
+            exp_str = f" | वैधता: {exp.strftime('%d-%b-%Y')}" if exp else ""
+            vip_users.append(f"• 👑 {user_link} ({id_link}){exp_str}")
+        else:
+            free_users.append(f"• 👤 {user_link} ({id_link})")
+
+    text = f"👥 <b>पंजीकृत सदस्य (कुल: {len(rows)})</b>\n\n"
+    
+    text += "👑 <b>प्रशासनिक संरक्षक (Owners):</b>\n"
+    for aid in ADMIN_IDS:
+        text += f"• <b>{ADMIN_NAMES.get(aid, 'व्यवस्थापक')}</b>: {get_tg_user_link(aid, str(aid))}\n"
+    text += "━━━━━━━━━━━━━━━━━━━━\n\n"
+
+    text += f"⭐ <b>सत्यापित प्रीमियम सदस्य ({len(vip_users)} छात्र):</b>\n"
+    if vip_users:
+        text += "\n".join(vip_users) + "\n\n"
+    else:
+        text += "<i>वर्तमान में कोई सक्रिय प्रीमियम सदस्य नहीं है।</i>\n\n"
+        
+    text += "━━━━━━━━━━━━━━━━━━━━\n\n"
+    text += f"👤 <b>निःशुल्क सदस्य ({len(free_users)} छात्र):</b>\n"
+    if free_users:
+        text += "\n".join(free_users) + "\n"
+    else:
+        text += "<i>कोई निःशुल्क सदस्य नहीं है।</i>\n"
 
     for part in [text[i:i+3800] for i in range(0, len(text), 3800)]:
         await update.message.reply_text(part, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
@@ -1925,6 +1988,7 @@ async def main():
     bot_app.add_handler(CommandHandler("info", info_user_cmd))
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd))
 
+    bot_app.add_handler(CallbackQueryHandler(copy_id_callback, pattern=r"^copyid_"))
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_gs_choice, pattern=r"^quizgs_"))
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_sub_choice, pattern=r"^quizsub_|^quiz_back_gs"))
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_cnt_choice, pattern=r"^quizcnt_"))
