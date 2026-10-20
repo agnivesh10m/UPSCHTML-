@@ -30,7 +30,7 @@ from config import BOT_TOKEN, ADMIN_IDS, ADMIN_NAMES, CHANNEL_LINK, CHANNEL_NAME
 from database import (
     get_db_connection, register_user, is_authorized, get_user_daf, save_user_daf,
     add_vip_user, remove_vip_user, get_user_full_info, save_to_archive,
-    get_archive_by_date, get_all_user_ids, get_all_users_detailed
+    get_archive_by_key, clear_archive_by_key, get_all_user_ids, get_all_users_detailed
 )
 from ai_engine import (
     call_gemini_safely, call_gemini_multimodal_inline,
@@ -78,7 +78,7 @@ def get_tg_user_link(user_id: int, name: str = None) -> str:
 def get_free_user_access_markup(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"📋 अपनी ID कॉपी करें ({user_id})", callback_data=f"copyid_{user_id}")],
-        [InlineKeyboardButton("💬 ओनर से संपर्क करें", url=f"https://t.me/Avigat1210")],
+        [InlineKeyboardButton("💬 ओनर से संपर्क करें", url=f"[https://t.me/Avigat1210](https://t.me/Avigat1210)")],
         [InlineKeyboardButton("📢 आधिकारिक चैनल जॉइन करें", url=CHANNEL_LINK)]
     ])
 
@@ -215,7 +215,7 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.HTML
     )
 
-# ================= ऑनलाइन टेस्ट पोर्टल (/quiz) =================
+# ================= ऑनलाइन टेस्ट पोर्टल (/quiz) [पूर्णतः सुरक्षित] =================
 @ensure_auth
 async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     quiz_intro = (
@@ -436,7 +436,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         await status_msg.edit_text(f"❌ पोर्टल बनाने में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
-# ================= साक्षात्कार (/interview) 10-चरणीय DAF =================
+# ================= साक्षात्कार (/interview) [पूर्णतः सुरक्षित] =================
 @ensure_auth
 async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -946,7 +946,7 @@ UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 20
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
-# ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) =================
+# ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) [पूर्णतः सुरक्षित] =================
 @ensure_auth
 async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     keyboard = [
@@ -1109,7 +1109,7 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
     CHECK_ANSWER_CACHE.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= मेंटरशिप सत्र (/ask) =================
+# ================= मेंटरशिप सत्र (/ask) [पूर्णतः सुरक्षित] =================
 @ensure_auth
 async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
@@ -1293,7 +1293,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓 <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= DYNAMIC GENERATION PROCESSOR (ऑप्टिमाइज़्ड प्रॉम्प्ट - नो स्टकिंग) =================
+# ================= 360° UPSC 2027 डायनामिक जेनरेशन एवं स्थायी कैशिंग =================
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1316,107 +1316,89 @@ async def handle_dynamic_generation_click(update: Update, context: ContextTypes.
     asyncio.create_task(process_dynamic_generation(user_id, data, context))
 
 async def process_dynamic_generation(user_id, data, context):
-    if data.startswith("gendate_"):
-        target_date = data.split("_")[1]
-        arch_data = get_archive_by_date(target_date)
-        if arch_data:
-            topic, html_content = arch_data
+    archive_key = data
+    arch_data = get_archive_by_key(archive_key)
+    
+    # यदि पहले से किसी भी यूज़र ने जनरेट कर रखी है, तो डेटाबेस से तुरंत भेजें
+    if arch_data:
+        topic, html_content = arch_data
+        filename = f"UPSC_{archive_key.replace('-', '_')}.html"
+    else:
+        wait_m = await context.bot.send_message(
+            chat_id=user_id, 
+            text="🏛 <b>UPSC STUDY DESK</b>\n\n⏳ [■■□□□□□□□□] 20% The Hindu, Indian Express, PIB व Vision IAS से 360° डेटा संकलन प्रारंभ...",
+            parse_mode=ParseMode.HTML
+        )
+
+        if data.startswith("gendate_"):
+            target_date = data.split("_")[1]
+            topic = f"दैनिक समसामयिक महा-संकलन — {target_date}"
             filename = f"UPSC_Notes_{target_date.replace('-', '')}.html"
-        else:
-            wait_m = await context.bot.send_message(
-                chat_id=user_id, 
-                text=f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■□□□□□□□□] 20% The Hindu, PIB व Vision IAS से डेटा संकलन प्रारंभ...",
-                parse_mode=ParseMode.HTML
-            )
             prompt = f"""
-तारीख: "{target_date}" के लिए संपूर्ण, 360° और विश्लेषणात्मक UPSC समसामयिक महा-संकलन तैयार करें।
-स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS।
+तारीख: "{target_date}" के लिए संघ लोक सेवा आयोग (UPSC CSE 2027) की मांग के अनुरूप संपूर्ण, विस्तृत एवं 360° दैनिक समसामयिक महा-संकलन तैयार करें।
+अधिकृत स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS।
 
-अनिवार्य निर्देश (सिलेबस मैपिंग):
-1. प्रत्येक मुख्य खबर पर सिलेबस बॉक्स दें:
-   - 📑 संबंधित पेपर: (उदा. GS-2 / GS-3)
-   - 🎯 आधिकारिक पाठ्यक्रम विषय: (उदा. 'बुनियादी ढांचा', 'संवैधानिक संशोधन', 'जैव विविधता')
-2. GS-1 से GS-3 के सभी प्रमुख घटनाक्रम, तुलनात्मक 2-कॉलम तालिकाएँ, और चर्चित भौगोलिक स्थल शामिल करें।
-3. अंत में 1 मेन्स मॉडल प्रश्न ढांचा और 5 मानक अभ्यास MCQs दें।
-भाषा केवल शुद्ध और गंभीर हिंदी रखें।
+अनिवार्य 360° संरचना (कोई भी मुख्य स्तंभ न छूटे):
+1. 🚀 मुख्य समाचार विश्लेषण (कम से कम 3 से 4 बड़े राष्ट्रीय व अंतर्राष्ट्रीय मुद्दे):
+   - प्रत्येक पर स्पष्ट टैग: [GS-1 / GS-2 / GS-3] एवं आधिकारिक यूपीएससी माइक्रो-टॉपिक।
+   - संदर्भ, पृष्ठभूमि व संवैधानिक/कानूनी प्रावधान (अनुच्छेद, अधिनियम, नीतियां)।
+   - विश्लेषणात्मक विवरण (आंकड़े, नीति आयोग/RBI/आर्थिक सर्वेक्षण रिपोर्ट)।
+   - 2-कॉलम तुलनात्मक सारणी (Markdown Table अनिवार्य)।
+   - चुनौतियां एवं 'आगे की राह' (प्रशासनिक समाधान)।
+2. 📰 द हिंदू व इंडियन एक्सप्रेस का संपादकीय विश्लेषण (Editorial Analysis) - मुख्य परीक्षा परिप्रेक्ष्य।
+3. 🌍 संक्षिप्त एवं महत्वपूर्ण घटनाक्रम (Briefs): विज्ञान-प्रौद्योगिकी, पर्यावरण, अंतरिक्ष (केसलर सिंड्रोम, इसरो मिशन आदि)।
+4. 🗺️ चर्चित भौगोलिक स्थल (Places in News): कम से कम 3 प्रमुख वैश्विक/राष्ट्रीय स्थल (जलडमरूमध्य, नहर, सीमा क्षेत्र)।
+5. ✍️ मेन्स मॉडल प्रश्न एवं 15-अंक का विस्तृत उत्तर ढांचा (भूमिका, मुख्य भाग, आगे की राह, निष्कर्ष)।
+6. 🎯 5 अत्यंत कठिन व प्रामाणिक प्रीलिम्स MCQs (कथन आधारित) विस्तृत उत्तर व आधिकारिक व्याख्या सहित।
+
+भाषा: केवल शुद्ध, गरिमापूर्ण एवं अकादमिक हिंदी।
 """
-            try:
-                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■□□□□] 60% पाठ्यक्रम मैपिंग व 360° विश्लेषण का संश्लेषण जारी...", parse_mode=ParseMode.HTML)
-                ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-                
-                await wait_m.edit_text(f"🏛 <b>UPSC STUDY DESK</b>\n\n📅 <b>दिनांक:</b> <code>{target_date}</code>\n⏳ [■■■■■■■■■□] 90% मास्टर HTML फाइल असेंबल हो रही है...", parse_mode=ParseMode.HTML)
-                topic = f"दैनिक समसामयिक महा-संकलन — {target_date}"
-                filename = f"UPSC_Notes_{target_date.replace('-', '')}.html"
-                
-                html_content = build_standalone_master_html(topic, ai_text, date_str=target_date)
-                save_to_archive("daily", topic, html_content, target_date)
-                await wait_m.delete()
-            except Exception as e:
-                await wait_m.edit_text(f"❌ त्रुटि: {e}। कृपया पुनः प्रयास करें।")
-                return
-
-    elif data.startswith("genmonth_"):
-        m_name = data.split("_")[1]
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"📁 <b>{m_name}</b>\n⏳ [■■■□□□□□□□] 30% मासिक डाइजेस्ट संकलित हो रहा है...", parse_mode=ParseMode.HTML)
-        prompt = f"""
-माह: '{m_name}' का सम्पूर्ण, 360° और अत्यंत विस्तृत UPSC Monthly Digest तैयार करें।
-स्रोत: The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS।
-
-प्रत्येक खंड में संबंधित GS पेपर (1, 2, 3) एवं आधिकारिक यूपीएससी सिलेबस टॉपिक का स्पष्ट उल्लेख करें:
-- GS-1, GS-2 व GS-3 के बड़े नीतिगत व आर्थिक मुद्दे
-- चर्चित स्थल एवं मैपिंग
-- 10 मानक प्रीलिम्स MCQs व्याख्या सहित।
-केवल शुद्ध हिंदी में लिखें।
-"""
-        try:
-            await wait_m.edit_text(f"📁 <b>{m_name}</b>\n⏳ [■■■■■■■□□□] 70% GS 1-3 व प्रीलिम्स MCQs का संश्लेषण जारी...", parse_mode=ParseMode.HTML)
-            ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
+        elif data.startswith("genmonth_"):
+            m_name = data.split("_")[1]
             topic = f"UPSC Monthly Digest — {m_name}"
             filename = f"UPSC_Monthly_{m_name.replace(' ', '_')}.html"
-            html_content = build_standalone_master_html(topic, ai_text, date_str=m_name)
-            await wait_m.delete()
-        except Exception as e:
-            await wait_m.edit_text(f"❌ त्रुटि: {e}")
-            return
-
-    elif data.startswith("genyear_"):
-        y_name = data.split("_")[1]
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ वर्ष <b>{y_name}</b>\n[■■■□□□□□□□] 30% वार्षिक महा-संकलन (PT-365) तैयार हो रहा है...", parse_mode=ParseMode.HTML)
-        prompt = f"""
+            prompt = f"""
+माह: '{m_name}' का UPSC CSE हेतु 360° संपूर्ण एवं विस्तृत Monthly Digest तैयार करें।
+स्रोत: The Hindu, Indian Express, PIB, Yojana, Kurukshetra, Vision IAS।
+प्रत्येक खंड में संबंधित GS पेपर (1, 2, 3) एवं आधिकारिक यूपीएससी सिलेबस टॉपिक का स्पष्ट उल्लेख करें:
+- GS-1 (कला, संस्कृति, भूगोल, समाज)
+- GS-2 (राजव्यवस्था, शासन, अंतर्राष्ट्रीय संबंध, द्विपक्षीय समझौते)
+- GS-3 (अर्थव्यवस्था, कृषि सुधार, पर्यावरण-COP, आंतरिक सुरक्षा व अंतरिक्ष)
+- चर्चित स्थल एवं 10 मानक प्रीलिम्स MCQs व्याख्या सहित।
+केवल शुद्ध हिंदी में लिखें।
+"""
+        elif data.startswith("genyear_"):
+            y_name = data.split("_")[1]
+            topic = f"UPSC Annual Compendium — {y_name}"
+            filename = f"UPSC_Annual_{y_name}.html"
+            prompt = f"""
 वर्ष {y_name} का UPSC CSE हेतु अत्यंत विस्तृत और संपूर्ण Annual Compendium (PT-365 Style) तैयार करें।
 स्रोत: The Hindu, Indian Express, PIB, Vision IAS, Drishti IAS।
 प्रत्येक विषय पर GS पेपर और सिलेबस टॉपिक स्पष्ट मेंशन करें।
 केवल शुद्ध हिंदी में लिखें।
 """
-        try:
-            await wait_m.edit_text(f"⏳ वर्ष <b>{y_name}</b>\n[■■■■■■■□□□] 70% प्रमुख राष्ट्रीय व वैश्विक घटनाक्रमों का संकलन जारी...", parse_mode=ParseMode.HTML)
-            ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-            topic = f"UPSC Annual Compendium — {y_name}"
-            filename = f"UPSC_Annual_{y_name}.html"
-            html_content = build_standalone_master_html(topic, ai_text, date_str=y_name)
-            await wait_m.delete()
-        except Exception as e:
-            await wait_m.edit_text(f"❌ त्रुटि: {e}")
-            return
-
-    elif data.startswith("genweek_"):
-        parts = data.split("_")
-        w_date = parts[2]
-        wait_m = await context.bot.send_message(chat_id=user_id, text=f"⏳ [■■■■□□□□□□] 40% साप्ताहिक संकलन तैयार हो रहा है...", parse_mode=ParseMode.HTML)
-        prompt = f"""
+        elif data.startswith("genweek_"):
+            w_date = data.split("_")[2]
+            topic = f"UPSC Weekly Revision — {w_date}"
+            filename = f"UPSC_Weekly_{w_date.replace('-', '')}.html"
+            prompt = f"""
 सप्ताह संदर्भ: '{w_date}' का संपूर्ण साप्ताहिक UPSC क्विक रिवीजन नोट्स तैयार करें।
 स्रोत: The Hindu, PIB, Indian Express, Vision IAS।
 प्रत्येक GS पेपर (1, 2, 3) के सप्ताह भर के सबसे निर्णायक बिंदु, सिलेबस टैग्स, चर्चित स्थान और 5 अभ्यास प्रश्न शामिल करें।
 केवल शुद्ध हिंदी में लिखें।
 """
         try:
+            await wait_m.edit_text("⏳ [■■■■■■□□□□] 60% संपूर्ण 360° यूपीएससी संश्लेषण जारी (कंटेंट परिपूर्ण किया जा रहा है)...", parse_mode=ParseMode.HTML)
             ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-            topic = f"UPSC Weekly Revision — {w_date}"
-            filename = f"UPSC_Weekly_{w_date.replace('-', '')}.html"
-            html_content = build_standalone_master_html(topic, ai_text, date_str=w_date)
+            
+            await wait_m.edit_text("⏳ [■■■■■■■■■□] 90% मास्टर HTML फाइल असेंबल हो रही है...", parse_mode=ParseMode.HTML)
+            html_content = build_standalone_master_html(topic, ai_text, date_str=archive_key)
+            
+            # डेटाबेस में स्थायी रूप से सेव ताकि दूसरे यूज़र्स को तुरंत यही फ़ाइल मिले
+            save_to_archive("dynamic", topic, html_content, archive_key)
             await wait_m.delete()
         except Exception as e:
-            await wait_m.edit_text(f"❌ त्रुटि: {e}")
+            await wait_m.edit_text(f"❌ त्रुटि: {e}। कृपया पुनः प्रयास करें।")
             return
 
     with open(filename, "w", encoding="utf-8") as f:
@@ -1465,65 +1447,81 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if user_input == "all" and cached_list:
         raw_trend = "\n".join(cached_list)
-        wait_m = await msg.reply_text("⏳ [■■■■□□□□□□] 40% सभी ट्रेंडिंग मुद्दों के 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
-        prompt = f"नीचे दिए गए सभी ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स सिलेबस टैग्स सहित तैयार करें:\n{raw_trend}\nकेवल शुद्ध हिंदी में लिखें।"
-        try:
-            ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-            topic = f"UPSC Trending Radar All Topics — {today}"
-            filename = f"UPSC_Trending_Radar_{get_ist_now().strftime('%Y%m%d')}.html"
-            html_content = build_standalone_master_html(topic, ai_text, date_str=today, is_trending=True)
-            
-            with open(filename, "w", encoding="utf-8") as f:
-                f.write(html_content)
-            with open(filename, "rb") as send_doc:
-                await msg.reply_document(
-                    document=send_doc,
-                    filename=filename,
-                    caption=(
-                        f"📄 <b>ट्रेंडिंग संपूर्ण संकलन:</b> <code>{today}</code>\n"
-                        f"📰 <b>स्रोत:</b> The Hindu | Indian Express | PIB | Vision IAS\n"
-                        f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
-                        f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
-                    ),
-                    parse_mode=ParseMode.HTML
-                )
-            if os.path.exists(filename):
-                os.remove(filename)
-            await wait_m.delete()
-        except Exception as e:
-            await wait_m.edit_text(f"❌ त्रुटि: {e}")
+        trend_key = f"trending_all_{get_ist_now().strftime('%Y%m%d')}"
+        arch_data = get_archive_by_key(trend_key)
+        
+        if arch_data:
+            topic, html_content = arch_data
+        else:
+            wait_m = await msg.reply_text("⏳ [■■■■□□□□□□] 40% सभी ट्रेंडिंग मुद्दों के 360° नोट्स तैयार किए जा रहे हैं...", parse_mode=ParseMode.HTML)
+            prompt = f"नीचे दिए गए सभी ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स सिलेबस टैग्स सहित तैयार करें:\n{raw_trend}\nकेवल शुद्ध हिंदी में लिखें।"
+            try:
+                ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
+                topic = f"UPSC Trending Radar All Topics — {today}"
+                html_content = build_standalone_master_html(topic, ai_text, date_str=today, is_trending=True)
+                save_to_archive("trending", topic, html_content, trend_key)
+                await wait_m.delete()
+            except Exception as e:
+                await wait_m.edit_text(f"❌ त्रुटि: {e}")
+                return
+
+        filename = f"UPSC_Trending_Radar_{get_ist_now().strftime('%Y%m%d')}.html"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        with open(filename, "rb") as send_doc:
+            await msg.reply_document(
+                document=send_doc,
+                filename=filename,
+                caption=(
+                    f"📄 <b>ट्रेंडिंग संपूर्ण संकलन:</b> <code>{today}</code>\n"
+                    f"📰 <b>स्रोत:</b> The Hindu | Indian Express | PIB | Vision IAS\n"
+                    f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
+                    f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                ),
+                parse_mode=ParseMode.HTML
+            )
+        if os.path.exists(filename):
+            os.remove(filename)
         return
 
     if re.match(r'^(\d+)(\s*,\s*\d+)*$', user_input) and cached_list:
         nums = [n.strip() for n in user_input.split(',')]
-        wait_m = await msg.reply_text(f"⏳ [■■■■□□□□□□] 40% चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विश्लेषण जारी...", parse_mode=ParseMode.HTML)
-        raw_trend = "\n".join(cached_list)
-        prompt = f"सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC हेतु 360° विश्लेषण सिलेबस मैपिंग सहित तैयार करें:\n{raw_trend}\nकेवल हिंदी में लिखें।"
-        try:
-            ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
-            topic = f"UPSC Trending Topics {', '.join(nums)} — {today}"
-            filename = f"UPSC_Trending_Selected_{get_ist_now().strftime('%Y%m%d')}_{'_'.join(nums)}.html"
-            html_content = build_standalone_master_html(topic, ai_text, date_str=today, is_trending=True)
-            
-            with open(filename, "w", encoding="utf-8") as f:
-                f.write(html_content)
-            with open(filename, "rb") as send_doc:
-                await msg.reply_document(
-                    document=send_doc,
-                    filename=filename,
-                    caption=(
-                        f"📄 <b>ट्रेंडिंग चयनित मुद्दे:</b> {', '.join(nums)} ({today})\n"
-                        f"📰 <b>स्रोत:</b> The Hindu | Indian Express | PIB\n"
-                        f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
-                        f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
-                    ),
-                    parse_mode=ParseMode.HTML
-                )
-            if os.path.exists(filename):
-                os.remove(filename)
-            await wait_m.delete()
-        except Exception as e:
-            await wait_m.edit_text(f"❌ त्रुटि: {e}")
+        sel_key = f"trending_{get_ist_now().strftime('%Y%m%d')}_{'_'.join(nums)}"
+        arch_data = get_archive_by_key(sel_key)
+
+        if arch_data:
+            topic, html_content = arch_data
+        else:
+            wait_m = await msg.reply_text(f"⏳ [■■■■□□□□□□] 40% चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विश्लेषण जारी...", parse_mode=ParseMode.HTML)
+            raw_trend = "\n".join(cached_list)
+            prompt = f"सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC हेतु 360° विश्लेषण सिलेबस मैपिंग सहित तैयार करें:\n{raw_trend}\nकेवल हिंदी में लिखें।"
+            try:
+                ai_text = await asyncio.to_thread(call_gemini_safely, prompt)
+                topic = f"UPSC Trending Topics {', '.join(nums)} — {today}"
+                html_content = build_standalone_master_html(topic, ai_text, date_str=today, is_trending=True)
+                save_to_archive("trending", topic, html_content, sel_key)
+                await wait_m.delete()
+            except Exception as e:
+                await wait_m.edit_text(f"❌ त्रुटि: {e}")
+                return
+
+        filename = f"UPSC_Trending_Selected_{get_ist_now().strftime('%Y%m%d')}_{'_'.join(nums)}.html"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        with open(filename, "rb") as send_doc:
+            await msg.reply_document(
+                document=send_doc,
+                filename=filename,
+                caption=(
+                    f"📄 <b>ट्रेंडिंग चयनित मुद्दे:</b> {', '.join(nums)} ({today})\n"
+                    f"📰 <b>स्रोत:</b> The Hindu | Indian Express | PIB\n"
+                    f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
+                    f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                ),
+                parse_mode=ParseMode.HTML
+            )
+        if os.path.exists(filename):
+            os.remove(filename)
         return
 
 # ================= DIRECT PDF TO UPSC 360° HTML =================
@@ -1581,7 +1579,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         await wait_m.edit_text(f"❌ PDF प्रोसेसिंग में त्रुटि: {e}")
 
-# ================= BROADCAST SYSTEM (स्वाइप रिप्लाई से डायरेक्ट ब्रॉडकास्ट सपोर्ट) =================
+# ================= BROADCAST SYSTEM =================
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
@@ -1589,7 +1587,6 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     msg = update.message
-    # यदि एडमिन ने किसी संदेश पर स्वाइप करके रिप्लाई में सीधे /broadcast लिखा है:
     if msg.reply_to_message:
         target_msg = msg.reply_to_message
         all_uids = get_all_user_ids()
@@ -1621,7 +1618,6 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
 
-    # यदि सादा /broadcast भेजा है तो स्टेप-बाय-स्टेप इनपुट मांगना
     await update.message.reply_text(
         f"📢 <b>ब्रॉडकास्ट कंट्रोल रूम ({AUTHOR_NAME}):</b>\n\n"
         "सभी छात्रों को भेजा जाने वाला संदेश, इमेज या पीडीएफ भेजें:\n"
@@ -1688,7 +1684,7 @@ async def handle_broadcast_pin_choice(update: Update, context: ContextTypes.DEFA
 
     LAST_BROADCAST_DATA.pop(admin_id, None)
 
-# ================= ADMIN USER MANAGEMENT =================
+# ================= ADMIN USER MANAGEMENT & CACHE RESET =================
 async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
@@ -1813,7 +1809,6 @@ async def info_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ विवरण निकालने में त्रुटि: {e}")
 
-# ================= LIST USERS (प्रीमियम और फ्री यूज़र्स का स्पष्ट विभाजन) =================
 async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
@@ -1821,7 +1816,6 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     rows = get_all_users_detailed()
-    
     vip_users = []
     free_users = []
     
@@ -1837,7 +1831,6 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             free_users.append(f"• 👤 {user_link} ({id_link})")
 
     text = f"👥 <b>पंजीकृत सदस्य (कुल: {len(rows)})</b>\n\n"
-    
     text += "👑 <b>प्रशासनिक संरक्षक (Owners):</b>\n"
     for aid in ADMIN_IDS:
         text += f"• <b>{ADMIN_NAMES.get(aid, 'व्यवस्थापक')}</b>: {get_tg_user_link(aid, str(aid))}\n"
@@ -1858,6 +1851,16 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     for part in [text[i:i+3800] for i in range(0, len(text), 3800)]:
         await update.message.reply_text(part, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+# पुरानी अधूरी फ़ाइलों को डिलीट करने का एडमिन कमांड
+async def clear_cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    admin_id = update.effective_user.id
+    if admin_id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ यह कमांड केवल एडमिन के लिए है।")
+        return
+    
+    clear_archive_by_key() # पूरा पुराना अधूरा आर्काइव साफ़
+    await update.message.reply_text("🧹 <b>सफल:</b> पुराना सारा अधूरा कैश और फ़ाइलें साफ़ कर दी गई हैं! अब से सभी फ़ाइलें नई 360° गुणवत्ता के साथ सेव होंगी।", parse_mode=ParseMode.HTML)
 
 # ================= ADMIN DIRECT REPLIES =================
 async def handle_admin_reply_or_direct_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1959,7 +1962,7 @@ async def global_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     await update.message.reply_text("🛑 प्रक्रिया निरस्त कर दी गई।", reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
     return ConversationHandler.END
 
-# ================= BACKGROUND SERVER (KEEP-ALIVE) =================
+# ================= BACKGROUND SERVER =================
 async def run_server():
     server = await asyncio.start_server(
         lambda r, w: (w.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nUPSC Study Desk Live 24/7"), w.close()),
@@ -1987,6 +1990,7 @@ async def main():
     bot_app.add_handler(CommandHandler("removeuser", remove_user_cmd))
     bot_app.add_handler(CommandHandler("info", info_user_cmd))
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd))
+    bot_app.add_handler(CommandHandler("clearcache", clear_cache_cmd)) # पुरानी अधूरी फाइलों की सफाई
 
     bot_app.add_handler(CallbackQueryHandler(copy_id_callback, pattern=r"^copyid_"))
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_gs_choice, pattern=r"^quizgs_"))
