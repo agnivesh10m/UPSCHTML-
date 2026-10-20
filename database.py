@@ -22,7 +22,7 @@ def get_db_connection():
     if not clean_url:
         return None
     try:
-        conn = psycopg2.connect(clean_url, connect_timeout=5)
+        conn = psycopg2.connect(clean_url, connect_timeout=10)
         conn.autocommit = True
         return conn
     except Exception as e:
@@ -67,11 +67,6 @@ def init_db():
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
         """)
-        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS home_district TEXT;")
-        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS home_village TEXT;")
-        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS stream_name TEXT;")
-        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS hobby TEXT;")
-        # यदि पुरानी टेबल में reference_date 'DATE' टाइप की थी, तो उसे TEXT में बदलें ताकि 'October 2026' जैसे कीवर्ड्स भी सेव हो सकें
         c.execute("ALTER TABLE daily_archive ALTER COLUMN reference_date TYPE TEXT;")
         c.close()
         conn.close()
@@ -131,17 +126,11 @@ def is_authorized(user_id):
                     if exp:
                         exp_tz = exp.astimezone(now.tzinfo)
                         if now <= exp_tz:
-                            if user_id in MEMORY_USERS:
-                                MEMORY_USERS[user_id]["is_vip"] = 1
-                                MEMORY_USERS[user_id]["vip_expiry"] = exp_tz
                             c.close()
                             conn.close()
                             return True
                         else:
                             c.execute("UPDATE users SET is_vip = 0, vip_expiry = NULL WHERE user_id = %s", (user_id,))
-                            if user_id in MEMORY_USERS:
-                                MEMORY_USERS[user_id]["is_vip"] = 0
-                                MEMORY_USERS[user_id]["vip_expiry"] = None
                             c.close()
                             conn.close()
                             return False
@@ -167,13 +156,9 @@ def is_authorized(user_id):
 
 def add_vip_user(target_uid: int, days: int):
     expiry_time = get_ist_now() + timedelta(days=days)
-    
     if target_uid not in MEMORY_USERS:
         MEMORY_USERS[target_uid] = {
-            "user_id": target_uid,
-            "username": "",
-            "first_name": f"User_{target_uid}",
-            "joined_at": get_ist_now()
+            "user_id": target_uid, "username": "", "first_name": f"User_{target_uid}", "joined_at": get_ist_now()
         }
     MEMORY_USERS[target_uid]["is_vip"] = 1
     MEMORY_USERS[target_uid]["vip_expiry"] = expiry_time
@@ -186,19 +171,17 @@ def add_vip_user(target_uid: int, days: int):
                 INSERT INTO users (user_id, is_vip, vip_expiry, joined_at)
                 VALUES (%s, 1, %s, NOW())
                 ON CONFLICT (user_id) DO UPDATE SET 
-                    is_vip = 1, 
-                    vip_expiry = %s;
+                    is_vip = 1, vip_expiry = %s;
             """, (target_uid, expiry_time, expiry_time))
             c.close()
             conn.close()
-        except Exception as e:
-            print(f"Sync DB add_vip error: {e}")
+        except Exception:
+            pass
 
 def remove_vip_user(target_uid: int):
     if target_uid in MEMORY_USERS:
         MEMORY_USERS[target_uid]["is_vip"] = 0
         MEMORY_USERS[target_uid]["vip_expiry"] = None
-    
     conn = get_db_connection()
     if conn:
         try:
@@ -218,7 +201,6 @@ def get_user_daf(user_id):
             d.get("stream_name", "सामान्य अध्ययन"), d["graduation_status"],
             d["optional_subject"], d.get("hobby", "लागू नहीं"), d["attempt_number"]
         )
-    
     conn = get_db_connection()
     if conn:
         try:
@@ -232,8 +214,7 @@ def get_user_daf(user_id):
                     "name": row[0], "home_state": row[1], "home_district": row[2] or "लागू नहीं",
                     "home_village": row[3] or "लागू नहीं", "college_name": row[4],
                     "stream_name": row[5] or "सामान्य अध्ययन", "graduation_status": row[6],
-                    "optional_subject": row[7], "hobby": row[8] or "लागू नहीं",
-                    "attempt_number": row[9]
+                    "optional_subject": row[7], "hobby": row[8] or "लागू नहीं", "attempt_number": row[9]
                 }
                 return row
         except Exception:
@@ -255,17 +236,11 @@ def save_user_daf(user_id, name, home_state, home_district, home_village, colleg
                 INSERT INTO user_daf (user_id, name, home_state, home_district, home_village, college_name, stream_name, graduation_status, optional_subject, hobby, attempt_number, updated_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 ON CONFLICT (user_id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    home_state = EXCLUDED.home_state,
-                    home_district = EXCLUDED.home_district,
-                    home_village = EXCLUDED.home_village,
-                    college_name = EXCLUDED.college_name,
-                    stream_name = EXCLUDED.stream_name,
-                    graduation_status = EXCLUDED.graduation_status,
-                    optional_subject = EXCLUDED.optional_subject,
-                    hobby = EXCLUDED.hobby,
-                    attempt_number = EXCLUDED.attempt_number,
-                    updated_at = NOW();
+                    name = EXCLUDED.name, home_state = EXCLUDED.home_state, home_district = EXCLUDED.home_district,
+                    home_village = EXCLUDED.home_village, college_name = EXCLUDED.college_name,
+                    stream_name = EXCLUDED.stream_name, graduation_status = EXCLUDED.graduation_status,
+                    optional_subject = EXCLUDED.optional_subject, hobby = EXCLUDED.hobby,
+                    attempt_number = EXCLUDED.attempt_number, updated_at = NOW();
             """, (user_id, name, home_state, home_district, home_village, college, stream, status, opt_sub, hobby, attempt))
             c.close()
             conn.close()
@@ -287,15 +262,6 @@ def get_user_full_info(user_id):
                 return user_row, daf_row
         except Exception:
             pass
-
-    if user_id in MEMORY_USERS:
-        u = MEMORY_USERS[user_id]
-        u_row = (u["user_id"], u["username"], u["first_name"], u["is_vip"], u["vip_expiry"], u["joined_at"])
-        d_row = None
-        if user_id in MEMORY_DAF:
-            d = MEMORY_DAF[user_id]
-            d_row = (d["name"], d["home_state"], d.get("home_district"), d.get("home_village"), d["college_name"], d.get("stream_name"), d["graduation_status"], d["optional_subject"], d.get("hobby"), d["attempt_number"], get_ist_now())
-        return u_row, d_row
     return None, None
 
 def save_to_archive(period, topic, html_content, ref_key=None):
@@ -309,15 +275,13 @@ def save_to_archive(period, topic, html_content, ref_key=None):
                 INSERT INTO daily_archive (period_type, reference_date, topic, html_content, created_at)
                 VALUES (%s, %s, %s, %s, NOW())
                 ON CONFLICT (reference_date) DO UPDATE SET
-                    period_type = EXCLUDED.period_type,
-                    topic = EXCLUDED.topic,
-                    html_content = EXCLUDED.html_content,
-                    created_at = NOW();
+                    period_type = EXCLUDED.period_type, topic = EXCLUDED.topic,
+                    html_content = EXCLUDED.html_content, created_at = NOW();
             """, (period, ref_str, topic, html_content))
             c.close()
             conn.close()
-        except Exception as e:
-            print(f"Archive Save Error: {e}")
+        except Exception:
+            pass
 
 def get_archive_by_key(ref_key):
     ref_str = str(ref_key)
@@ -339,7 +303,6 @@ def get_archive_by_key(ref_key):
     return None
 
 def clear_archive_by_key(ref_key=None):
-    """पुरानी अधूरी या कमियों वाली फ़ाइलों को डिलीट करने का फंक्शन"""
     global MEMORY_ARCHIVE
     conn = get_db_connection()
     if ref_key:
@@ -393,13 +356,9 @@ def get_all_users_detailed():
                 if is_vip == 1 and exp and now > exp.astimezone(now.tzinfo):
                     is_vip = 0
                     c.execute("UPDATE users SET is_vip = 0, vip_expiry = NULL WHERE user_id = %s", (uid,))
-                dict_users[uid] = (uid, un, fn, is_vip, exp)
+                dict_users[uid] = (uid, un, fn or "", is_vip, exp)
             c.close()
             conn.close()
         except Exception:
             pass
-
-    for uid, u in MEMORY_USERS.items():
-        if uid not in dict_users:
-            dict_users[uid] = (uid, u.get("username", ""), u.get("first_name", ""), u.get("is_vip", 0), u.get("vip_expiry", None))
     return list(dict_users.values())
