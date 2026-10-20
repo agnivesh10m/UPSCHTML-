@@ -61,7 +61,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS daily_archive (
                 id BIGSERIAL PRIMARY KEY,
                 period_type TEXT,
-                reference_date DATE UNIQUE,
+                reference_date TEXT UNIQUE,
                 topic TEXT,
                 html_content TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW()
@@ -71,6 +71,8 @@ def init_db():
         c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS home_village TEXT;")
         c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS stream_name TEXT;")
         c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS hobby TEXT;")
+        # यदि पुरानी टेबल में reference_date 'DATE' टाइप की थी, तो उसे TEXT में बदलें ताकि 'October 2026' जैसे कीवर्ड्स भी सेव हो सकें
+        c.execute("ALTER TABLE daily_archive ALTER COLUMN reference_date TYPE TEXT;")
         c.close()
         conn.close()
     except Exception as e:
@@ -296,9 +298,9 @@ def get_user_full_info(user_id):
         return u_row, d_row
     return None, None
 
-def save_to_archive(period, topic, html_content, ref_date=None):
-    d_val = ref_date if ref_date else get_ist_now().date()
-    MEMORY_ARCHIVE[str(d_val)] = (topic, html_content)
+def save_to_archive(period, topic, html_content, ref_key=None):
+    ref_str = str(ref_key) if ref_key else str(get_ist_now().date())
+    MEMORY_ARCHIVE[ref_str] = (topic, html_content)
     conn = get_db_connection()
     if conn:
         try:
@@ -307,30 +309,60 @@ def save_to_archive(period, topic, html_content, ref_date=None):
                 INSERT INTO daily_archive (period_type, reference_date, topic, html_content, created_at)
                 VALUES (%s, %s, %s, %s, NOW())
                 ON CONFLICT (reference_date) DO UPDATE SET
+                    period_type = EXCLUDED.period_type,
                     topic = EXCLUDED.topic,
                     html_content = EXCLUDED.html_content,
                     created_at = NOW();
-            """, (period, d_val, topic, html_content))
+            """, (period, ref_str, topic, html_content))
             c.close()
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Archive Save Error: {e}")
 
-def get_archive_by_date(date_str):
-    if str(date_str) in MEMORY_ARCHIVE:
-        return MEMORY_ARCHIVE[str(date_str)]
+def get_archive_by_key(ref_key):
+    ref_str = str(ref_key)
+    if ref_str in MEMORY_ARCHIVE:
+        return MEMORY_ARCHIVE[ref_str]
     conn = get_db_connection()
     if conn:
         try:
             c = conn.cursor()
-            c.execute("SELECT topic, html_content FROM daily_archive WHERE reference_date = %s LIMIT 1", (date_str,))
+            c.execute("SELECT topic, html_content FROM daily_archive WHERE reference_date = %s LIMIT 1", (ref_str,))
             row = c.fetchone()
             c.close()
             conn.close()
-            return row
+            if row:
+                MEMORY_ARCHIVE[ref_str] = row
+                return row
         except Exception:
             pass
     return None
+
+def clear_archive_by_key(ref_key=None):
+    """पुरानी अधूरी या कमियों वाली फ़ाइलों को डिलीट करने का फंक्शन"""
+    global MEMORY_ARCHIVE
+    conn = get_db_connection()
+    if ref_key:
+        ref_str = str(ref_key)
+        MEMORY_ARCHIVE.pop(ref_str, None)
+        if conn:
+            try:
+                c = conn.cursor()
+                c.execute("DELETE FROM daily_archive WHERE reference_date = %s", (ref_str,))
+                c.close()
+                conn.close()
+            except Exception:
+                pass
+    else:
+        MEMORY_ARCHIVE.clear()
+        if conn:
+            try:
+                c = conn.cursor()
+                c.execute("DELETE FROM daily_archive;")
+                c.close()
+                conn.close()
+            except Exception:
+                pass
 
 def get_all_user_ids():
     ids = set(MEMORY_USERS.keys())
