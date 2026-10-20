@@ -5,8 +5,8 @@ from bs4 import BeautifulSoup
 from config import AUTHOR_NAME, CHANNEL_LINK, CHANNEL_NAME, get_ist_now
 
 def create_standalone_vector_map(place_name: str) -> str:
-    # कोष्ठक या अतिरिक्त विराम चिह्नों को हटाकर साफ़ नाम निकालना
-    clean_p = re.split(r'[:\(\[\{]', place_name)[0].strip()
+    clean_p = re.sub(r'<[^>]+>', '', place_name)
+    clean_p = re.split(r'[:\(\[\{]', clean_p)[0].strip()
     return f"""
     <figure class="img-figure">
       <svg width="100%" height="220" viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg" style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border-radius: 8px;">
@@ -77,9 +77,8 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'^##\s*(.*)', r'<h3 class="section-title">\1</h3>', text, flags=re.MULTILINE)
     text = re.sub(r'^#\s*(.*)', r'<h2 class="section-title">\1</h2>', text, flags=re.MULTILINE)
 
-    # केवल मुख्य परीक्षा के विशिष्ट शीर्षकों पर ही मेन्स कार्ड बनाना
     text = re.sub(
-        r'(?:📝\s*)?(?:मुख्य\s*परीक्षा\s*प्रश्न|मेन्स\s*मॉडल\s*प्रश्न|मेन्स\s*प्रश्न)\s*[:\-]\s*(.*)',
+        r'(?:📝\s*)?(?:मुख्य\s*परीक्षा\s*अभ्यास\s*प्रश्न|मेन्स\s*मॉडल\s*प्रश्न)\s*[:\-]\s*(.*)',
         r'<div class="mains-q-card"><div class="q-icon">📝 मुख्य परीक्षा अभ्यास प्रश्न:</div><div class="q-bold-text">\1</div></div>',
         text, flags=re.IGNORECASE
     )
@@ -112,7 +111,6 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
 
-    # टूटे हुए बुलेट्स को व्यवस्थित <ul>...</ul> में रैप करना
     lines = text.split("\n")
     final_lines = []
     in_ul = False
@@ -133,14 +131,13 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
         final_lines.append('</ul>')
     text = "\n".join(final_lines)
 
-    # डायनामिक मैपिंग: हाइफन युक्त पूरे नाम को सही से पकड़ना
     detected_place = None
     places_match = re.search(r'(?:चर्चित\s*भौगोलिक\s*स्थल|Places\s*in\s*News)[\s\S]*?(?:1\.\s*|•\s*)\*?\*?([^\n\:\(\[\.]+)', text, re.IGNORECASE)
     if places_match:
-        detected_place = places_match.group(1).strip()
+        detected_place = re.sub(r'<[^>]+>', '', places_match.group(1)).strip()
     
     if not detected_place:
-        fallback_places = ["बाब-अल-मंदेब", "ताइवान जलडमरूमध्य", "पनामा नहर", "होर्मुज़ जलडमरूमध्य", "लाल सागर", "मलक्का", "बाल्टिक सागर", "काला सागर", "गैलथिया बे"]
+        fallback_places = ["बाब-अल-मंदेब", "ताइवान जलडमरूमध्य", "पनामा नहर", "होर्मुज़ जलडमरूमध्य", "मलक्का जलडमरूमध्य", "ग्रेट निकोबार"]
         for p in fallback_places:
             if p in text:
                 detected_place = p
@@ -165,7 +162,7 @@ def build_standalone_master_html(topic: str, raw_content: str, date_str: str = "
         if len(title_text) > 2 and not tag.get('id'):
             sec_id = f"custom-sec-{sec_idx}"
             tag['id'] = sec_id
-            clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|स्तंभ|\d+|[:\.\-\s])+', '', title_text).strip()
+            clean_tab_name = re.sub(r'^(?:खंड|खण्ड|भाग|\d+|[:\.\-\s])+', '', title_text).strip()
             clean_tab_name = re.sub(r'[📌🎯⚡📖💡🗳⚖️🔍📝🛣️❄🌏📰🌍🌱🔬💰🔑📚🔸|━─—_:-]', '', clean_tab_name).strip()
             if not clean_tab_name:
                 clean_tab_name = f"विषय {sec_idx}"
@@ -336,7 +333,6 @@ document.getElementById('searchBox').addEventListener('input', function() {{
 </html>"""
 
 def build_vision_ias_interactive_portal(subject_title: str, test_id: str, q_count: int, questions_list: list) -> str:
-    # विजन IAS मॉक पोर्टल (पूर्ववत 100% सुरक्षित)
     duration_min = 60 if q_count <= 50 else (120 if q_count <= 100 else 180)
     raw_json = json.dumps(questions_list, ensure_ascii=False)
     encoded_json = urllib.parse.quote(raw_json)
@@ -389,7 +385,7 @@ body { background-color: var(--bg-dark); color: var(--text-main); display: flex;
 .q-topic-tag { background: var(--primary); color: #000; padding: 4px 10px; border-radius: 15px; font-size: 11px; font-weight: 800; }
 .q-text { font-size: 14.5px; line-height: 1.5; font-weight: 500; margin-bottom: 15px; color: #fff; }
 .options-list { display: flex; flex-direction: column; gap: 8px; }
-.option { display: flex; align-items: center; padding: 10px 12px; background: var(--option-bg); border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; }
+.option { display: align-items: center; padding: 10px 12px; background: var(--option-bg); border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; }
 .option.selected { border-color: var(--primary); background: rgba(250, 204, 21, 0.12); }
 .opt-letter { width: 22px; height: 22px; border-radius: 4px; background: var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; margin-right: 10px; color: var(--text-muted); flex-shrink: 0; }
 .option.selected .opt-letter { background: var(--primary); color: #000; }
