@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from config import AUTHOR_NAME, CHANNEL_LINK, CHANNEL_NAME, get_ist_now
 
 def create_standalone_vector_map(place_name: str) -> str:
+    clean_p = re.sub(r'[\(\[\{].*?[\)\]\}]', '', place_name).strip()
     return f"""
     <figure class="img-figure">
       <svg width="100%" height="220" viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg" style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border-radius: 8px;">
@@ -20,16 +21,16 @@ def create_standalone_vector_map(place_name: str) -> str:
         <circle cx="740" cy="45" r="22" fill="#ffffff" stroke="#0284c7" stroke-width="1.5"/>
         <path d="M 740 27 L 745 45 L 740 42 L 735 45 Z" fill="#ef4444"/>
         <text x="740" y="24" font-size="10" font-weight="bold" fill="#ef4444" text-anchor="middle">N</text>
-        <rect x="50" y="35" width="320" height="150" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-        <text x="70" y="70" font-family="'Hind', sans-serif" font-size="16" font-weight="bold" fill="#0369a1">📍 {place_name}</text>
-        <text x="70" y="100" font-family="'Hind', sans-serif" font-size="13" fill="#475569">• रणनीतिक अवस्थिति एवं जलग्रहण क्षेत्र</text>
-        <text x="70" y="125" font-family="'Hind', sans-serif" font-size="13" fill="#475569">• पारिस्थितिकी एवं संरक्षित हॉटस्पॉट</text>
-        <text x="70" y="152" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#059669">✓ UPSC मैपिंग एवं प्रीलिम्स संदर्भ</text>
-        <circle cx="580" cy="110" r="50" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
-        <circle cx="580" cy="110" r="8" fill="#ef4444"/>
-        <text x="580" y="175" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#0f172a" text-anchor="middle">प्रमुख स्थल नोड</text>
+        <rect x="50" y="35" width="340" height="150" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+        <text x="70" y="70" font-family="'Hind', sans-serif" font-size="16" font-weight="bold" fill="#0369a1">📍 {clean_p}</text>
+        <text x="70" y="100" font-family="'Hind', sans-serif" font-size="13" fill="#475569">• रणनीतिक अवस्थिति एवं जलडमरूमध्य/क्षेत्र</text>
+        <text x="70" y="125" font-family="'Hind', sans-serif" font-size="13" fill="#475569">• भू-राजनीतिक एवं पारिस्थितिक महत्व</text>
+        <text x="70" y="152" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#059669">✓ UPSC मैपिंग एवं प्रीलिम्स प्राथमिकता</text>
+        <circle cx="600" cy="110" r="50" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+        <circle cx="600" cy="110" r="8" fill="#ef4444"/>
+        <text x="600" y="175" font-family="'Hind', sans-serif" font-size="12" font-weight="bold" fill="#0f172a" text-anchor="middle">सामरिक केंद्र</text>
       </svg>
-      <figcaption>🗺️ भौगोलिक एवं रणनीतिक मानचित्र: {place_name}</figcaption>
+      <figcaption>🗺️ भौगोलिक एवं रणनीतिक मानचित्र: {clean_p}</figcaption>
     </figure>
     """
 
@@ -76,9 +77,9 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'^#\s*(.*)', r'<h2 class="section-title">\1</h2>', text, flags=re.MULTILINE)
 
     text = re.sub(
-        r'(?:प्रश्न\s*\d*\s*[:\-]|UPSC\s*CSE\s*प्रश्न\s*[:\-])\s*(.*)',
-        r'<div class="mains-q-card"><div class="q-icon">📝 मुख्य परीक्षा प्रश्न:</div><h3 class="q-bold-text">\1</h3></div>',
-        text
+        r'(?:📝\s*)?(?:मुख्य\s*परीक्षा\s*प्रश्न|मेन्स\s*प्रश्न|प्रश्न\s*\d*)\s*[:\-]\s*(.*)',
+        r'<div class="mains-q-card"><div class="q-icon">📝 मुख्य परीक्षा अभ्यास प्रश्न:</div><div class="q-bold-text">\1</div></div>',
+        text, flags=re.IGNORECASE
     )
     text = re.sub(
         r'(\[UPSC\s*CSE[^\]]*\])',
@@ -86,36 +87,66 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
         text
     )
     text = re.sub(
-        r'(?:📌\s*)?(?:\*\*|\#\#)?\s*भूमिका\s*[:\-]?\s*(?:\*\*)?\s*(.*)',
+        r'(?:📌\s*)?(?:\*\*|\#\#)?\s*भूमिका\s*\(Introduction\)\s*[:\-]?\s*(?:\*\*)?\s*(.*)',
         r'<div class="mains-point"><span class="point-badge-intro">📌 भूमिका (Introduction):</span><p class="para-bold">\1</p></div>',
-        text
+        text, flags=re.IGNORECASE
     )
     text = re.sub(
-        r'(?:📊\s*)?(?:\*\*|\#\#)?\s*मुख्य\s*विश्लेषणात्मक\s*आयाम\s*[:\-]?\s*(?:\*\*)?',
+        r'(?:📊\s*)?(?:\*\*|\#\#)?\s*मुख्य\s*भाग\s*\(Body\)\s*[:\-]?\s*(?:\*\*)?',
         r'<div class="point-badge-body">📊 मुख्य विश्लेषणात्मक आयाम (Core Analysis):</div>',
-        text
+        text, flags=re.IGNORECASE
     )
     text = re.sub(
         r'(?:🚀\s*)?(?:\*\*|\#\#)?\s*आगे\s*की\s*राह\s*\(Way\s*Forward\)\s*[:\-]?\s*(?:\*\*)?\s*(.*)',
         r'<div class="mains-point"><span class="point-badge-wf">🚀 आगे की राह (Way Forward):</span><p class="para-bold">\1</p></div>',
-        text
+        text, flags=re.IGNORECASE
     )
     text = re.sub(
-        r'(?:⚖️\s*)?(?:\*\*|\#\#)?\s*संतुलित\s*प्रशासनिक\s*निष्कर्ष\s*[:\-]?\s*(?:\*\*)?\s*(.*)',
+        r'(?:⚖️\s*)?(?:\*\*|\#\#)?\s*निष्कर्ष\s*\(Conclusion\)\s*[:\-]?\s*(?:\*\*)?\s*(.*)',
         r'<div class="mains-point"><span class="point-badge-conc">⚖️ संतुलित प्रशासनिक निष्कर्ष:</span><p class="para-bold">\1</p></div>',
-        text
+        text, flags=re.IGNORECASE
     )
 
     text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
-    text = re.sub(r'^[•\-\*]\s*(.*)', r'<li class="list-item">\1</li>', text, flags=re.MULTILINE)
 
-    key_locations = ["कूनो", "गांधी सागर", "मन्नार की खाड़ी", "कच्छ का रण", "होर्मुज़", "लाल सागर", "अंडमान", "पश्चिमी घाट", "लद्दाख", "ताइवान", "चाबहार", "मलक्का", "बाल्टिक सागर", "काला सागर"]
-    for loc in key_locations:
-        if loc in text:
-            vector_card = create_standalone_vector_map(loc)
-            text += f"\n<div class='map-section'><h4>🗺️ भौगोलिक एवं रणनीतिक मैपिंग</h4><p><i>(सत्र संदर्भ: {loc})</i></p>{vector_card}</div>"
-            break
+    # टूटे हुए बुलेट्स को व्यवस्थित <ul>...</ul> में रैप करना
+    lines = text.split("\n")
+    final_lines = []
+    in_ul = False
+    for l in lines:
+        s = l.strip()
+        if re.match(r'^[•\-\*]\s+', s):
+            item_text = re.sub(r'^[•\-\*]\s+', '', s)
+            if not in_ul:
+                final_lines.append('<ul class="study-list">')
+                in_ul = True
+            final_lines.append(f'<li class="list-item">{item_text}</li>')
+        else:
+            if in_ul:
+                final_lines.append('</ul>')
+                in_ul = False
+            final_lines.append(l)
+    if in_ul:
+        final_lines.append('</ul>')
+    text = "\n".join(final_lines)
+
+    # डायनामिक मैपिंग: चर्चित स्थल के पहले बिंदु से स्वतः नाम निकालना
+    detected_place = None
+    places_match = re.search(r'(?:चर्चित\s*भौगोलिक\s*स्थल|Places\s*in\s*News)[\s\S]*?(?:1\.\s*|•\s*)\*?\*?([^\n\:\(\[\-]+)', text, re.IGNORECASE)
+    if places_match:
+        detected_place = places_match.group(1).strip()
+    
+    if not detected_place:
+        fallback_places = ["ताइवान जलडमरूमध्य", "पनामा नहर", "होर्मुज़ जलडमरूमध्य", "लाल सागर", "मलक्का", "बाल्टिक सागर", "काला सागर", "गैलापागोस"]
+        for p in fallback_places:
+            if p in text:
+                detected_place = p
+                break
+
+    if detected_place:
+        vector_card = create_standalone_vector_map(detected_place)
+        text += f"\n<div class='map-section'><h4>🗺️ भौगोलिक एवं रणनीतिक मैपिंग</h4><p><i>(सत्र संदर्भ: {detected_place})</i></p>{vector_card}</div>"
 
     return text
 
@@ -217,10 +248,10 @@ nav.dashboard a:hover {{ background: var(--accent); color: #fff; }}
   padding: 24px; margin-bottom: 24px; box-shadow: var(--shadow); width: 100%; scroll-margin-top: 70px;
 }}
 .section-title {{
-  color: var(--accent); font-size: 1.3rem; margin-bottom: 14px;
+  color: var(--accent); font-size: 1.3rem; margin: 18px 0 14px;
   border-left: 5px solid var(--saffron); padding-left: 12px; font-weight: 700;
 }}
-.sub-title {{ font-size: 1.1rem; color: var(--accent-dark); margin: 16px 0 8px; font-weight: 700; }}
+.sub-title {{ font-size: 1.15rem; color: var(--accent-dark); margin: 16px 0 8px; font-weight: 700; }}
 .para {{ margin: 8px 0; font-size: 1rem; word-break: break-word; text-align: justify; }}
 .para-bold {{ margin: 8px 0; font-size: 1.02rem; font-weight: 600; color: var(--text); text-align: justify; line-height: 1.8; }}
 .mains-q-card {{
@@ -232,7 +263,7 @@ nav.dashboard a:hover {{ background: var(--accent); color: #fff; }}
   box-shadow: var(--shadow);
 }}
 .q-icon {{ font-size: 0.95rem; font-weight: 800; color: var(--accent-dark); text-transform: uppercase; margin-bottom: 6px; }}
-.q-bold-text {{ font-size: 1.3rem; font-weight: 900; color: #0f172a; line-height: 1.6; letter-spacing: 0.2px; }}
+.q-bold-text {{ font-size: 1.25rem; font-weight: 900; color: #0f172a; line-height: 1.6; letter-spacing: 0.2px; }}
 .badge-wrap {{ margin: 8px 0 16px; }}
 .mains-badge {{
   display: inline-block; background: #0284c7; color: #ffffff; padding: 4px 12px;
@@ -247,6 +278,8 @@ nav.dashboard a:hover {{ background: var(--accent); color: #fff; }}
 table {{ width: 100%; border-collapse: collapse; text-align: left; }}
 th {{ background: var(--accent); color: #fff; padding: 11px 13px; font-size: 0.92rem; }}
 td {{ padding: 11px 13px; border-bottom: 1px solid var(--border); font-size: 0.92rem; vertical-align: top; }}
+.study-list {{ padding-left: 20px; margin: 10px 0; }}
+.list-item {{ margin-bottom: 6px; }}
 .img-figure {{
   margin: 18px 0; text-align: center; background: #ffffff; padding: 10px;
   border-radius: 10px; border: 1px solid #bae6fd; box-shadow: var(--shadow);
@@ -274,7 +307,7 @@ footer a {{ color: #8bc4ef; font-weight: 700; text-decoration: none; }}
   <section id="sec-overview" class="overview-box">
     <div class="overview-title">📌 {overview_title}</div>
     <p class="para"><strong>📅 संदर्भ काल:</strong> {display_date} (IST)</p>
-    <p class="para"><strong>🎯 संकलन आयाम:</strong> 360° समग्र विश्लेषण, 2-कॉलम सारणी, मानक भौगोलिक मानचित्र एवं मुख्य परीक्षा उत्तर-लेखन फ्रेमवर्क।</p>
+    <p class="para"><strong>🎯 संकलन आयाम:</strong> 360° समग्र विश्लेषण, 2-कॉलम तुलनात्मक सारणी, गतिशील मैपिंग एवं मुख्य परीक्षा उत्तर-लेखन फ्रेमवर्क।</p>
     <p class="para"><strong>📰 अधिकृत स्रोत:</strong> The Hindu, Indian Express, PIB, Yojana, Vision IAS, Drishti IAS, Sanskriti IAS।</p>
   </section>
   <div class="news-card">{final_body}</div>
@@ -301,9 +334,8 @@ document.getElementById('searchBox').addEventListener('input', function() {{
 </html>"""
 
 def build_vision_ias_interactive_portal(subject_title: str, test_id: str, q_count: int, questions_list: list) -> str:
+    # विजन IAS मॉक पोर्टल को बिल्कुल नहीं छेड़ा गया है, यह पूर्णतः पूर्ववत सुरक्षित है
     duration_min = 60 if q_count <= 50 else (120 if q_count <= 100 else 180)
-    
-    # 100% सुरक्षित एनकोडिंग ताकि जावास्क्रिप्ट कभी न टूटे
     raw_json = json.dumps(questions_list, ensure_ascii=False)
     encoded_json = urllib.parse.quote(raw_json)
 
