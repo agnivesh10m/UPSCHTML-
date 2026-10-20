@@ -39,7 +39,7 @@ def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str
     last_err = None
     for api_k in API_KEYS:
         client = genai.Client(api_key=api_k)
-        for m_name in ["gemini-3.8-flash", "gemini-3.5-flash-lite"]:
+        for m_name in ["gemini-3.5-flash-lite", "gemini-3.8-flash"]:
             try:
                 response = client.models.generate_content(
                     model=m_name,
@@ -56,11 +56,10 @@ def call_gemini_multimodal_inline(prompt: str, file_bytes: bytes, mime_type: str
     raise Exception(f"मल्टीमॉडल विश्लेषण में त्रुटि: {last_err}")
 
 def call_gemini_audio_transcribe(file_bytes: bytes, mime_type: str = "audio/ogg") -> str:
-    prompt = "इस ऑडियो में उम्मीदवार द्वारा बोले गए शब्दों को ध्यानपूर्वक सुनकर 100% शुद्ध हिंदी में लिखें। केवल बोले गए शब्द लिखें, कोई अन्य टिप्पणी न जोड़ें।"
+    prompt = "इस ऑडियो में बोले गए शब्दों को सुनकर केवल और केवल शुद्ध हिंदी टेक्स्ट में लिखें। कोई अतिरिक्त टिप्पणी या विश्लेषण न जोड़ें।"
     return call_gemini_multimodal_inline(prompt, file_bytes, mime_type)
 
 async def download_audio_stream(text: str) -> bytes:
-    """UPSC साक्षात्कार बोर्ड अध्यक्ष की गंभीर पुरुष (Male) आवाज़ - MadhurNeural"""
     temp_path = None
     try:
         clean_text = re.sub(r'[\*\_#`]', '', text).strip()
@@ -68,7 +67,6 @@ async def download_audio_stream(text: str) -> bytes:
         if not clean_text:
             return b""
 
-        # गंभीर पुरुष आवाज़: hi-IN-MadhurNeural
         communicate = edge_tts.Communicate(clean_text, "hi-IN-MadhurNeural", rate="+0%", pitch="+0Hz")
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
