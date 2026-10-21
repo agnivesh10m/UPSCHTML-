@@ -92,12 +92,13 @@ def ensure_auth(handler_func):
             user_link = get_tg_user_link(user.id, user.first_name or "साथी")
             msg = (
                 f"👋 <b>नमस्ते {user_link}!</b>\n\n"
-                "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n\n"
+                "🔒 <b>प्रीमियम यूपीएससी डेस्क — एक्सेस प्रतिबंधित</b>\n\n"
+                "⚠️ यह पोर्टल केवल <b>सत्यापित प्रीमियम सदस्यों</b> के लिए सुरक्षित है ताकि उच्च-स्तरीय AI एवं सर्वर संसाधनों का सदुपयोग सुनिश्चित हो सके।\n\n"
                 f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>\n"
-                "🔰 <b>खाता स्थिति:</b> ❌ निःशुल्क सदस्य (एक्सेस निष्क्रिय)\n\n"
-                "⚠️ <b>महत्वपूर्ण सूचना:</b>\n"
-                "वर्तमान में इस बोट के सभी अध्ययन फीचर्स (दैनिक 360° नोट्स, विजन क्विज़ पोर्टल, लाइव DAF इंटरव्यू, कॉपी चेकिंग) केवल प्रीमियम सदस्यों के लिए आरक्षित हैं।\n\n"
-                "👉 <b>सब्सक्रिप्शन सक्रिय करवाने हेतु नीचे दिए बटन से संपर्क करें:</b>"
+                f"🔗 <b>प्रोफाइल लिंक:</b> {get_tg_user_link(user.id, f'यूज़र {user.id}')}\n\n"
+                "👉 <b>एक्सेस प्राप्त करने के दिशा-निर्देश:</b>\n"
+                "1. नीचे दिए गए बटन पर टैप करके अपनी ID कॉपी करें।\n"
+                f"2. ओनर <b>{AUTHOR_NAME}</b> (@Avigat1210) को भेजकर सब्सक्रिप्शन सक्रिय करवाएं।"
             )
             await update.effective_message.reply_text(
                 msg, 
@@ -114,7 +115,7 @@ async def copy_id_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = query.data.replace("copyid_", "")
     await query.answer(f"आपकी टेलीग्राम ID: {uid} (कॉपी करने हेतु ऊपर कोड पर टैप करें)", show_alert=True)
 
-# ================= START & HELP (फ्री और पेड दोनों को शत-प्रतिशत रिप्लाई) =================
+# ================= START & HELP =================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user.id, user.username, user.first_name)
@@ -136,7 +137,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=get_free_user_access_markup(user.id))
         return
 
-    admin_tag = f"👑 <b>एडमिन कंट्रोल सक्रिय (SACHIN SHARMA)</b>\n\n" if user.id in ADMIN_IDS else "⭐ <b>प्रीमियम यूपीएससी डेस्क सक्रिय</b>\n\n"
+    admin_tag = f"👑 <b>एडमिन कंट्रोल सक्रिय ({AUTHOR_NAME})</b>\n\n" if user.id in ADMIN_IDS else "⭐ <b>प्रीमियम यूपीएससी डेस्क सक्रिय</b>\n\n"
 
     msg = (
         f"👋 <b>नमस्ते {user_link}!</b>\n\n"
@@ -181,7 +182,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     help_text = (
-        f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड (SACHIN SHARMA)</b>\n\n"
+        f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
         f"👤 <b>सदस्य:</b> {user_link} (<code>{user.id}</code>)\n\n"
         "1️⃣ <b>दैनिक व आवधिक नोट्स (`/daily`, `/weekly`, `/monthly`, `/yearly`):</b> प्रत्येक मुद्दे पर GS पेपर, PYQ संदर्भ व सिलेबस टॉपिक का स्पष्ट उल्लेख।\n\n"
         "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> 1 लाख+ प्रश्नों के बैंक से 50 या 100 प्रश्नों का लाइव टेस्ट पोर्टल (शून्य दोहराव)।\n\n"
@@ -216,7 +217,7 @@ async def daily_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.HTML
     )
 
-# ================= ऑनलाइन टेस्ट पोर्टल (/quiz) [पूर्णतः सुरक्षित] =================
+# ================= ऑनलाइन टेस्ट पोर्टल (/quiz) =================
 @ensure_auth
 async def quiz_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     quiz_intro = (
@@ -437,7 +438,7 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         await status_msg.edit_text(f"❌ पोर्टल बनाने में त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
-# ================= साक्षात्कार (/interview) [1 प्रश्न बग शत-प्रतिशत फिक्स] =================
+# ================= साक्षात्कार (/interview) =================
 @ensure_auth
 async def interview_flow_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -693,7 +694,6 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
         f_obj = await voice_obj.get_file()
         f_bytes = await f_obj.download_as_bytearray()
 
-        # सुपरफास्ट ट्रांसक्रिप्शन
         transcribed_text = await asyncio.to_thread(call_gemini_audio_transcribe, bytes(f_bytes), "audio/ogg")
         sess["history"].append({"round": sess["current"], "answer": transcribed_text})
 
@@ -947,7 +947,7 @@ UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 20
     except Exception as e:
         await wait_m.edit_text(f"❌ त्रुटि: {e}। कृपया पुनः प्रयास करें।")
 
-# ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) [पूर्णतः सुरक्षित] =================
+# ================= उत्तर-पुस्तिका मूल्यांकन (/checkanswer) =================
 @ensure_auth
 async def check_answer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     keyboard = [
@@ -1110,7 +1110,7 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
     CHECK_ANSWER_CACHE.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= मेंटरशिप सत्र (/ask) [सुपरफास्ट वॉयस रिस्पॉन्स] =================
+# ================= मेंटरशिप सत्र (/ask) =================
 @ensure_auth
 async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
@@ -1135,7 +1135,6 @@ async def handle_ask_continuous_message(update: Update, context: ContextTypes.DE
         try:
             f_obj = await (msg.voice or msg.audio).get_file()
             f_bytes = await f_obj.download_as_bytearray()
-            # सुपरफास्ट ट्रांसक्रिप्शन (3-5 सेकंड)
             user_query = await asyncio.to_thread(call_gemini_audio_transcribe, bytes(f_bytes), "audio/ogg")
             await wait_m.delete()
         except Exception as e:
@@ -1165,14 +1164,16 @@ async def handle_ask_continuous_message(update: Update, context: ContextTypes.DE
 - मार्कडाउन स्टार्स का प्रयोग न करें। भाषा केवल शुद्ध हिंदी रखें।
 """
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
-        clean_reply = clean_all_markdown_and_fix_content(reply_text)
+        
+        clean_reply = re.sub(r'[\*\_#`]', '', reply_text).strip()
+        formatted_reply = f"🎓 <b>UPSC प्रशासनिक विश्लेषण:</b>\n\n{html.escape(clean_reply)}"
 
         await wait_msg.delete()
-        if len(clean_reply) > 3800:
-            for p in [clean_reply[i:i+3800] for i in range(0, len(clean_reply), 3800)]:
+        if len(formatted_reply) > 3800:
+            for p in [formatted_reply[i:i+3800] for i in range(0, len(formatted_reply), 3800)]:
                 await update.message.reply_text(p, parse_mode=ParseMode.HTML)
         else:
-            await update.message.reply_text(clean_reply, parse_mode=ParseMode.HTML)
+            await update.message.reply_text(formatted_reply, parse_mode=ParseMode.HTML)
     except Exception as e:
         await wait_msg.edit_text(f"❌ उत्तर संकलित करने में समस्या: {e}")
         
@@ -1295,7 +1296,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓 <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= 360° UPSC महा-संकलन (मैगज़ीन-स्तरीय 80-120+ पृष्ठों की बैचिंग) =================
+# ================= 360° UPSC महा-संकलन (80-120+ पृष्ठों की 6-स्तरीय बैचिंग) =================
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1408,7 +1409,7 @@ async def process_dynamic_generation(user_id, data, context):
                 ai_part3 = await asyncio.to_thread(call_gemini_safely, p3)
                 combined_ai = f"{ai_part1}\n\n---\n\n{ai_part2}\n\n---\n\n{ai_part3}"
 
-            else: # genyear_ (PT-365 महा-संकलन: 80 से 120+ पृष्ठ)
+            else: # genyear_
                 y_name = data.split("_")[1]
                 topic = f"UPSC Annual Compendium (PT-365) — {y_name}"
                 filename = f"UPSC_Annual_{y_name}.html"
@@ -1857,7 +1858,7 @@ async def info_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ विवरण निकालने में त्रुटि: {e}")
 
-# ================= LIST USERS (पुराना ओरिजिनल क्लिकेबल लिंक फॉर्मेट) =================
+# ================= LIST USERS (ओरिजिनल लिंक फॉर्मेट) =================
 async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
@@ -1921,7 +1922,7 @@ async def handle_admin_reply_or_direct_send(update: Update, context: ContextType
     if admin_id not in ADMIN_IDS:
         return
 
-    # यदि ओनर ने छात्र के मैसेज पर स्वाइप करके रिप्लाई दिया है
+    # यदि ओनर ने फॉरवर्ड किए गए छात्र संदेश पर स्वाइप करके सीधे रिप्लाई किया है
     if msg.reply_to_message:
         reply_to_text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
         clean_search = re.sub(r'<[^>]+>', ' ', reply_to_text)
@@ -2029,35 +2030,35 @@ async def main():
     await run_server()
     bot_app = ApplicationBuilder().token(BOT_TOKEN).concurrent_updates(True).build()
 
-    # 1. प्राथमिकता: एडमिन डायरेक्ट स्वाइप रिप्लाई (सबसे ऊपर ताकि /ask इसे न पकड़े)
-    bot_app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & (filters.REPLY | filters.Regex(r'^[0-9]{8,11}')), handle_admin_reply_or_direct_send))
+    # 1. सर्वोच्च प्राथमिकता: एडमिन का स्वाइप रिप्लाई (ताकि /ask या कोई कन्वर्सेशन बीच में न आए)
+    bot_app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & (filters.REPLY | filters.Regex(r'^[0-9]{8,11}')), handle_admin_reply_or_direct_send), group=0)
 
     # 2. कमांड्स
-    bot_app.add_handler(CommandHandler("start", start_handler))
-    bot_app.add_handler(CommandHandler("help", help_handler))
-    bot_app.add_handler(CommandHandler("daily", daily_cmd))
-    bot_app.add_handler(CommandHandler("quiz", quiz_cmd))
-    bot_app.add_handler(CommandHandler("mains", mains_special_cmd))
-    bot_app.add_handler(CommandHandler("trending", trending_cmd))
-    bot_app.add_handler(CommandHandler("weekly", weekly_cmd))
-    bot_app.add_handler(CommandHandler("monthly", monthly_cmd))
-    bot_app.add_handler(CommandHandler("yearly", yearly_cmd))
+    bot_app.add_handler(CommandHandler("start", start_handler), group=1)
+    bot_app.add_handler(CommandHandler("help", help_handler), group=1)
+    bot_app.add_handler(CommandHandler("daily", daily_cmd), group=1)
+    bot_app.add_handler(CommandHandler("quiz", quiz_cmd), group=1)
+    bot_app.add_handler(CommandHandler("mains", mains_special_cmd), group=1)
+    bot_app.add_handler(CommandHandler("trending", trending_cmd), group=1)
+    bot_app.add_handler(CommandHandler("weekly", weekly_cmd), group=1)
+    bot_app.add_handler(CommandHandler("monthly", monthly_cmd), group=1)
+    bot_app.add_handler(CommandHandler("yearly", yearly_cmd), group=1)
 
-    bot_app.add_handler(CommandHandler("adduser", add_user_cmd))
-    bot_app.add_handler(CommandHandler("removeuser", remove_user_cmd))
-    bot_app.add_handler(CommandHandler("info", info_user_cmd))
-    bot_app.add_handler(CommandHandler("listusers", list_users_cmd))
-    bot_app.add_handler(CommandHandler("clearcache", clear_cache_cmd))
+    bot_app.add_handler(CommandHandler("adduser", add_user_cmd), group=1)
+    bot_app.add_handler(CommandHandler("removeuser", remove_user_cmd), group=1)
+    bot_app.add_handler(CommandHandler("info", info_user_cmd), group=1)
+    bot_app.add_handler(CommandHandler("listusers", list_users_cmd), group=1)
+    bot_app.add_handler(CommandHandler("clearcache", clear_cache_cmd), group=1)
 
     # 3. कॉलबैक्स
-    bot_app.add_handler(CallbackQueryHandler(copy_id_callback, pattern=r"^copyid_"))
-    bot_app.add_handler(CallbackQueryHandler(handle_quiz_gs_choice, pattern=r"^quizgs_"))
-    bot_app.add_handler(CallbackQueryHandler(handle_quiz_sub_choice, pattern=r"^quizsub_|^quiz_back_gs"))
-    bot_app.add_handler(CallbackQueryHandler(handle_quiz_cnt_choice, pattern=r"^quizcnt_"))
+    bot_app.add_handler(CallbackQueryHandler(copy_id_callback, pattern=r"^copyid_"), group=1)
+    bot_app.add_handler(CallbackQueryHandler(handle_quiz_gs_choice, pattern=r"^quizgs_"), group=1)
+    bot_app.add_handler(CallbackQueryHandler(handle_quiz_sub_choice, pattern=r"^quizsub_|^quiz_back_gs"), group=1)
+    bot_app.add_handler(CallbackQueryHandler(handle_quiz_cnt_choice, pattern=r"^quizcnt_"), group=1)
 
-    bot_app.add_handler(CallbackQueryHandler(handle_mains_type_choice, pattern=r"^mq_type_"))
-    bot_app.add_handler(CallbackQueryHandler(handle_mains_gs_choice, pattern=r"^mq_gs_|^mains_back_root"))
-    bot_app.add_handler(CallbackQueryHandler(handle_mains_cnt_choice, pattern=r"^mq_cnt_"))
+    bot_app.add_handler(CallbackQueryHandler(handle_mains_type_choice, pattern=r"^mq_type_"), group=1)
+    bot_app.add_handler(CallbackQueryHandler(handle_mains_gs_choice, pattern=r"^mq_gs_|^mains_back_root"), group=1)
+    bot_app.add_handler(CallbackQueryHandler(handle_mains_cnt_choice, pattern=r"^mq_cnt_"), group=1)
 
     bot_app.add_handler(CallbackQueryHandler(handle_trending_type_selection, pattern=r"^trtype_|^tr_back_root"))
     bot_app.add_handler(CallbackQueryHandler(handle_trending_pages, pattern=r"^trpage_"))
@@ -2085,7 +2086,7 @@ async def main():
         fallbacks=[CommandHandler("cancel", global_cancel)],
         allow_reentry=True
     )
-    bot_app.add_handler(interview_conv)
+    bot_app.add_handler(interview_conv, group=1)
 
     answer_check_conv = ConversationHandler(
         entry_points=[CommandHandler("checkanswer", check_answer_cmd)],
@@ -2097,7 +2098,7 @@ async def main():
         fallbacks=[CommandHandler("cancel", global_cancel)],
         allow_reentry=True
     )
-    bot_app.add_handler(answer_check_conv)
+    bot_app.add_handler(answer_check_conv, group=1)
 
     ask_conv = ConversationHandler(
         entry_points=[CommandHandler("ask", start_ask_session)],
@@ -2105,7 +2106,7 @@ async def main():
         fallbacks=[CommandHandler("cancel", global_cancel), CommandHandler("stop", global_cancel), CommandHandler("exit", global_cancel)],
         allow_reentry=True
     )
-    bot_app.add_handler(ask_conv)
+    bot_app.add_handler(ask_conv, group=1)
 
     contact_conv = ConversationHandler(
         entry_points=[CommandHandler("owner", contact_cmd)],
@@ -2113,7 +2114,7 @@ async def main():
         fallbacks=[CommandHandler("cancel", global_cancel)],
         allow_reentry=True
     )
-    bot_app.add_handler(contact_conv)
+    bot_app.add_handler(contact_conv, group=1)
 
     broadcast_conv = ConversationHandler(
         entry_points=[CommandHandler("broadcast", broadcast_cmd)],
@@ -2121,11 +2122,11 @@ async def main():
         fallbacks=[CommandHandler("cancel", global_cancel)],
         allow_reentry=True
     )
-    bot_app.add_handler(broadcast_conv)
+    bot_app.add_handler(broadcast_conv, group=1)
 
-    # 5. सामान्य मैसेज हैंडलर्स
-    bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_direct_pdf_upload))
-    bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_messages))
+    # 5. सामान्य मीडिया व टेक्स्ट हैंडलर
+    bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_direct_pdf_upload), group=1)
+    bot_app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_messages), group=1)
 
     await bot_app.initialize()
     await bot_app.start()
