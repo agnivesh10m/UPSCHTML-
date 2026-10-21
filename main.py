@@ -78,7 +78,7 @@ def get_tg_user_link(user_id: int, name: str = None) -> str:
 def get_free_user_access_markup(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"📋 अपनी ID कॉपी करें ({user_id})", callback_data=f"copyid_{user_id}")],
-        [InlineKeyboardButton("💬 ओनर से संपर्क करें", url="https://t.me/Avigat1210")],
+        [InlineKeyboardButton("💬 ओनर से संपर्क करें", url="[https://t.me/Avigat1210](https://t.me/Avigat1210)")],
         [InlineKeyboardButton("📢 आधिकारिक चैनल जॉइन करें", url=CHANNEL_LINK)]
     ])
 
@@ -798,7 +798,7 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
     INTERVIEW_SESSION.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= मुख्य परीक्षा अभ्यास (/mains) =================
+# ================= मुख्य परीक्षा अभ्यास (/mains) [वर्ष टैग व बोल्ड प्रश्न फिक्स] =================
 @ensure_auth
 async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -869,28 +869,43 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
         if is_pyq and cnt_raw == "all":
             await wait_m.edit_text("⏳ [■■■■□□□□□□] 40% भाग 1/3: वर्ष 2026 से 2022 तक के PYQs का संकलन जारी...")
             p1 = f"""
-UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 2026, 2025, 2024, 2023 एवं 2022 के सभी प्रमुख प्रश्नों का संपूर्ण संकलन करें।
-प्रत्येक प्रश्न पर स्पष्ट टैग: [UPSC CSE वर्ष / GS {sel.get('gs')} / अंक]।
-ढांचा: 📌 भूमिका, 📊 मुख्य विश्लेषणात्मक आयाम (3 बिंदु), 🚀 आगे की राह, ⚖️ संतुलित प्रशासनिक निष्कर्ष।
-केवल शुद्ध हिंदी में लिखें।
+आप संघ लोक सेवा आयोग (UPSC) मुख्य परीक्षा के मुख्य परीक्षक हैं।
+विषय: {gs_paper} के वर्ष 2026, 2025, 2024, 2023 एवं 2022 के सभी प्रमुख आधिकारिक प्रश्नों का संपूर्ण संकलन करें।
+
+अनिवार्य निर्देश (वर्ष टैगिंग व प्रश्न कार्ड):
+1. प्रत्येक प्रश्न के ऊपर वास्तविक वर्ष और अंक अनिवार्य रूप से इस सटीक प्रारूप में लिखें:
+   [UPSC CSE (वास्तविक वर्ष) | GS {sel.get('gs')} | 15 अंक]
+   उदा. [UPSC CSE 2023 | GS {sel.get('gs')} | 15 अंक]
+2. प्रश्न को अलग पंक्ति में स्पष्ट लिखें:
+   प्रश्न: "यहाँ पूरा प्रश्न लिखें..."
+3. पाठ्यक्रम संदर्भ: संबंधित आधिकारिक सिलेबस माइक्रो-टॉपिक स्पष्ट मेंशन करें।
+4. विस्तृत 4-स्तरीय टॉपर उत्तर ढांचा:
+   - 📌 भूमिका (Introduction)
+   - 📊 मुख्य भाग (Body): 3 स्पष्ट विश्लेषणात्मक उप-शीर्षक
+   - 🚀 आगे की राह (Way Forward)
+   - ⚖️ संतुलित प्रशासनिक निष्कर्ष
+
+केवल और केवल शुद्ध, गंभीर एवं मानक हिंदी में लिखें।
 """
             r1 = await asyncio.to_thread(call_gemini_safely, p1)
 
             await wait_m.edit_text("⏳ [■■■■■■□□□□] 65% भाग 2/3: वर्ष 2021 से 2017 तक के PYQs का संकलन जारी...")
             p2 = f"""
-UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 2021, 2020, 2019, 2018 एवं 2017 के सभी प्रमुख प्रश्नों का संपूर्ण संकलन करें।
-प्रत्येक प्रश्न पर स्पष्ट टैग: [UPSC CSE वर्ष / GS {sel.get('gs')} / अंक]।
-ढांचा: 📌 भूमिका, 📊 मुख्य विश्लेषणात्मक आयाम (3 बिंदु), 🚀 आगे की राह, ⚖️ संतुलित प्रशासनिक निष्कर्ष।
-केवल शुद्ध हिंदी में लिखें।
+विषय: {gs_paper} के वर्ष 2021, 2020, 2019, 2018 एवं 2017 के सभी प्रमुख आधिकारिक प्रश्नों का संपूर्ण संकलन करें।
+प्रत्येक प्रश्न के ऊपर वास्तविक वर्ष अनिवार्य रूप से लिखें:
+[UPSC CSE (वास्तविक वर्ष) | GS {sel.get('gs')} | 15 अंक]
+प्रश्न: "यहाँ पूरा प्रश्न लिखें..."
+ढांचा: पाठ्यक्रम संदर्भ, 📌 भूमिका, 📊 मुख्य भाग, 🚀 आगे की राह, ⚖️ संतुलित निष्कर्ष। केवल शुद्ध हिंदी में लिखें।
 """
             r2 = await asyncio.to_thread(call_gemini_safely, p2)
 
             await wait_m.edit_text("⏳ [■■■■■■■■□□] 85% भाग 3/3: वर्ष 2016 से 2013 तक के PYQs का संकलन जारी...")
             p3 = f"""
-UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 2016, 2015, 2014 एवं 2013 के सभी प्रमुख प्रश्नों का संपूर्ण संकलन करें।
-प्रत्येक प्रश्न पर स्पष्ट टैग: [UPSC CSE वर्ष / GS {sel.get('gs')} / अंक]।
-ढांचा: 📌 भूमिका, 📊 मुख्य विश्लेषणात्मक आयाम (3 बिंदु), 🚀 आगे की राह, ⚖️ संतुलित प्रशासनिक निष्कर्ष।
-केवल शुद्ध हिंदी में लिखें।
+विषय: {gs_paper} के वर्ष 2016, 2015, 2014 एवं 2013 के सभी प्रमुख आधिकारिक प्रश्नों का संपूर्ण संकलन करें।
+प्रत्येक प्रश्न के ऊपर वास्तविक वर्ष अनिवार्य रूप से लिखें:
+[UPSC CSE (वास्तविक वर्ष) | GS {sel.get('gs')} | 15 अंक]
+प्रश्न: "यहाँ पूरा प्रश्न लिखें..."
+ढांचा: पाठ्यक्रम संदर्भ, 📌 भूमिका, 📊 मुख्य भाग, 🚀 आगे की राह, ⚖️ संतुलित निष्कर्ष। केवल शुद्ध हिंदी में लिखें।
 """
             r3 = await asyncio.to_thread(call_gemini_safely, p3)
             combined_text = f"{r1}\n\n<hr style='border:2px solid #0284c7; margin:30px 0;'>\n\n{r2}\n\n<hr style='border:2px solid #0284c7; margin:30px 0;'>\n\n{r3}"
@@ -898,20 +913,26 @@ UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 20
 
         else:
             cnt_desc = f"{cnt_raw} प्रश्न"
-            await wait_m.edit_text(f"⏳ [■■■■■■□□□□] 60% {gs_paper} के {cnt_desc} मॉडल उत्तर-लेखन मॉड्यूल का संश्लेषण जारी...")
-            tag_inst = f"[UPSC CSE PYQ / GS {sel.get('gs')} / 15 अंक]" if is_pyq else f"[संभावित मॉडल प्रश्न / GS {sel.get('gs')} / 15 अंक]"
+            await wait_m.edit_text(f"⏳ [■■■■■■□□□□] 60% {gs_paper} के {cnt_desc} उत्तर-लेखन मॉड्यूल का संश्लेषण जारी...")
+            
+            tag_rule = f"[UPSC CSE (आधिकारिक वर्ष) | GS {sel.get('gs')} | 15 अंक] (उदा. [UPSC CSE 2021 | GS {sel.get('gs')} | 15 अंक])" if is_pyq else f"[संभावित मॉडल प्रश्न 2027 | GS {sel.get('gs')} | 15 अंक]"
+            
             p_single = f"""
 आप UPSC मुख्य परीक्षा के शीर्ष विशेषज्ञ हैं।
 विषय: {gs_paper} के {cnt_desc} उच्च-स्तरीय उत्तर-लेखन मॉड्यूल तैयार करें।
-टैग निर्देश: प्रत्येक प्रश्न पर लिखें: {tag_inst}
 
-सख्त नियम:
-1. पाठ्यक्रम संदर्भ: प्रत्येक प्रश्न के साथ संबंधित GS पेपर एवं आधिकारिक सिलेबस टॉपिक भी स्पष्ट मेंशन करें।
-2. विस्तृत उत्तर ढांचा:
+सख्त निर्देश (वर्ष व प्रश्न की स्पष्टता):
+1. प्रत्येक प्रश्न के ऊपर टैग इस प्रारूप में लिखें:
+   {tag_rule}
+2. प्रश्न को अलग पंक्ति में बड़े अक्षरों में लिखें:
+   प्रश्न: "यहाँ संपूर्ण प्रश्न लिखें..."
+3. पाठ्यक्रम संदर्भ: संबंधित GS पेपर एवं आधिकारिक सिलेबस माइक्रो-टॉपिक लिखें।
+4. विस्तृत उत्तर ढांचा:
    - 📌 भूमिका (Introduction)
-   - 📊 मुख्य विश्लेषणात्मक आयाम (Body): 3 स्पष्ट उप-शीर्षक
+   - 📊 मुख्य भाग (Body): 3 स्पष्ट उप-शीर्षक
    - 🚀 आगे की राह (Way Forward)
    - ⚖️ संतुलित प्रशासनिक निष्कर्ष
+
 भाषा केवल शुद्ध हिंदी रखें।
 """
             combined_text = await asyncio.to_thread(call_gemini_safely, p_single)
@@ -933,7 +954,7 @@ UPSC CSE मुख्य परीक्षा {gs_paper} के वर्ष 20
                 filename=filename,
                 caption=(
                     f"📝 <b>UPSC मुख्य परीक्षा संग्रह:</b> <code>{topic}</code>\n"
-                    f"🎯 <b>कवरेज:</b> 2013-2026 संपूर्ण आधिकारिक प्रश्न एवं मॉडल उत्तर-ढांचा\n"
+                    f"🎯 <b>कवरेज:</b> 2013-2026 आधिकारिक प्रश्न (वर्ष सहित) एवं मॉडल उत्तर-ढांचा\n"
                     f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
                     f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
                 ),
@@ -1294,7 +1315,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓 <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= 360° UPSC महा-संकलन (80-120+ पृष्ठों की 6-स्तरीय बैचिंग) =================
+# ================= 360° UPSC महा-संकलन (विनम्र संदेश व बैचिंग सहित) =================
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1329,15 +1350,23 @@ async def process_dynamic_generation(user_id, data, context):
         filename = f"UPSC_{data.replace('-', '_')}.html"
     else:
         est_time = "2 से 3 मिनट" if (data.startswith("gendate_") or data.startswith("genweek_")) else ("4 से 5 मिनट" if data.startswith("genmonth_") else "6 से 8 मिनट")
-        wait_m = await context.bot.send_message(
+        
+        # स्थायी विनम्र संदेश जो एडिट या गायब नहीं होगा
+        await context.bot.send_message(
             chat_id=user_id, 
             text=(
                 f"🏛 <b>UPSC CIVIL SERVICES STUDY DESK</b>\n"
-                f"👤 <b>संचालक:</b> <b>SACHIN SHARMA</b>\n\n"
+                f"👤 <b>संचालक:</b> <b>{AUTHOR_NAME}</b>\n\n"
                 f"⏳ <b>कृपया लगभग {est_time} का धैर्यपूर्वक इंतजार कीजिए।</b>\n"
                 "हम The Hindu, PIB, Indian Express, योजना व कुरुक्षेत्र से विगत वर्षों के <b>PYQ मैपिंग एवं आधिकारिक स्रोतों</b> सहित विस्तृत मैगज़ीन-स्तरीय अध्ययन सामग्री तैयार कर रहे हैं ताकि आपका एक भी अंक न छूटे...\n\n"
                 "<i>(एक बार बनने के पश्चात् यह स्थायी रूप से सुरक्षित हो जाएगा)</i>"
             ),
+            parse_mode=ParseMode.HTML
+        )
+
+        wait_m = await context.bot.send_message(
+            chat_id=user_id,
+            text="⏳ [■■□□□□□□□□] 20% डेटा संकलन एवं संश्लेषण प्रारंभ हो रहा है...",
             parse_mode=ParseMode.HTML
         )
 
