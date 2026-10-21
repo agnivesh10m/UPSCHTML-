@@ -67,6 +67,10 @@ def init_db():
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
         """)
+        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS home_district TEXT;")
+        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS home_village TEXT;")
+        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS stream_name TEXT;")
+        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS hobby TEXT;")
         c.execute("ALTER TABLE daily_archive ALTER COLUMN reference_date TYPE TEXT;")
         c.close()
         conn.close()
@@ -124,7 +128,7 @@ def is_authorized(user_id):
                 is_vip, exp = row
                 if is_vip == 1:
                     if exp:
-                        exp_tz = exp.astimezone(now.tzinfo)
+                        exp_tz = exp if exp.tzinfo else exp.replace(tzinfo=now.tzinfo)
                         if now <= exp_tz:
                             c.close()
                             conn.close()
@@ -175,8 +179,8 @@ def add_vip_user(target_uid: int, days: int):
             """, (target_uid, expiry_time, expiry_time))
             c.close()
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Sync DB add_vip error: {e}")
 
 def remove_vip_user(target_uid: int):
     if target_uid in MEMORY_USERS:
@@ -280,8 +284,8 @@ def save_to_archive(period, topic, html_content, ref_key=None):
             """, (period, ref_str, topic, html_content))
             c.close()
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Archive Save Error: {e}")
 
 def get_archive_by_key(ref_key):
     ref_str = str(ref_key)
@@ -353,12 +357,18 @@ def get_all_users_detailed():
             rows = c.fetchall()
             for r in rows:
                 uid, un, fn, is_vip, exp = r
-                if is_vip == 1 and exp and now > exp.astimezone(now.tzinfo):
-                    is_vip = 0
-                    c.execute("UPDATE users SET is_vip = 0, vip_expiry = NULL WHERE user_id = %s", (uid,))
+                if is_vip == 1 and exp:
+                    exp_tz = exp if exp.tzinfo else exp.replace(tzinfo=now.tzinfo)
+                    if now > exp_tz:
+                        is_vip = 0
+                        c.execute("UPDATE users SET is_vip = 0, vip_expiry = NULL WHERE user_id = %s", (uid,))
                 dict_users[uid] = (uid, un, fn or "", is_vip, exp)
             c.close()
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error in get_all_users_detailed: {e}")
+
+    for uid, u in MEMORY_USERS.items():
+        if uid not in dict_users:
+            dict_users[uid] = (uid, u.get("username", ""), u.get("first_name", ""), u.get("is_vip", 0), u.get("vip_expiry", None))
     return list(dict_users.values())
