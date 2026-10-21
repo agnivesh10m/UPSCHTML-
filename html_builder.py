@@ -77,9 +77,10 @@ def clean_all_markdown_and_fix_content(raw_text: str) -> str:
     text = re.sub(r'^##\s*(.*)', r'<h3 class="section-title">\1</h3>', text, flags=re.MULTILINE)
     text = re.sub(r'^#\s*(.*)', r'<h2 class="section-title">\1</h2>', text, flags=re.MULTILINE)
 
+    # मुख्य परीक्षा प्रश्न को अलग और बड़े हाइलाइटेड कार्ड में लाने हेतु
     text = re.sub(
-        r'(?:📝\s*)?(?:मुख्य\s*परीक्षा\s*अभ्यास\s*प्रश्न|मेन्स\s*मॉडल\s*प्रश्न)\s*[:\-]\s*(.*)',
-        r'<div class="mains-q-card"><div class="q-icon">📝 मुख्य परीक्षा अभ्यास प्रश्न:</div><div class="q-bold-text">\1</div></div>',
+        r'(?:📝\s*)?(?:मुख्य\s*परीक्षा\s*अभ्यास\s*प्रश्न|मेन्स\s*मॉडल\s*प्रश्न|प्रश्न)\s*[:\-]\s*(.*)',
+        r'<div class="mains-q-card"><div class="q-icon">📝 मुख्य परीक्षा प्रश्न:</div><div class="q-bold-text">\1</div></div>',
         text, flags=re.IGNORECASE
     )
     text = re.sub(
