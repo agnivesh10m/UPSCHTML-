@@ -92,13 +92,12 @@ def ensure_auth(handler_func):
             user_link = get_tg_user_link(user.id, user.first_name or "साथी")
             msg = (
                 f"👋 <b>नमस्ते {user_link}!</b>\n\n"
-                "🔒 <b>प्रीमियम यूपीएससी डेस्क — एक्सेस प्रतिबंधित</b>\n\n"
-                "⚠️ यह पोर्टल केवल <b>सत्यापित प्रीमियम सदस्यों</b> के लिए सुरक्षित है ताकि उच्च-स्तरीय AI एवं सर्वर संसाधनों का सदुपयोग सुनिश्चित हो सके।\n\n"
+                "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n\n"
                 f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>\n"
-                f"🔗 <b>प्रोफाइल लिंक:</b> {get_tg_user_link(user.id, f'यूज़र {user.id}')}\n\n"
-                "👉 <b>एक्सेस प्राप्त करने के दिशा-निर्देश:</b>\n"
-                "1. नीचे दिए गए बटन पर टैप करके अपनी ID कॉपी करें।\n"
-                f"2. ओनर <b>{AUTHOR_NAME}</b> (@Avigat1210) को भेजकर सब्सक्रिप्शन सक्रिय करवाएं।"
+                "🔰 <b>खाता स्थिति:</b> ❌ निःशुल्क सदस्य (एक्सेस निष्क्रिय)\n\n"
+                "⚠️ <b>महत्वपूर्ण सूचना:</b>\n"
+                "वर्तमान में इस बोट के सभी अध्ययन फीचर्स (दैनिक 360° नोट्स, विजन क्विज़ पोर्टल, लाइव DAF इंटरव्यू, कॉपी चेकिंग) केवल प्रीमियम सदस्यों के लिए आरक्षित हैं।\n\n"
+                "👉 <b>सब्सक्रिप्शन सक्रिय करवाने हेतु नीचे दिए बटन से संपर्क करें:</b>"
             )
             await update.effective_message.reply_text(
                 msg, 
@@ -1110,7 +1109,7 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
     CHECK_ANSWER_CACHE.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= मेंटरशिप सत्र (/ask) =================
+# ================= मेंटरशिप सत्र (/ask) [100% क्रैश-फ्री वॉयस] =================
 @ensure_auth
 async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
@@ -1164,7 +1163,6 @@ async def handle_ask_continuous_message(update: Update, context: ContextTypes.DE
 - मार्कडाउन स्टार्स का प्रयोग न करें। भाषा केवल शुद्ध हिंदी रखें।
 """
         reply_text = await asyncio.to_thread(call_gemini_safely, prompt)
-        
         clean_reply = re.sub(r'[\*\_#`]', '', reply_text).strip()
         formatted_reply = f"🎓 <b>UPSC प्रशासनिक विश्लेषण:</b>\n\n{html.escape(clean_reply)}"
 
@@ -1730,7 +1728,7 @@ async def handle_broadcast_pin_choice(update: Update, context: ContextTypes.DEFA
 
     LAST_BROADCAST_DATA.pop(admin_id, None)
 
-# ================= ADMIN USER MANAGEMENT & LIST USERS (क्लिकेबल लिंक सहित) =================
+# ================= ADMIN USER MANAGEMENT & LIST USERS =================
 async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
@@ -1915,7 +1913,7 @@ async def clear_cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_archive_by_key()
     await update.message.reply_text("🧹 <b>सफल:</b> पुराना सारा अधूरा कैश और फ़ाइलें साफ़ कर दी गई हैं! अब से सभी फ़ाइलें नई 360° मैगज़ीन गुणवत्ता के साथ सेव होंगी।", parse_mode=ParseMode.HTML)
 
-# ================= ADMIN DIRECT REPLIES (ओनर स्वाइप रिप्लाई बग 100% फिक्स) =================
+# ================= ADMIN DIRECT REPLIES (ओनर स्वाइप रिप्लाई शत-प्रतिशत फिक्स) =================
 async def handle_admin_reply_or_direct_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     admin_id = update.effective_user.id
@@ -2030,7 +2028,7 @@ async def main():
     await run_server()
     bot_app = ApplicationBuilder().token(BOT_TOKEN).concurrent_updates(True).build()
 
-    # 1. सर्वोच्च प्राथमिकता: एडमिन का स्वाइप रिप्लाई (ताकि /ask या कोई कन्वर्सेशन बीच में न आए)
+    # 1. सर्वोच्च प्राथमिकता: एडमिन का स्वाइप रिप्लाई (Group 0)
     bot_app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & (filters.REPLY | filters.Regex(r'^[0-9]{8,11}')), handle_admin_reply_or_direct_send), group=0)
 
     # 2. कमांड्स
@@ -2050,7 +2048,7 @@ async def main():
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd), group=1)
     bot_app.add_handler(CommandHandler("clearcache", clear_cache_cmd), group=1)
 
-    # 3. कॉलबैक्स
+    # 3. कॉलबैक्स (सख्त पैटर्न के साथ ताकि क्विज़ और मेन्स में कोई हस्तक्षेप न हो)
     bot_app.add_handler(CallbackQueryHandler(copy_id_callback, pattern=r"^copyid_"), group=1)
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_gs_choice, pattern=r"^quizgs_"), group=1)
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_sub_choice, pattern=r"^quizsub_|^quiz_back_gs"), group=1)
@@ -2060,10 +2058,12 @@ async def main():
     bot_app.add_handler(CallbackQueryHandler(handle_mains_gs_choice, pattern=r"^mq_gs_|^mains_back_root"), group=1)
     bot_app.add_handler(CallbackQueryHandler(handle_mains_cnt_choice, pattern=r"^mq_cnt_"), group=1)
 
-    bot_app.add_handler(CallbackQueryHandler(handle_trending_type_selection, pattern=r"^trtype_|^tr_back_root"))
-    bot_app.add_handler(CallbackQueryHandler(handle_trending_pages, pattern=r"^trpage_"))
-    bot_app.add_handler(CallbackQueryHandler(handle_broadcast_pin_choice, pattern=r"^pin_broadcast_"))
-    bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click))
+    bot_app.add_handler(CallbackQueryHandler(handle_trending_type_selection, pattern=r"^trtype_|^tr_back_root"), group=1)
+    bot_app.add_handler(CallbackQueryHandler(handle_trending_pages, pattern=r"^trpage_"), group=1)
+    bot_app.add_handler(CallbackQueryHandler(handle_broadcast_pin_choice, pattern=r"^pin_broadcast_"), group=1)
+    
+    # यह हैंडलर केवल और केवल "gen" या "root_back" से शुरू होने वाले कॉलबैक्स को पकड़ेगा
+    bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click, pattern=r"^gen|^root_back"), group=1)
 
     # 4. कन्वर्सेशन हैंडलर्स
     interview_conv = ConversationHandler(
