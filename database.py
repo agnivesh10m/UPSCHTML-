@@ -67,10 +67,6 @@ def init_db():
                 created_at TIMESTAMPTZ DEFAULT NOW()
             );
         """)
-        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS home_district TEXT;")
-        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS home_village TEXT;")
-        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS stream_name TEXT;")
-        c.execute("ALTER TABLE user_daf ADD COLUMN IF NOT EXISTS hobby TEXT;")
         c.execute("ALTER TABLE daily_archive ALTER COLUMN reference_date TYPE TEXT;")
         c.close()
         conn.close()
@@ -129,7 +125,7 @@ def is_authorized(user_id):
                 if is_vip == 1:
                     if exp:
                         exp_tz = exp if exp.tzinfo else exp.replace(tzinfo=now.tzinfo)
-                        if now <= exp_tz:
+                        if now <= exp_tz.astimezone(now.tzinfo):
                             c.close()
                             conn.close()
                             return True
@@ -150,7 +146,10 @@ def is_authorized(user_id):
     mem = MEMORY_USERS.get(user_id)
     if mem and mem.get("is_vip") == 1:
         exp = mem.get("vip_expiry")
-        if exp is None or now <= exp:
+        if exp is None:
+            return True
+        exp_tz = exp if exp.tzinfo else exp.replace(tzinfo=now.tzinfo)
+        if now <= exp_tz.astimezone(now.tzinfo):
             return True
         else:
             mem["is_vip"] = 0
@@ -179,8 +178,8 @@ def add_vip_user(target_uid: int, days: int):
             """, (target_uid, expiry_time, expiry_time))
             c.close()
             conn.close()
-        except Exception as e:
-            print(f"Sync DB add_vip error: {e}")
+        except Exception:
+            pass
 
 def remove_vip_user(target_uid: int):
     if target_uid in MEMORY_USERS:
@@ -284,8 +283,8 @@ def save_to_archive(period, topic, html_content, ref_key=None):
             """, (period, ref_str, topic, html_content))
             c.close()
             conn.close()
-        except Exception as e:
-            print(f"Archive Save Error: {e}")
+        except Exception:
+            pass
 
 def get_archive_by_key(ref_key):
     ref_str = str(ref_key)
@@ -359,14 +358,14 @@ def get_all_users_detailed():
                 uid, un, fn, is_vip, exp = r
                 if is_vip == 1 and exp:
                     exp_tz = exp if exp.tzinfo else exp.replace(tzinfo=now.tzinfo)
-                    if now > exp_tz:
+                    if now > exp_tz.astimezone(now.tzinfo):
                         is_vip = 0
                         c.execute("UPDATE users SET is_vip = 0, vip_expiry = NULL WHERE user_id = %s", (uid,))
                 dict_users[uid] = (uid, un, fn or "", is_vip, exp)
             c.close()
             conn.close()
         except Exception as e:
-            print(f"Error in get_all_users_detailed: {e}")
+            print(f"Error fetching all users detailed: {e}")
 
     for uid, u in MEMORY_USERS.items():
         if uid not in dict_users:
