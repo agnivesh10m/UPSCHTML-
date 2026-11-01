@@ -71,6 +71,13 @@ TRENDING_CACHE = {}
 INTERVIEW_SESSION = {}
 LAST_BROADCAST_DATA = {}
 
+# ओनर का नाम और क्लिकेबल टेलीग्राम प्रोफाइल लिंक
+OWNER_DISPLAY_NAME = "𝚾 𝚫 𝚬 𝚸 · ༎🥀"
+OWNER_USERNAME = "@Avigat1210"
+OWNER_PROFILE_URL = "https://t.me/Avigat1210"
+OWNER_CLICKABLE_LINK = f'<a href="{OWNER_PROFILE_URL}">{OWNER_DISPLAY_NAME} ({OWNER_USERNAME})</a>'
+OWNER_SHORT_LINK = f'<a href="{OWNER_PROFILE_URL}">{OWNER_DISPLAY_NAME}</a>'
+
 def get_tg_user_link(user_id: int, name: str = None) -> str:
     clean_name = html.escape(name) if name else str(user_id)
     return f'<a href="tg://user?id={user_id}">{clean_name}</a>'
@@ -78,7 +85,7 @@ def get_tg_user_link(user_id: int, name: str = None) -> str:
 def get_free_user_access_markup(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"📋 अपनी ID कॉपी करें ({user_id})", callback_data=f"copyid_{user_id}")],
-        [InlineKeyboardButton("💬 ओनर से संपर्क करें", url="[https://t.me/Avigat1210](https://t.me/Avigat1210)")],
+        [InlineKeyboardButton("💬 ओनर से संपर्क करें", url=OWNER_PROFILE_URL)],
         [InlineKeyboardButton("📢 आधिकारिक चैनल जॉइन करें", url=CHANNEL_LINK)]
     ])
 
@@ -92,12 +99,16 @@ def ensure_auth(handler_func):
             user_link = get_tg_user_link(user.id, user.first_name or "साथी")
             msg = (
                 f"👋 <b>नमस्ते {user_link}!</b>\n\n"
-                "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n\n"
+                "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
                 f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>\n"
-                "🔰 <b>खाता स्थिति:</b> ❌ निःशुल्क सदस्य (एक्सेस निष्क्रिय)\n\n"
+                f"🔗 <b>प्रोफाइल:</b> {get_tg_user_link(user.id, 'मेरी टेलीग्राम प्रोफाइल')}\n"
+                "🔰 <b>खाता स्थिति:</b> 👤 निःशुल्क सदस्य (एक्सेस निष्क्रिय)\n"
+                "⏳ <b>प्रीमियम स्थिति:</b> ❌ लॉक (Inactive)\n"
+                "━━━━━━━━━━━━━━━━━━━━\n\n"
                 "⚠️ <b>महत्वपूर्ण सूचना:</b>\n"
-                "वर्तमान में इस बोट के सभी अध्ययन फीचर्स (दैनिक 360° नोट्स, विजन क्विज़ पोर्टल, लाइव DAF इंटरव्यू, कॉपी चेकिंग) केवल प्रीमियम सदस्यों के लिए आरक्षित हैं।\n\n"
-                "👉 <b>सब्सक्रिप्शन सक्रिय करवाने हेतु नीचे दिए बटन से संपर्क करें:</b>"
+                "वर्तमान में इस बोट के सभी अध्ययन फीचर्स (दैनिक 360° नोट्स, 1 लाख+ क्विज़ पोर्टल, लाइव DAF इंटरव्यू, कॉपी चेकिंग) केवल प्रीमियम सदस्यों के लिए आरक्षित हैं।\n\n"
+                f"👉 <b>सब्सक्रिप्शन सक्रिय करवाने हेतु नीचे दिए बटन से {OWNER_CLICKABLE_LINK} से संपर्क करें:</b>"
             )
             await update.effective_message.reply_text(
                 msg, 
@@ -120,15 +131,25 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     register_user(user.id, user.username, user.first_name)
     user_link = get_tg_user_link(user.id, user.first_name or "साथी")
     
+    user_row, _ = get_user_full_info(user.id)
+    is_vip = 0
+    exp_dt = None
+    if user_row:
+        _, _, _, is_vip, exp_dt, _ = user_row
+
     if not is_authorized(user.id):
         msg = (
             f"👋 <b>नमस्ते {user_link}!</b>\n\n"
-            "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n\n"
+            "📚 <b>UPSC CIVIL SERVICES PORTAL</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
             f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>\n"
-            "🔰 <b>खाता स्थिति:</b> ❌ निःशुल्क सदस्य (एक्सेस निष्क्रिय)\n\n"
+            f"🔗 <b>प्रोफाइल लिंक:</b> {get_tg_user_link(user.id, f'प्रोफाइल लिंक ({user.id})')}\n"
+            "🔰 <b>खाता स्थिति:</b> ❌ निःशुल्क सदस्य (एक्सेस निष्क्रिय)\n"
+            "⏳ <b>प्लान स्थिति:</b> 🔒 लॉक (Inactive)\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
             "⚠️ <b>महत्वपूर्ण सूचना:</b>\n"
             "वर्तमान में इस बोट के सभी अध्ययन फीचर्स (दैनिक 360° नोट्स, विजन क्विज़ पोर्टल, लाइव DAF इंटरव्यू, कॉपी चेकिंग) केवल प्रीमियम सदस्यों के लिए आरक्षित हैं।\n\n"
-            "👉 <b>सब्सक्रिप्शन सक्रिय करवाने हेतु नीचे दिए बटन से संपर्क करें:</b>"
+            f"👉 <b>सब्सक्रिप्शन सक्रिय करवाने हेतु नीचे दिए बटन से {OWNER_CLICKABLE_LINK} से संपर्क करें:</b>"
         )
         if update.message:
             await update.message.reply_text(msg, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=get_free_user_access_markup(user.id))
@@ -136,12 +157,37 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.callback_query.message.reply_text(msg, parse_mode=ParseMode.HTML, disable_web_page_preview=True, reply_markup=get_free_user_access_markup(user.id))
         return
 
-    admin_tag = f"👑 <b>एडमिन कंट्रोल सक्रिय ({AUTHOR_NAME})</b>\n\n" if user.id in ADMIN_IDS else "⭐ <b>प्रीमियम यूपीएससी डेस्क सक्रिय</b>\n\n"
+    # एडमिन अथवा सत्यापित प्रीमियम यूज़र का प्लान विवरण
+    if user.id in ADMIN_IDS:
+        plan_header = f"👑 <b>प्रशासनिक संरक्षक कंट्रोल सक्रिय ({OWNER_CLICKABLE_LINK})</b>\n"
+        validity_info = "⏳ <b>प्लान स्थिति:</b> ✅ असीमित / लाइफटाइम व्यवस्थापक एक्सेस\n"
+    else:
+        now_ist = get_ist_now()
+        plan_header = "⭐ <b>प्रीमियम यूपीएससी डेस्क सक्रिय</b>\n"
+        if exp_dt:
+            exp_formatted = exp_dt.strftime('%d-%b-%Y, %I:%M %p')
+            time_left = exp_dt - now_ist
+            days_left = max(0, time_left.days)
+            hours_left = max(0, int(time_left.seconds // 3600))
+            validity_info = (
+                f"🔰 <b>सदस्यता प्रकार:</b> 👑 प्रीमियम वीआईपी (VIP Member)\n"
+                f"⏳ <b>प्लान स्थिति:</b> ✅ सक्रिय (Active)\n"
+                f"📅 <b>वैधता (Expiry Date):</b> <code>{exp_formatted} (IST)</code>\n"
+                f"⏳ <b>शेष समय:</b> <code>{days_left} दिन {hours_left} घंटे शेष</code>\n"
+            )
+        else:
+            validity_info = (
+                "🔰 <b>सदस्यता प्रकार:</b> 👑 स्थायी प्रीमियम सदस्य\n"
+                "⏳ <b>प्लान स्थिति:</b> ✅ सक्रिय (स्थायी वैधता)\n"
+            )
 
     msg = (
         f"👋 <b>नमस्ते {user_link}!</b>\n\n"
-        f"{admin_tag}"
-        f"🆔 <b>आपकी स्थायी प्रोफाइल:</b> {get_tg_user_link(user.id, f'प्रोफाइल लिंक ({user.id})')}\n\n"
+        f"{plan_header}"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"🆔 <b>आपकी स्थायी प्रोफाइल:</b> {get_tg_user_link(user.id, f'प्रोफाइल लिंक ({user.id})')}\n"
+        f"{validity_info}"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
         "📖 <b>अध्ययन एवं नोट्स (पाठ्यक्रम व PYQ मैपिंग सहित):</b>\n"
         "• <code>/daily</code> — दैनिक 360° समसामयिक संकलन (विस्तृत 14-18 पृष्ठ)\n"
         "• <code>/trending</code> — राष्ट्रीय व वैश्विक ट्रेंडिंग रडार (कठिन स्तर)\n"
@@ -155,7 +201,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <code>/ask</code> — 24/7 यूपीएससी मेंटरशिप सत्र (सुपरफास्ट वॉयस व टेक्स्ट)\n\n"
         "💬 <b>सहायता व संपर्क:</b>\n"
         "• <code>/help</code> — संपूर्ण उपयोग मार्गदर्शिका\n"
-        "• <code>/owner</code> — सचिन शर्मा से सीधा संपर्क करें\n"
+        f"• <code>/owner</code> — {OWNER_CLICKABLE_LINK} से सीधा संपर्क करें\n"
         "• <code>/cancel</code> — प्रक्रिया तुरंत रद्द करें\n\n"
         f"📢 <b>ग्रुप:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
     )
@@ -173,7 +219,8 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"👋 <b>नमस्ते {user_link}!</b>\n\n"
             "⚠️ आप वर्तमान में निःशुल्क सदस्य हैं। किसी भी फीचर का उपयोग करने के लिए प्रीमियम सब्सक्रिप्शन अनिवार्य है।\n\n"
-            f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>",
+            f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user.id}</code>\n"
+            f"👑 <b>संरक्षक:</b> {OWNER_CLICKABLE_LINK}",
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
             reply_markup=get_free_user_access_markup(user.id)
@@ -181,7 +228,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     help_text = (
-        f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({AUTHOR_NAME})</b>\n\n"
+        f"📖 <b>UPSC SMART DESK — संपूर्ण गाइड ({OWNER_CLICKABLE_LINK})</b>\n\n"
         f"👤 <b>सदस्य:</b> {user_link} (<code>{user.id}</code>)\n\n"
         "1️⃣ <b>दैनिक व आवधिक नोट्स (`/daily`, `/weekly`, `/monthly`, `/yearly`):</b> प्रत्येक मुद्दे पर GS पेपर, PYQ संदर्भ व सिलेबस टॉपिक का स्पष्ट उल्लेख।\n\n"
         "2️⃣ <b>ऑनलाइन क्विज़ पोर्टल (`/quiz`):</b> 1 लाख+ प्रश्नों के बैंक से 50 या 100 प्रश्नों का लाइव टेस्ट पोर्टल (शून्य दोहराव)।\n\n"
@@ -426,8 +473,8 @@ async def handle_quiz_cnt_choice(update: Update, context: ContextTypes.DEFAULT_T
                     f"📚 <b>विषय:</b> <code>{subj}</code>\n"
                     f"📝 <b>कुल प्रश्न:</b> <code>{len(all_questions)} MCQs (1,00,000+ बैंक, शून्य दोहराव)</code>\n"
                     f"⏱ <b>सुविधाएं:</b> लाइव टाइमर, OMR पैलेट ग्रिड, तत्काल प्राप्तांक व 50% वाटरमार्क PDF\n\n"
-                    f"👤 <b>संरक्षक:</b> {AUTHOR_NAME}\n"
-                    f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                    f"👤 <b>संरक्षक:</b> {OWNER_CLICKABLE_LINK}\n"
+                    f"📢 <b>ग्रुप:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
                 ),
                 parse_mode=ParseMode.HTML
             )
@@ -660,7 +707,7 @@ async def ask_interview_question(update: Update, context: ContextTypes.DEFAULT_T
             context,
             update.effective_chat.id,
             q_text,
-            f"🎙️ साक्षात्कार प्रश्न {curr}/{tot} (बोर्ड अध्यक्ष आवाज़) | {AUTHOR_NAME}"
+            f"🎙️ साक्षात्कार प्रश्न {curr}/{tot} (बोर्ड अध्यक्ष आवाज़) | {OWNER_DISPLAY_NAME}"
         )
 
     except Exception as e:
@@ -713,7 +760,7 @@ async def handle_interview_candidate_voice(update: Update, context: ContextTypes
             context,
             update.effective_chat.id,
             eval_resp,
-            f"🎙️ बोर्ड अवलोकन एवं फीडबैक (अध्यक्ष) | {AUTHOR_NAME}"
+            f"🎙️ बोर्ड अवलोकन एवं फीडबैक (अध्यक्ष) | {OWNER_DISPLAY_NAME}"
         )
 
         if sess["current"] < sess["total"]:
@@ -780,7 +827,7 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text(
             f"📜 <b>UPSC साक्षात्कार परिणाम पत्रक ({total_q} प्रश्न सत्र - {max_marks} अंक):</b>\n\n"
             f"{final_report}\n\n"
-            f"👤 <b>बोर्ड संरक्षक:</b> {AUTHOR_NAME}",
+            f"👤 <b>बोर्ड संरक्षक:</b> {OWNER_CLICKABLE_LINK}",
             parse_mode=ParseMode.HTML
         )
 
@@ -789,7 +836,7 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
             context,
             update.effective_chat.id,
             summary_voice_text,
-            f"🎙️ साक्षात्कार परिणाम सारांश (बोर्ड अध्यक्ष) | {AUTHOR_NAME}"
+            f"🎙️ साक्षात्कार परिणाम सारांश (बोर्ड अध्यक्ष) | {OWNER_DISPLAY_NAME}"
         )
 
     except Exception as e:
@@ -798,7 +845,7 @@ async def handle_interview_decision(update: Update, context: ContextTypes.DEFAUL
     INTERVIEW_SESSION.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= मुख्य परीक्षा अभ्यास (/mains) [वर्ष टैग व बोल्ड प्रश्न फिक्स] =================
+# ================= मुख्य परीक्षा अभ्यास (/mains) =================
 @ensure_auth
 async def mains_special_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -955,8 +1002,8 @@ async def handle_mains_cnt_choice(update: Update, context: ContextTypes.DEFAULT_
                 caption=(
                     f"📝 <b>UPSC मुख्य परीक्षा संग्रह:</b> <code>{topic}</code>\n"
                     f"🎯 <b>कवरेज:</b> 2013-2026 आधिकारिक प्रश्न (वर्ष सहित) एवं मॉडल उत्तर-ढांचा\n"
-                    f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
-                    f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                    f"👤 <b>संचालक:</b> {OWNER_CLICKABLE_LINK}\n"
+                    f"📢 <b>ग्रुप:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
                 ),
                 parse_mode=ParseMode.HTML
             )
@@ -1130,7 +1177,7 @@ async def handle_ca_answer_copy_submission(update: Update, context: ContextTypes
     CHECK_ANSWER_CACHE.pop(user_id, None)
     return ConversationHandler.END
 
-# ================= मेंटरशिप सत्र (/ask) [100% क्रैश-फ्री वॉयस] =================
+# ================= मेंटरशिप सत्र (/ask) =================
 @ensure_auth
 async def start_ask_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
@@ -1315,7 +1362,7 @@ async def weekly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("🗓 <b>साप्ताहिक रिवीजन हेतु सप्ताह चुनें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= 360° UPSC महा-संकलन (विनम्र संदेश व बैचिंग सहित) =================
+# ================= 360° UPSC महा-संकलन =================
 async def handle_dynamic_generation_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1351,17 +1398,17 @@ async def process_dynamic_generation(user_id, data, context):
     else:
         est_time = "2 से 3 मिनट" if (data.startswith("gendate_") or data.startswith("genweek_")) else ("4 से 5 मिनट" if data.startswith("genmonth_") else "6 से 8 मिनट")
         
-        # स्थायी विनम्र संदेश जो एडिट या गायब नहीं होगा
         await context.bot.send_message(
             chat_id=user_id, 
             text=(
                 f"🏛 <b>UPSC CIVIL SERVICES STUDY DESK</b>\n"
-                f"👤 <b>संचालक:</b> <b>{AUTHOR_NAME}</b>\n\n"
+                f"👤 <b>संचालक:</b> {OWNER_CLICKABLE_LINK}\n\n"
                 f"⏳ <b>कृपया लगभग {est_time} का धैर्यपूर्वक इंतजार कीजिए।</b>\n"
                 "हम The Hindu, PIB, Indian Express, योजना व कुरुक्षेत्र से विगत वर्षों के <b>PYQ मैपिंग एवं आधिकारिक स्रोतों</b> सहित विस्तृत मैगज़ीन-स्तरीय अध्ययन सामग्री तैयार कर रहे हैं ताकि आपका एक भी अंक न छूटे...\n\n"
                 "<i>(एक बार बनने के पश्चात् यह स्थायी रूप से सुरक्षित हो जाएगा)</i>"
             ),
-            parse_mode=ParseMode.HTML
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True
         )
 
         wait_m = await context.bot.send_message(
@@ -1480,8 +1527,8 @@ async def process_dynamic_generation(user_id, data, context):
                 f"📄 <b>दस्तावेज़:</b> <code>{topic}</code>\n"
                 f"📰 <b>अधिकृत स्रोत:</b> The Hindu | Indian Express | PIB | Yojana | Vision IAS | Drishti IAS\n"
                 f"🎯 <b>सुविधा:</b> यूपीएससी सिलेबस एवं PYQ मैपिंग शामिल\n"
-                f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
-                f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                f"👤 <b>संचालक:</b> {OWNER_CLICKABLE_LINK}\n"
+                f"📢 <b>ग्रुप:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
             ),
             parse_mode=ParseMode.HTML,
         )
@@ -1500,7 +1547,7 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
         await msg.reply_text(
             f"👋 <b>नमस्ते {user_link}!</b>\n\n"
             "🔒 <b>प्रीमियम यूपीएससी डेस्क — एक्सेस प्रतिबंधित</b>\n\n"
-            "⚠️ यह पोर्टल केवल <b>प्रीमियम सदस्यों</b> के लिए सुरक्षित है। सभी कमांड्स और फीचर्स अनलॉक करने के लिए ओनर से संपर्क करें।\n\n"
+            f"⚠️ यह पोर्टल केवल <b>प्रीमियम सदस्यों</b> के लिए सुरक्षित है। सभी कमांड्स और फीचर्स अनलॉक करने के लिए {OWNER_CLICKABLE_LINK} से संपर्क करें।\n\n"
             f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user_id}</code>",
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
@@ -1521,8 +1568,9 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
             topic, html_content = arch_data
         else:
             wait_m = await msg.reply_text(
-                f"⏳ <b>कृपया लगभग 2 मिनट का इंतजार कीजिए।</b>\n{AUTHOR_NAME} डेस्क द्वारा सभी ट्रेंडिंग मुद्दों के 360° संपूर्ण नोट्स तैयार किए जा रहे हैं...",
-                parse_mode=ParseMode.HTML
+                f"⏳ <b>कृपया लगभग 2 मिनट का इंतजार कीजिए।</b>\n{OWNER_CLICKABLE_LINK} डेस्क द्वारा सभी ट्रेंडिंग मुद्दों के 360° संपूर्ण नोट्स तैयार किए जा रहे हैं...",
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True
             )
             prompt = f"नीचे दिए गए सभी ट्रेंडिंग मुद्दों पर UPSC स्तर के गहन और 360° संपूर्ण नोट्स स्रोत टैग, सिलेबस मैपिंग व विगत वर्षों के PYQ संदर्भ सहित तैयार करें:\n{raw_trend}\nकेवल शुद्ध हिंदी में लिखें।"
             try:
@@ -1545,8 +1593,8 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
                 caption=(
                     f"📄 <b>ट्रेंडिंग संपूर्ण संकलन:</b> <code>{today}</code>\n"
                     f"📰 <b>स्रोत:</b> The Hindu | Indian Express | PIB | Vision IAS\n"
-                    f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
-                    f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                    f"👤 <b>संचालक:</b> {OWNER_CLICKABLE_LINK}\n"
+                    f"📢 <b>ग्रुप:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
                 ),
                 parse_mode=ParseMode.HTML
             )
@@ -1563,8 +1611,9 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
             topic, html_content = arch_data
         else:
             wait_m = await msg.reply_text(
-                f"⏳ <b>कृपया लगभग 2 मिनट का इंतजार कीजिए।</b>\n{AUTHOR_NAME} डेस्क द्वारा चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विश्लेषण किया जा रहा है...",
-                parse_mode=ParseMode.HTML
+                f"⏳ <b>कृपया लगभग 2 मिनट का इंतजार कीजिए।</b>\n{OWNER_CLICKABLE_LINK} डेस्क द्वारा चुने गए ट्रेंडिंग मुद्दे ({', '.join(nums)}) का 360° विश्लेषण किया जा रहा है...",
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True
             )
             raw_trend = "\n".join(cached_list)
             prompt = f"सूची में से क्रमांक {', '.join(nums)} पर मौजूद मुद्दों का UPSC हेतु 360° विश्लेषण स्रोत टैग, सिलेबस मैपिंग व PYQ संदर्भ सहित तैयार करें:\n{raw_trend}\nकेवल हिंदी में लिखें।"
@@ -1588,8 +1637,8 @@ async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYP
                 caption=(
                     f"📄 <b>ट्रेंडिंग चयनित मुद्दे:</b> {', '.join(nums)} ({today})\n"
                     f"📰 <b>स्रोत:</b> The Hindu | Indian Express | PIB\n"
-                    f"👤 <b>संचालक:</b> {AUTHOR_NAME}\n"
-                    f"📢 <b>ग्रुप:</b> {CHANNEL_NAME}"
+                    f"👤 <b>संचालक:</b> {OWNER_CLICKABLE_LINK}\n"
+                    f"📢 <b>ग्रुप:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
                 ),
                 parse_mode=ParseMode.HTML
             )
@@ -1608,7 +1657,8 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
         user_link = get_tg_user_link(user_id, update.effective_user.first_name or "साथी")
         await msg.reply_text(
             f"⛔ <b>एक्सेस अस्वीकृत {user_link}:</b> PDF प्रोसेसिंग केवल प्रीमियम सदस्यों के लिए उपलब्ध है।\n\n"
-            f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user_id}</code>",
+            f"🆔 <b>आपकी टेलीग्राम ID:</b> <code>{user_id}</code>\n"
+            f"👉 संपर्क: {OWNER_CLICKABLE_LINK}",
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
             reply_markup=get_free_user_access_markup(user_id)
@@ -1643,7 +1693,7 @@ async def handle_direct_pdf_upload(update: Update, context: ContextTypes.DEFAULT
             await msg.reply_document(
                 document=send_doc,
                 filename=out_fname,
-                caption=f"📄 <b>PDF से जनरेटेड HTML नोट्स:</b> <code>{clean_title}</code>\n👤 <b>संकलनकर्ता:</b> {AUTHOR_NAME}\n📢 <b>ग्रुप:</b> {CHANNEL_NAME}",
+                caption=f"📄 <b>PDF से जनरेटेड HTML नोट्स:</b> <code>{clean_title}</code>\n👤 <b>संकलनकर्ता:</b> {OWNER_CLICKABLE_LINK}\n📢 <b>ग्रुप:</b> <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>",
                 parse_mode=ParseMode.HTML
             )
         await wait_m.delete()
@@ -1692,11 +1742,12 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     await update.message.reply_text(
-        f"📢 <b>ब्रॉडकास्ट कंट्रोल रूम ({AUTHOR_NAME}):</b>\n\n"
+        f"📢 <b>ब्रॉडकास्ट कंट्रोल रूम ({OWNER_CLICKABLE_LINK}):</b>\n\n"
         "सभी छात्रों को भेजा जाने वाला संदेश, इमेज या पीडीएफ भेजें:\n"
         "<i>(टिप: आप किसी भी पुराने मैसेज/वीडियो पर स्वाइप करके रिप्लाई में सीधे <code>/broadcast</code> लिखकर भी भेज सकते हैं!)</i>\n"
         "<i>(रद्द करने के लिए <code>/cancel</code> भेजें)</i>",
-        parse_mode=ParseMode.HTML
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True
     )
     return WAITING_BROADCAST_MSG
 
@@ -1782,7 +1833,7 @@ async def add_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         congrats_msg = (
             "🎉 <b>बधाई हो! आपका प्रीमियम यूपीएससी डेस्क सक्रिय हो गया है।</b>\n\n"
-            f"👑 <b>व्यवस्थापक:</b> {AUTHOR_NAME}\n"
+            f"👑 <b>व्यवस्थापक:</b> {OWNER_CLICKABLE_LINK}\n"
             f"📅 <b>सब्सक्रिप्शन अवधि:</b> <code>{days} दिन</code>\n"
             f"⏳ <b>वैधता (Expiry Date):</b> <code>{exp_formatted} (IST)</code>\n\n"
             "🌟 <b>अनलॉक किए गए मुख्य फीचर्स:</b>\n"
@@ -1885,7 +1936,7 @@ async def info_user_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ विवरण निकालने में त्रुटि: {e}")
 
-# ================= LIST USERS (ओरिजिनल लिंक फॉर्मेट) =================
+# ================= LIST USERS =================
 async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = update.effective_user.id
     if admin_id not in ADMIN_IDS:
@@ -1912,9 +1963,7 @@ async def list_users_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             free_users.append(f"• 👤 {user_link} ({id_link})")
 
     text = f"👥 <b>पंजीकृत सदस्य (कुल: {len(rows)})</b>\n\n"
-    text += "👑 <b>प्रशासनिक संरक्षक (Owners):</b>\n"
-    for aid in ADMIN_IDS:
-        text += f"• <b>{ADMIN_NAMES.get(aid, 'व्यवस्थापक')}</b>: {get_tg_user_link(aid, str(aid))}\n"
+    text += f"👑 <b>प्रशासनिक संरक्षक (Owner):</b>\n• {OWNER_CLICKABLE_LINK}\n"
     text += "━━━━━━━━━━━━━━━━━━━━\n\n"
 
     text += f"⭐ <b>सत्यापित प्रीमियम सदस्य ({len(vip_users)} छात्र):</b>\n"
@@ -1942,7 +1991,7 @@ async def clear_cache_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     clear_archive_by_key()
     await update.message.reply_text("🧹 <b>सफल:</b> पुराना सारा अधूरा कैश और फ़ाइलें साफ़ कर दी गई हैं! अब से सभी फ़ाइलें नई 360° मैगज़ीन गुणवत्ता के साथ सेव होंगी।", parse_mode=ParseMode.HTML)
 
-# ================= ADMIN DIRECT REPLIES (ओनर स्वाइप रिप्लाई शत-प्रतिशत फिक्स) =================
+# ================= ADMIN DIRECT REPLIES =================
 async def handle_admin_reply_or_direct_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     admin_id = update.effective_user.id
@@ -1958,7 +2007,7 @@ async def handle_admin_reply_or_direct_send(update: Update, context: ContextType
         if match:
             target_user_id = int(match.group(1))
             reply_body = msg.text or msg.caption or ""
-            user_notification = f"🔔 <b>ओनर ({AUTHOR_NAME}) का जवाब:</b>\n\n{reply_body}\n\n📢 <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
+            user_notification = f"🔔 <b>ओनर ({OWNER_CLICKABLE_LINK}) का जवाब:</b>\n\n{reply_body}\n\n📢 <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
             try:
                 if msg.text:
                     await context.bot.send_message(chat_id=target_user_id, text=user_notification, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
@@ -1976,7 +2025,7 @@ async def handle_admin_reply_or_direct_send(update: Update, context: ContextType
         if direct_match:
             target_user_id = int(direct_match.group(1))
             reply_body = direct_match.group(2).strip()
-            user_notification = f"🔔 <b>ओनर ({AUTHOR_NAME}) का जवाब:</b>\n\n{reply_body}\n\n📢 <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
+            user_notification = f"🔔 <b>ओनर ({OWNER_CLICKABLE_LINK}) का जवाब:</b>\n\n{reply_body}\n\n📢 <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a>"
             try:
                 await context.bot.send_message(chat_id=target_user_id, text=user_notification, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
                 await msg.reply_text(f"✅ जवाब छात्र (<code>{target_user_id}</code>) को सफलतापूर्वक भेज दिया गया!", parse_mode=ParseMode.HTML)
@@ -1993,9 +2042,10 @@ async def contact_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     CONTACT_SESSIONS[user.id] = time.time()
     await update.message.reply_text(
         f"⏱ <b>2 मिनट का समय सक्रिय है ({user_link})!</b>\n\n"
-        f"अपनी समस्या या एक्सेस अनुरोध लिखकर भेजें। यह संदेश सीधे <b>{AUTHOR_NAME}</b> के पास पहुँचेगा।\n\n"
+        f"अपनी समस्या या एक्सेस अनुरोध लिखकर भेजें। यह संदेश सीधे <b>{OWNER_CLICKABLE_LINK}</b> के पास पहुँचेगा।\n\n"
         "<i>(रद्द करने हेतु <code>/cancel</code> भेजें)</i>",
-        parse_mode=ParseMode.HTML
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True
     )
     return WAITING_CONTACT_MSG
 
@@ -2017,7 +2067,7 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     user_link = get_tg_user_link(user.id, user.first_name or "छात्र")
     alert_text = (
-        f"📩 <b>छात्र संदेश ({AUTHOR_NAME}):</b>\n\n"
+        f"📩 <b>छात्र संदेश ({OWNER_CLICKABLE_LINK}):</b>\n\n"
         f"👤 <b>प्रेषक:</b> {user_link}\n"
         f"🆔 <b>यूज़र ID:</b> <code>{user.id}</code>\n\n"
         f"💬 <b>संदेश:</b> {msg.text or '[मीडिया / वॉयस]'}\n\n"
@@ -2030,7 +2080,7 @@ async def forward_contact_msg(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception:
             pass
 
-    await msg.reply_text(f"✅ <b>संदेश {AUTHOR_NAME} को अग्रेषित कर दिया गया है!</b>", parse_mode=ParseMode.HTML)
+    await msg.reply_text(f"✅ <b>संदेश {OWNER_CLICKABLE_LINK} को अग्रेषित कर दिया गया है!</b>", parse_mode=ParseMode.HTML, disable_web_page_preview=True)
     CONTACT_SESSIONS.pop(user_id, None)
     return ConversationHandler.END
 
@@ -2077,7 +2127,7 @@ async def main():
     bot_app.add_handler(CommandHandler("listusers", list_users_cmd), group=1)
     bot_app.add_handler(CommandHandler("clearcache", clear_cache_cmd), group=1)
 
-    # 3. कॉलबैक्स (सख्त पैटर्न के साथ ताकि क्विज़ और मेन्स में कोई हस्तक्षेप न हो)
+    # 3. कॉलबैक्स
     bot_app.add_handler(CallbackQueryHandler(copy_id_callback, pattern=r"^copyid_"), group=1)
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_gs_choice, pattern=r"^quizgs_"), group=1)
     bot_app.add_handler(CallbackQueryHandler(handle_quiz_sub_choice, pattern=r"^quizsub_|^quiz_back_gs"), group=1)
@@ -2091,7 +2141,6 @@ async def main():
     bot_app.add_handler(CallbackQueryHandler(handle_trending_pages, pattern=r"^trpage_"), group=1)
     bot_app.add_handler(CallbackQueryHandler(handle_broadcast_pin_choice, pattern=r"^pin_broadcast_"), group=1)
     
-    # यह हैंडलर केवल और केवल "gen" या "root_back" से शुरू होने वाले कॉलबैक्स को पकड़ेगा
     bot_app.add_handler(CallbackQueryHandler(handle_dynamic_generation_click, pattern=r"^gen|^root_back"), group=1)
 
     # 4. कन्वर्सेशन हैंडलर्स
