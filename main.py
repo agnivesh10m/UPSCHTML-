@@ -6,7 +6,7 @@ import asyncio
 import io
 import random
 import html
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pypdf import PdfReader
 from telegram import (
     Update,
@@ -71,7 +71,7 @@ TRENDING_CACHE = {}
 INTERVIEW_SESSION = {}
 LAST_BROADCAST_DATA = {}
 
-# ओनर का नाम और क्लिकेबल टेलीग्राम प्रोफाइल लिंक
+# ओनर का नाम और क्लिकेबल प्रोफाइल लिंक
 OWNER_DISPLAY_NAME = "𝚾 𝚫 𝚬 𝚸 · ༎🥀"
 OWNER_USERNAME = "@Avigat1210"
 OWNER_PROFILE_URL = "https://t.me/Avigat1210"
@@ -1329,19 +1329,36 @@ async def handle_trending_pages(update: Update, context: ContextTypes.DEFAULT_TY
 
     await query.message.edit_text(p_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-# ================= MONTHLY, YEARLY, WEEKLY =================
+# ================= MONTHLY, YEARLY, WEEKLY (पूरी तरह से डायनामिक) =================
 @ensure_auth
 async def monthly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    months = ["October 2026", "September 2026", "August 2026", "July 2026", "June 2026", "May 2026"]
+    now = get_ist_now()
+    months = []
+    
+    # चालू महीने (November 2026) से पीछे के 6 महीने डायनामिक रूप से निकालना
+    for i in range(6):
+        cur_m = now.month - i
+        cur_y = now.year
+        while cur_m <= 0:
+            cur_m += 12
+            cur_y -= 1
+        dt_obj = datetime(cur_y, cur_m, 1)
+        months.append(dt_obj.strftime("%B %Y"))
+
     keyboard = [[InlineKeyboardButton(f"📁 {m} संपूर्ण मासिक डाइजेस्ट", callback_data=f"genmonth_{m}")] for m in months]
-    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back") ] )
-    await update.message.reply_text("📁 <b>जिस महीने का संपूर्ण UPSC मंथली कंपाइलेशन चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")])
+    await update.message.reply_text(
+        "📁 <b>जिस महीने का संपूर्ण UPSC मंथली कंपाइलेशन चाहिए, उस पर क्लिक करें:</b>", 
+        reply_markup=InlineKeyboardMarkup(keyboard), 
+        parse_mode=ParseMode.HTML
+    )
 
 @ensure_auth
 async def yearly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    years = ["2026", "2025", "2024"]
+    now_year = get_ist_now().year
+    years = [str(now_year - i) for i in range(3)]
     keyboard = [[InlineKeyboardButton(f"📚 वर्ष {y} वार्षिक महा-संकलन (PT-365)", callback_data=f"genyear_{y}")] for y in years]
-    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back") ] )
+    keyboard.append([InlineKeyboardButton("🔙 वापस जाएँ (Back)", callback_data="root_back")])
     await update.message.reply_text("🏛️ <b>जिस वर्ष का संपूर्ण UPSC वार्षिक कंपाइलेशन (PT-365 Style) चाहिए, उस पर क्लिक करें:</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 @ensure_auth
@@ -1385,7 +1402,7 @@ async def handle_dynamic_generation_click(update: Update, context: ContextTypes.
     asyncio.create_task(process_dynamic_generation(user_id, data, context))
 
 async def process_dynamic_generation(user_id, data, context):
-    archive_key = data
+    archive_key = data.replace(" ", "_")
     current_month_str = get_ist_now().strftime("%B_%Y")
     if data.startswith("genyear_"):
         archive_key = f"{data}_{current_month_str}"
@@ -1394,7 +1411,7 @@ async def process_dynamic_generation(user_id, data, context):
     
     if arch_data:
         topic, html_content = arch_data
-        filename = f"UPSC_{data.replace('-', '_')}.html"
+        filename = f"UPSC_{data.replace('-', '_').replace(' ', '_')}.html"
     else:
         est_time = "2 से 3 मिनट" if (data.startswith("gendate_") or data.startswith("genweek_")) else ("4 से 5 मिनट" if data.startswith("genmonth_") else "6 से 8 मिनट")
         
